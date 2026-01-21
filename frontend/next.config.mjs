@@ -7,6 +7,9 @@ const __dirname = path.dirname(__filename);
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
+  env: {
+    NEXT_PUBLIC_API_URL: process.env.NEXT_PUBLIC_API_URL || 'https://victorious-determination-production-9f97.up.railway.app',
+  },
   experimental: {
     turbo: {
       resolveAlias: {
