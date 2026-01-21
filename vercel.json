@@ -1,7 +1,0 @@
-{
-  "buildCommand": "cd frontend && yarn build",
-  "devCommand": "cd frontend && yarn dev",
-  "installCommand": "cd frontend && yarn install",
-  "framework": "nextjs",
-  "outputDirectory": "frontend/.next"
-}
