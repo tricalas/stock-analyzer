@@ -98,6 +98,10 @@ class StockWithLatestPrice(Stock):
     ma90_price: Optional[float] = None
     ma90_percentage: Optional[float] = None
 
+    # 즐겨찾기/싫어요 상태
+    is_favorite: Optional[bool] = None
+    is_dislike: Optional[bool] = None
+
 class StockPriceHistoryBase(BaseModel):
     date: date
     open_price: Optional[int] = None

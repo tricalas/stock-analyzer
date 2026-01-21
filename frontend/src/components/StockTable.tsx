@@ -105,7 +105,6 @@ const StockTable = React.memo<StockTableProps>(({ stocks, onStockClick, onShowCh
             <SortableHeader field="roe" align="right">ROE</SortableHeader>
             <SortableHeader field="ma90_percentage" align="right">90일선</SortableHeader>
             <SortableHeader field="exchange" align="center">거래소</SortableHeader>
-            <SortableHeader field="history_records_count" align="center">히스토리</SortableHeader>
           </tr>
         </thead>
         <tbody className="bg-white divide-y divide-gray-200">

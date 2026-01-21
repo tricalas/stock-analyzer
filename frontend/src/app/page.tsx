@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { stockApi, Stock } from '@/lib/api';
 import StockTable from '@/components/StockTable';
 import StockChartModal from '@/components/StockChartModal';
@@ -10,9 +10,11 @@ import SimpleButton from '@/components/atoms/SimpleButton';
 import ScrollToTopButton from '@/components/atoms/ScrollToTopButton';
 import ScheduleStatus from '@/components/ScheduleStatus';
 import { Toaster } from '@/components/ui/sonner';
+import { toast } from 'sonner';
 
 export default function Home() {
-  const [activeTab, setActiveTab] = useState<'ALL' | 'US' | 'KR' | 'FAVORITES' | 'DISLIKES'>('ALL');
+  const queryClient = useQueryClient();
+  const [activeTab, setActiveTab] = useState<'ALL' | 'US' | 'KR' | 'FAVORITES' | 'DISLIKES'>('US');
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [selectedStock, setSelectedStock] = useState<Stock | null>(null);
   const [isChartModalOpen, setIsChartModalOpen] = useState(false);
@@ -35,13 +37,16 @@ export default function Home() {
 
   const handleRefreshStocks = async () => {
     setIsRefreshing(true);
+    toast.info('데이터를 가져오는 중입니다... (약 20초 소요)');
     try {
-      await stockApi.crawlStocks(activeTab);
+      const result = await stockApi.crawlStocks(activeTab);
       await refetch();
       // 마지막 업데이트 시간 저장
       localStorage.setItem('lastStockUpdate', new Date().toISOString());
+      toast.success(`성공적으로 ${result.success}개 종목 업데이트 완료!`);
     } catch (error) {
       console.error('Failed to refresh stocks:', error);
+      toast.error('데이터 업데이트 실패');
     } finally {
       setIsRefreshing(false);
     }
@@ -63,13 +68,15 @@ export default function Home() {
   };
 
   const handleFavoriteChanged = async (stockId: number, isFavorite: boolean) => {
-    // 즐겨찾기 상태가 변경되면 데이터를 다시 불러옴
+    // 즐겨찾기 상태가 변경되면 현재 탭과 즐겨찾기 탭 데이터를 다시 불러옴
     await refetch();
+    queryClient.invalidateQueries({ queryKey: ['stocks', 'FAVORITES'] });
   };
 
   const handleDislikeChanged = async (stockId: number, isDislike: boolean) => {
-    // 싫어요 상태가 변경되면 데이터를 다시 불러옴
+    // 싫어요 상태가 변경되면 현재 탭과 싫어요 탭 데이터를 다시 불러옴
     await refetch();
+    queryClient.invalidateQueries({ queryKey: ['stocks', 'DISLIKES'] });
   };
 
 
@@ -107,9 +114,7 @@ export default function Home() {
           <div className="border-b border-gray-200">
             <nav className="-mb-px flex space-x-8" aria-label="Tabs">
               {[
-                { key: 'ALL', label: 'All Markets', icon: '🌍' },
                 { key: 'US', label: 'US Market', icon: '🇺🇸' },
-                { key: 'KR', label: 'Korean Market', icon: '🇰🇷' },
                 { key: 'FAVORITES', label: 'Favorites', icon: '⭐' },
                 { key: 'DISLIKES', label: 'Dislikes', icon: '👎' },
               ].map((tab) => (

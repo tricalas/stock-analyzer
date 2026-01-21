@@ -571,7 +571,7 @@ def get_favorites(db: Session = Depends(get_db)):
     즐겨찾기 목록 조회
     """
     try:
-        favorites = db.query(StockFavorite).join(Stock).filter(Stock.is_active == True).all()
+        favorites = db.query(StockFavorite).join(Stock).filter(Stock.is_active == True).order_by(StockFavorite.created_at.desc()).all()
 
         favorite_stocks = []
         for favorite in favorites:
@@ -609,7 +609,8 @@ def get_favorites(db: Session = Depends(get_db)):
                 "ma90_price": stock.ma90_price,
                 "ma90_percentage": ma90_percentage,
                 "is_favorite": True,
-                "created_at": favorite.created_at
+                "created_at": favorite.created_at,
+                "favorited_at": favorite.created_at.isoformat()
             }
             favorite_stocks.append(stock_data)
 

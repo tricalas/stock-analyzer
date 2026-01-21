@@ -3,6 +3,7 @@ from datetime import datetime, date, timedelta
 from sqlalchemy.orm import Session
 import logging
 from app.crawlers.naver_crawler import NaverStockCrawler
+from app.crawlers.naver_us_crawler import NaverUSStockCrawler
 from app.models import Stock, StockPrice, StockDailyData, CrawlingLog
 from app.database import SessionLocal
 from app.constants import ETF_KEYWORDS
@@ -13,6 +14,7 @@ logger = logging.getLogger(__name__)
 class CrawlerManager:
     def __init__(self):
         self.naver_crawler = NaverStockCrawler()
+        self.naver_us_crawler = NaverUSStockCrawler()
 
     def update_stock_list(self, market: str = "ALL") -> Dict:
         db = SessionLocal()
@@ -22,11 +24,10 @@ class CrawlerManager:
             stocks_data = []
 
             if market in ["ALL", "KR"]:
-                # 네이버 크롤러만 사용
+                # 한국 주식 크롤링
                 naver_stocks = self.naver_crawler.fetch_stock_list()
 
                 # ETF 및 지수 종목 필터링
-
                 filtered_stocks = []
                 etf_count = 0
 
@@ -46,9 +47,13 @@ class CrawlerManager:
                 stocks_data.extend(filtered_stocks)
                 results["skipped_etf"] = etf_count
                 logger.info(f"Used Naver crawler: {len(naver_stocks)} stocks found, {etf_count} ETF/Index stocks filtered out, {len(filtered_stocks)} stocks to process")
-            elif market == "US":
-                logger.info("US market crawling is not supported. Only KR market is available through Naver crawler.")
-                return {"success": 0, "failed": 0, "total": 0, "message": "US market crawling not supported"}
+
+            if market in ["ALL", "US"]:
+                # 미국 주식 크롤링
+                logger.info("Fetching US stocks from Naver API...")
+                us_stocks = self.naver_us_crawler.fetch_all_us_stocks(nasdaq_pages=10, nyse_pages=10)
+                stocks_data.extend(us_stocks)
+                logger.info(f"Fetched {len(us_stocks)} US stocks")
 
             results["total"] = len(stocks_data)
 

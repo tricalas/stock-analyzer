@@ -14,31 +14,32 @@ class StockScheduler:
         self._setup_jobs()
 
     def _setup_jobs(self):
-        """스케줄 작업 설정"""
-        # 한국 시간대 설정
-        kst = pytz.timezone('Asia/Seoul')
+        """스케줄 작업 설정 (현재 비활성화 - 수동 업데이트만 사용)"""
+        # 자동 스케줄링 비활성화됨
+        # 필요시 아래 코드 주석 해제하여 자동 크롤링 활성화
 
-        # 평일 오전 9시 1분에 주식 데이터 크롤링 (장 시작 후)
-        self.scheduler.add_job(
-            func=self._crawl_all_stocks,
-            trigger=CronTrigger(hour=9, minute=1, day_of_week='mon-fri', timezone=kst),
-            id='daily_stock_crawl',
-            name='Daily Stock Data Crawling (Weekdays)',
-            replace_existing=True
-        )
+        # # 한국 시간대 설정
+        # kst = pytz.timezone('Asia/Seoul')
 
-        # 평일 오후 4시에 추가 크롤링 (장 마감 후)
-        self.scheduler.add_job(
-            func=self._crawl_all_stocks,
-            trigger=CronTrigger(hour=16, minute=0, day_of_week='mon-fri', timezone=kst),
-            id='afternoon_stock_crawl',
-            name='Afternoon Stock Data Crawling (Weekdays)',
-            replace_existing=True
-        )
+        # # 평일 오전 9시 1분에 주식 데이터 크롤링 (장 시작 후)
+        # self.scheduler.add_job(
+        #     func=self._crawl_all_stocks,
+        #     trigger=CronTrigger(hour=9, minute=1, day_of_week='mon-fri', timezone=kst),
+        #     id='daily_stock_crawl',
+        #     name='Daily Stock Data Crawling (Weekdays)',
+        #     replace_existing=True
+        # )
 
-        logger.info("Stock crawling jobs scheduled:")
-        logger.info("- Daily crawling at 09:01 KST (weekdays only, after market open)")
-        logger.info("- Afternoon crawling at 16:00 KST (weekdays only, after market close)")
+        # # 평일 오후 4시에 추가 크롤링 (장 마감 후)
+        # self.scheduler.add_job(
+        #     func=self._crawl_all_stocks,
+        #     trigger=CronTrigger(hour=16, minute=0, day_of_week='mon-fri', timezone=kst),
+        #     id='afternoon_stock_crawl',
+        #     name='Afternoon Stock Data Crawling (Weekdays)',
+        #     replace_existing=True
+        # )
+
+        logger.info("Auto-scheduling disabled - using manual updates only")
 
     def _crawl_all_stocks(self):
         """모든 주식 데이터 크롤링"""

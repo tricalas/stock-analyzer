@@ -86,3 +86,6 @@ backend/logs/
 backend/*.db
 frontend/.next/
 auto_crawl_history.py
+
+# Claude Code
+.claude/
