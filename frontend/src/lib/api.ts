@@ -184,6 +184,12 @@ export const stockApi = {
     return response.data;
   },
 
+  // 단일 종목 분석
+  analyzeStock: async (stockId: number) => {
+    const response = await api.post(`/api/stocks/${stockId}/analyze`);
+    return response.data;
+  },
+
 };
 
 export default api;

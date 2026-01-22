@@ -748,6 +748,114 @@ def get_dislikes(db: Session = Depends(get_db)):
         logger.error(f"Error getting dislikes: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to get dislikes: {str(e)}")
 
+@app.post("/api/stocks/{stock_id}/analyze")
+async def analyze_single_stock(
+    stock_id: int,
+    db: Session = Depends(get_db)
+):
+    """
+    단일 종목 분석: 네이버에서 상세 정보 및 일별 가격 크롤링
+    중복 데이터는 저장하지 않음
+    """
+    try:
+        # 종목 조회
+        stock = db.query(Stock).filter(Stock.id == stock_id).first()
+        if not stock:
+            raise HTTPException(status_code=404, detail="Stock not found")
+
+        logger.info(f"Analyzing stock: {stock.symbol} ({stock.name})")
+
+        # 크롤러 초기화
+        from app.crawlers.naver_us_crawler import NaverUSStockCrawler
+        crawler = NaverUSStockCrawler()
+
+        # 종목 분석 실행
+        # US 주식은 sector 필드에 reuters_code (예: NVDA.O)가 저장되어 있음
+        symbol_to_use = stock.sector if stock.market == "US" and stock.sector else stock.symbol
+        result = crawler.analyze_single_stock(symbol_to_use)
+
+        if not result['success']:
+            raise HTTPException(status_code=500, detail=result['message'])
+
+        stats = {
+            'new_records': 0,
+            'duplicate_records': 0,
+            'updated_overview': False
+        }
+
+        # Overview 정보 업데이트
+        if result['overview']:
+            overview = result['overview']
+            stock.current_price = overview.get('current_price', stock.current_price)
+            stock.change_amount = overview.get('change_amount', stock.change_amount)
+            stock.change_percent = overview.get('change_percent', stock.change_percent)
+            stock.previous_close = overview.get('previous_close', stock.previous_close)
+            stock.market_cap = overview.get('market_cap', stock.market_cap)
+            stock.trading_volume = overview.get('volume', stock.trading_volume)
+            stock.updated_at = datetime.utcnow()
+            stats['updated_overview'] = True
+            logger.info(f"Updated overview for {stock.symbol}")
+
+        # 가격 히스토리 저장 (중복 체크)
+        if result['price_history']:
+            for price_data in result['price_history']:
+                try:
+                    price_date = datetime.strptime(price_data['date'], '%Y%m%d').date()
+
+                    # 중복 체크
+                    existing_record = db.query(StockPriceHistory).filter(
+                        StockPriceHistory.stock_id == stock.id,
+                        StockPriceHistory.date == price_date
+                    ).first()
+
+                    if existing_record:
+                        stats['duplicate_records'] += 1
+                        continue
+
+                    # 새 레코드 생성
+                    price_history = StockPriceHistory(
+                        stock_id=stock.id,
+                        date=price_date,
+                        open_price=price_data['open_price'],
+                        high_price=price_data['high_price'],
+                        low_price=price_data['low_price'],
+                        close_price=price_data['close_price'],
+                        volume=price_data['volume']
+                    )
+                    db.add(price_history)
+                    stats['new_records'] += 1
+
+                except Exception as e:
+                    logger.error(f"Error saving price record: {e}")
+                    continue
+
+        db.commit()
+
+        # 최신 갱신 날짜 조회
+        latest_record = db.query(StockPriceHistory).filter(
+            StockPriceHistory.stock_id == stock.id
+        ).order_by(StockPriceHistory.date.desc()).first()
+
+        return {
+            "success": True,
+            "stock_id": stock.id,
+            "symbol": stock.symbol,
+            "name": stock.name,
+            "stats": stats,
+            "latest_update_date": latest_record.date.isoformat() if latest_record else None,
+            "total_records": db.query(StockPriceHistory).filter(
+                StockPriceHistory.stock_id == stock.id
+            ).count(),
+            "message": f"Successfully analyzed {stock.symbol}"
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error analyzing stock {stock_id}: {e}")
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Failed to analyze stock: {str(e)}")
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)

@@ -208,3 +208,134 @@ class NaverUSStockCrawler(BaseCrawler):
         """
         logger.warning(f"Individual stock info fetch not supported for US stocks: {symbol}")
         return {}
+
+    def analyze_single_stock(self, symbol: str) -> Dict:
+        """
+        단일 종목 분석: 네이버 모바일 페이지에서 상세 정보 및 일별 가격 크롤링
+
+        Args:
+            symbol: 종목 심볼 (예: NVDA.O, AAPL.O)
+
+        Returns:
+            분석 결과 딕셔너리 {
+                'success': bool,
+                'overview': Dict,  # 기본 정보
+                'price_history': List[Dict],  # 일별 가격 데이터
+                'message': str
+            }
+        """
+        try:
+            result = {
+                'success': False,
+                'overview': {},
+                'price_history': [],
+                'message': ''
+            }
+
+            # Overview 정보 크롤링
+            overview_url = f"https://api.stock.naver.com/stock/{symbol}/basic"
+            logger.info(f"Fetching overview for {symbol} from {overview_url}")
+
+            overview_response = smart_crawler.safe_request(overview_url)
+            if overview_response:
+                overview_data = overview_response.json()
+                result['overview'] = self._parse_overview_data(overview_data, symbol)
+                logger.info(f"Successfully fetched overview for {symbol}")
+
+            # 가격 히스토리 크롤링
+            price_url = f"https://api.stock.naver.com/stock/{symbol}/price"
+            logger.info(f"Fetching price history for {symbol} from {price_url}")
+
+            price_response = smart_crawler.safe_request(price_url)
+            if price_response:
+                price_data_list = price_response.json()  # API returns list directly
+                result['price_history'] = self._parse_price_history(price_data_list, symbol)
+                logger.info(f"Successfully fetched {len(result['price_history'])} price records for {symbol}")
+
+            if result['overview'] or result['price_history']:
+                result['success'] = True
+                result['message'] = f"Successfully analyzed {symbol}"
+            else:
+                result['message'] = f"No data found for {symbol}"
+
+            return result
+
+        except Exception as e:
+            logger.error(f"Error analyzing stock {symbol}: {e}")
+            return {
+                'success': False,
+                'overview': {},
+                'price_history': [],
+                'message': f"Error: {str(e)}"
+            }
+
+    def _parse_overview_data(self, data: Dict, symbol: str) -> Dict:
+        """네이버 API overview 데이터 파싱"""
+        try:
+            if not data:
+                return {}
+
+            stock_name = data.get('stockName', '')
+            stock_name_eng = data.get('stockNameEng', '')
+            close_price = self._parse_number(data.get('closePrice', 0))
+            compare_price = self._parse_number(data.get('compareToPreviousClosePrice', 0))
+            fluctuation_ratio = self._parse_number(data.get('fluctuationsRatio', 0))
+
+            overview = {
+                'symbol': symbol,
+                'name': stock_name or stock_name_eng,
+                'name_eng': stock_name_eng,
+                'current_price': close_price,
+                'change_amount': compare_price,
+                'change_percent': fluctuation_ratio,
+                'previous_close': close_price - compare_price if close_price else 0,
+                'market_cap': self._parse_number(data.get('marketValue', 0)),
+                'volume': self._parse_number(data.get('accumulatedTradingVolume', 0)),
+                'market': 'US',
+                'exchange': data.get('stockExchangeType', {}).get('name', ''),
+                'industry': data.get('industryCodeType', {}).get('industryGroupKor', ''),
+            }
+
+            return overview
+
+        except Exception as e:
+            logger.error(f"Error parsing overview data for {symbol}: {e}")
+            return {}
+
+    def _parse_price_history(self, data: List[Dict], symbol: str) -> List[Dict]:
+        """네이버 API price 데이터 파싱"""
+        try:
+            if not data or not isinstance(data, list):
+                return []
+
+            price_list = []
+            for item in data:
+                try:
+                    # localTradedAt: "2026-01-21T16:00:00-05:00" -> "20260121"
+                    date_str = item.get('localTradedAt', '')
+                    if not date_str:
+                        continue
+
+                    # Parse ISO date and convert to YYYYMMDD format
+                    from datetime import datetime
+                    date_obj = datetime.fromisoformat(date_str.replace('Z', '+00:00'))
+                    date_formatted = date_obj.strftime('%Y%m%d')
+
+                    price_record = {
+                        'date': date_formatted,
+                        'open_price': int(self._parse_number(item.get('openPrice', 0))),
+                        'high_price': int(self._parse_number(item.get('highPrice', 0))),
+                        'low_price': int(self._parse_number(item.get('lowPrice', 0))),
+                        'close_price': int(self._parse_number(item.get('closePrice', 0))),
+                        'volume': 0,  # Volume not available in this API endpoint
+                    }
+                    price_list.append(price_record)
+                except Exception as e:
+                    logger.error(f"Error parsing price record: {e}")
+                    continue
+
+            return price_list
+
+        except Exception as e:
+            logger.error(f"Error parsing price history for {symbol}: {e}")
+            return []

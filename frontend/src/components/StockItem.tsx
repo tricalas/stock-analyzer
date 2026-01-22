@@ -34,6 +34,7 @@ const StockItem = React.memo<StockItemProps>(({ stock, rank, onStockClick, onSho
   const [isFavorite, setIsFavorite] = useState(stock.is_favorite || false);
   const [isDisliking, setIsDisliking] = useState(false);
   const [isDislike, setIsDislike] = useState(stock.is_dislike || false);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
 
   // stock.is_favorite prop이 변경될 때마다 상태 동기화
   useEffect(() => {
@@ -149,6 +150,27 @@ const StockItem = React.memo<StockItemProps>(({ stock, rank, onStockClick, onSho
       });
     } finally {
       setIsDisliking(false);
+    }
+  };
+
+  const handleAnalyze = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setIsAnalyzing(true);
+
+    try {
+      const result = await stockApi.analyzeStock(stock.id);
+      console.log(`Analysis completed for ${stock.symbol}:`, result);
+
+      toast.success(`${stock.name} 분석 완료!`, {
+        description: `새 데이터: ${result.stats.new_records}건, 중복: ${result.stats.duplicate_records}건${result.latest_update_date ? `, 최신: ${result.latest_update_date}` : ''}`
+      });
+    } catch (error) {
+      console.error(`Error analyzing ${stock.symbol}:`, error);
+      toast.error(`${stock.name} 분석 실패`, {
+        description: '분석 중 오류가 발생했습니다.'
+      });
+    } finally {
+      setIsAnalyzing(false);
     }
   };
 
@@ -272,9 +294,28 @@ const StockItem = React.memo<StockItemProps>(({ stock, rank, onStockClick, onSho
               <BarChart3 className="h-3 w-3 mr-1" />
               차트
             </a>
+            {/* 분석 버튼 */}
+            <button
+              onClick={handleAnalyze}
+              disabled={isAnalyzing}
+              className="inline-flex items-center px-1.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800 hover:bg-blue-200 disabled:bg-gray-300 disabled:text-gray-500 disabled:cursor-not-allowed cursor-pointer"
+              title="단일 종목 분석"
+            >
+              {isAnalyzing ? (
+                <div className="h-3 w-3 animate-spin rounded-full border border-current border-t-transparent mr-1"></div>
+              ) : (
+                <TrendingUp className="h-3 w-3 mr-1" />
+              )}
+              분석
+            </button>
           </div>
           <div className="text-xs text-gray-500">
             {stock.symbol}
+            {stock.history_latest_date && (
+              <span className="ml-2 text-gray-400">
+                | 최신: {new Date(stock.history_latest_date).toLocaleDateString('ko-KR')}
+              </span>
+            )}
           </div>
         </div>
       </td>
