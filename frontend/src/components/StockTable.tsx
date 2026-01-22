@@ -5,7 +5,7 @@ import { Stock } from '@/lib/api';
 import StockItem from './StockItem';
 import { ChevronUp, ChevronDown } from 'lucide-react';
 
-type SortField = 'market_cap_rank' | 'name' | 'current_price' | 'change_amount' | 'change_percent' | 'market_cap' | 'trading_volume' | 'foreign_ratio' | 'per' | 'roe' | 'exchange' | 'history_records_count' | 'ma90_percentage' | 'is_favorite' | 'is_dislike';
+type SortField = 'market_cap_rank' | 'name' | 'current_price' | 'change_amount' | 'change_percent' | 'market_cap' | 'trading_volume' | 'exchange' | 'history_records_count' | 'ma90_percentage' | 'is_favorite' | 'is_dislike';
 type SortDirection = 'asc' | 'desc';
 
 interface StockTableProps {
@@ -100,11 +100,9 @@ const StockTable = React.memo<StockTableProps>(({ stocks, onStockClick, onShowCh
             <SortableHeader field="change_percent" align="right">등락률</SortableHeader>
             <SortableHeader field="market_cap" align="right">시가총액</SortableHeader>
             <SortableHeader field="trading_volume" align="right">거래량</SortableHeader>
-            <SortableHeader field="foreign_ratio" align="right">외국인비율</SortableHeader>
-            <SortableHeader field="per" align="right">PER</SortableHeader>
-            <SortableHeader field="roe" align="right">ROE</SortableHeader>
             <SortableHeader field="ma90_percentage" align="right">90일선</SortableHeader>
             <SortableHeader field="exchange" align="center">거래소</SortableHeader>
+            <th className="px-3 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">분석</th>
           </tr>
         </thead>
         <tbody className="bg-white divide-y divide-gray-200">

@@ -299,20 +299,6 @@ const StockItem = React.memo<StockItemProps>(({ stock, rank, onStockClick, onSho
               <BarChart3 className="h-3 w-3 mr-1" />
               차트
             </a>
-            {/* 분석 버튼 */}
-            <button
-              onClick={handleAnalyze}
-              disabled={isAnalyzing}
-              className="inline-flex items-center px-1.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800 hover:bg-blue-200 disabled:bg-gray-300 disabled:text-gray-500 disabled:cursor-not-allowed cursor-pointer"
-              title="단일 종목 분석"
-            >
-              {isAnalyzing ? (
-                <div className="h-3 w-3 animate-spin rounded-full border border-current border-t-transparent mr-1"></div>
-              ) : (
-                <TrendingUp className="h-3 w-3 mr-1" />
-              )}
-              분석
-            </button>
           </div>
           <div className="text-xs text-gray-500">
             {stock.symbol}
@@ -367,21 +353,6 @@ const StockItem = React.memo<StockItemProps>(({ stock, rank, onStockClick, onSho
         {formatNumber(stock.trading_volume || stock.latest_volume)}
       </td>
 
-      {/* 외국인비율 */}
-      <td className="px-3 py-4 whitespace-nowrap text-sm text-right text-gray-500">
-        {stock.foreign_ratio ? `${formatDecimal(stock.foreign_ratio)}%` : '-'}
-      </td>
-
-      {/* PER */}
-      <td className="px-3 py-4 whitespace-nowrap text-sm text-right text-gray-500">
-        {formatDecimal(stock.per)}
-      </td>
-
-      {/* ROE */}
-      <td className="px-3 py-4 whitespace-nowrap text-sm text-right text-gray-500">
-        {stock.roe ? `${formatDecimal(stock.roe)}%` : '-'}
-      </td>
-
       {/* 90일선 대비 */}
       <td className="px-3 py-4 whitespace-nowrap text-sm text-right">
         {stock.ma90_percentage !== undefined && stock.ma90_percentage !== null ? (
@@ -408,6 +379,22 @@ const StockItem = React.memo<StockItemProps>(({ stock, rank, onStockClick, onSho
         }`}>
           {stock.exchange || stock.market}
         </span>
+      </td>
+
+      {/* 분석 */}
+      <td className="px-3 py-4 whitespace-nowrap text-center">
+        <button
+          onClick={handleAnalyze}
+          disabled={isAnalyzing}
+          className="inline-flex items-center px-2 py-1 rounded-md text-xs font-medium bg-blue-100 text-blue-800 hover:bg-blue-200 disabled:bg-gray-300 disabled:text-gray-500 disabled:cursor-not-allowed cursor-pointer"
+          title="단일 종목 분석"
+        >
+          {isAnalyzing ? (
+            <div className="h-3 w-3 animate-spin rounded-full border border-current border-t-transparent"></div>
+          ) : (
+            <TrendingUp className="h-3 w-3" />
+          )}
+        </button>
       </td>
     </tr>
 
