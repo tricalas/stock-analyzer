@@ -35,6 +35,8 @@ const StockItem = React.memo<StockItemProps>(({ stock, rank, onStockClick, onSho
   const [isDisliking, setIsDisliking] = useState(false);
   const [isDislike, setIsDislike] = useState(stock.is_dislike || false);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [showAnalysisModal, setShowAnalysisModal] = useState(false);
+  const [analysisResult, setAnalysisResult] = useState<any>(null);
 
   // stock.is_favorite prop이 변경될 때마다 상태 동기화
   useEffect(() => {
@@ -161,9 +163,11 @@ const StockItem = React.memo<StockItemProps>(({ stock, rank, onStockClick, onSho
       const result = await stockApi.analyzeStock(stock.id);
       console.log(`Analysis completed for ${stock.symbol}:`, result);
 
-      toast.success(`${stock.name} 분석 완료!`, {
-        description: `새 데이터: ${result.stats.new_records}건, 중복: ${result.stats.duplicate_records}건${result.latest_update_date ? `, 최신: ${result.latest_update_date}` : ''}`
-      });
+      // 분석 결과를 저장하고 모달 열기
+      setAnalysisResult(result);
+      setShowAnalysisModal(true);
+
+      toast.success(`${stock.name} 분석 완료!`);
     } catch (error) {
       console.error(`Error analyzing ${stock.symbol}:`, error);
       toast.error(`${stock.name} 분석 실패`, {
@@ -235,10 +239,11 @@ const StockItem = React.memo<StockItemProps>(({ stock, rank, onStockClick, onSho
   };
 
   return (
-    <tr
-      className="hover:bg-gray-50 cursor-pointer"
-      onClick={() => onStockClick?.(stock)}
-    >
+    <>
+      <tr
+        className="hover:bg-gray-50 cursor-pointer"
+        onClick={() => onStockClick?.(stock)}
+      >
       {/* 순위 */}
       <td className="px-3 py-4 whitespace-nowrap text-sm text-center text-gray-900 font-medium">
         {rank || '-'}
@@ -405,6 +410,106 @@ const StockItem = React.memo<StockItemProps>(({ stock, rank, onStockClick, onSho
         </span>
       </td>
     </tr>
+
+    {/* 분석 결과 모달 */}
+    {showAnalysisModal && analysisResult && (
+      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" onClick={() => setShowAnalysisModal(false)}>
+        <div className="bg-white rounded-lg p-6 max-w-4xl w-full mx-4 max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+          {/* 헤더 */}
+          <div className="flex justify-between items-start mb-6">
+            <div>
+              <h2 className="text-2xl font-bold text-gray-900">{stock.name} ({stock.symbol})</h2>
+              <p className="text-sm text-gray-500 mt-1">분석 결과</p>
+            </div>
+            <button
+              onClick={() => setShowAnalysisModal(false)}
+              className="text-gray-400 hover:text-gray-600 text-2xl leading-none"
+            >
+              ×
+            </button>
+          </div>
+
+          {/* 통계 요약 */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+            <div className="bg-blue-50 rounded-lg p-4">
+              <p className="text-sm text-blue-600 font-medium">새로운 데이터</p>
+              <p className="text-3xl font-bold text-blue-900 mt-1">{analysisResult.stats.new_records}건</p>
+            </div>
+            <div className="bg-gray-50 rounded-lg p-4">
+              <p className="text-sm text-gray-600 font-medium">중복 데이터</p>
+              <p className="text-3xl font-bold text-gray-900 mt-1">{analysisResult.stats.duplicate_records}건</p>
+            </div>
+            <div className="bg-green-50 rounded-lg p-4">
+              <p className="text-sm text-green-600 font-medium">전체 레코드</p>
+              <p className="text-3xl font-bold text-green-900 mt-1">{analysisResult.total_records}건</p>
+            </div>
+          </div>
+
+          {/* 상세 정보 */}
+          <div className="border-t pt-4">
+            <h3 className="text-lg font-semibold text-gray-900 mb-3">상세 정보</h3>
+            <div className="space-y-2 text-sm">
+              <div className="flex justify-between py-2 border-b">
+                <span className="text-gray-600">종목 코드</span>
+                <span className="font-medium text-gray-900">{analysisResult.symbol}</span>
+              </div>
+              <div className="flex justify-between py-2 border-b">
+                <span className="text-gray-600">최신 업데이트</span>
+                <span className="font-medium text-gray-900">
+                  {analysisResult.latest_update_date ? new Date(analysisResult.latest_update_date).toLocaleDateString('ko-KR', {
+                    year: 'numeric',
+                    month: 'long',
+                    day: 'numeric'
+                  }) : '-'}
+                </span>
+              </div>
+              <div className="flex justify-between py-2 border-b">
+                <span className="text-gray-600">현재가</span>
+                <span className="font-medium text-gray-900">{stock.current_price ? `$${formatNumber(stock.current_price)}` : '-'}</span>
+              </div>
+              <div className="flex justify-between py-2 border-b">
+                <span className="text-gray-600">변동률</span>
+                <span className={`font-medium ${
+                  (stock.change_percent || 0) > 0 ? 'text-red-600' :
+                  (stock.change_percent || 0) < 0 ? 'text-blue-600' :
+                  'text-gray-600'
+                }`}>
+                  {stock.change_percent ? `${stock.change_percent > 0 ? '+' : ''}${stock.change_percent.toFixed(2)}%` : '-'}
+                </span>
+              </div>
+              <div className="flex justify-between py-2 border-b">
+                <span className="text-gray-600">시가총액</span>
+                <span className="font-medium text-gray-900">
+                  {stock.market_cap ? `$${formatNumber(Math.round(stock.market_cap / 1000))}B` : '-'}
+                </span>
+              </div>
+              <div className="flex justify-between py-2">
+                <span className="text-gray-600">거래소</span>
+                <span className="font-medium text-gray-900">{stock.exchange || '-'}</span>
+              </div>
+            </div>
+          </div>
+
+          {/* 메시지 */}
+          {analysisResult.message && (
+            <div className="mt-6 bg-gray-50 rounded-lg p-4">
+              <p className="text-sm text-gray-700">{analysisResult.message}</p>
+            </div>
+          )}
+
+          {/* 닫기 버튼 */}
+          <div className="mt-6 flex justify-end">
+            <button
+              onClick={() => setShowAnalysisModal(false)}
+              className="px-6 py-2 bg-gray-900 text-white rounded-lg hover:bg-gray-800 transition-colors"
+            >
+              닫기
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
+  </>
   );
 });
 
