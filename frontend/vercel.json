@@ -3,6 +3,6 @@
   "outputDirectory": ".next",
   "framework": "nextjs",
   "env": {
-    "NEXT_PUBLIC_API_URL": "https://victorious-determination-production-9f97.up.railway.app"
+    "NEXT_PUBLIC_API_URL": "https://victorious-determination-production-dafc.up.railway.app"
   }
 }
