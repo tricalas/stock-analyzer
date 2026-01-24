@@ -1,8 +1,8 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useParams } from 'next/navigation';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
 import { stockApi, Stock, Tag } from '@/lib/api';
 import StockTable from '@/components/StockTable';
 import StockChartModal from '@/components/StockChartModal';
@@ -20,11 +20,50 @@ export default function TagPage() {
   const [isChartModalOpen, setIsChartModalOpen] = useState(false);
   const { tags } = useTags();
   const tagInfo = tags.find(t => t.name === tagName) || null;
+  const loadMoreRef = useRef<HTMLDivElement>(null);
 
-  const { data, isLoading, error, refetch } = useQuery({
+  const {
+    data,
+    isLoading,
+    error,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+    refetch,
+  } = useInfiniteQuery({
     queryKey: ['stocks', 'TAG', tagName],
-    queryFn: () => stockApi.getStocksByTag(tagName),
+    queryFn: ({ pageParam = 0 }) =>
+      stockApi.getStocksByTag(tagName, {
+        skip: pageParam,
+        limit: 20,
+      }),
+    getNextPageParam: (lastPage, allPages) => {
+      const totalLoaded = allPages.reduce((sum, page) => sum + page.stocks.length, 0);
+      return totalLoaded < lastPage.total ? totalLoaded : undefined;
+    },
+    initialPageParam: 0,
   });
+
+  // Infinite scroll observer
+  useEffect(() => {
+    if (!loadMoreRef.current || !hasNextPage || isFetchingNextPage) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting) {
+          fetchNextPage();
+        }
+      },
+      { threshold: 0.1 }
+    );
+
+    observer.observe(loadMoreRef.current);
+
+    return () => observer.disconnect();
+  }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
+
+  // Flatten all pages into a single stocks array
+  const allStocks = data?.pages.flatMap((page) => page.stocks) ?? [];
 
   const handleStockClick = (stock: Stock) => {
     // 화면 오른쪽 70%에 전체 높이로 새 창 열기
@@ -100,15 +139,32 @@ export default function TagPage() {
               <p className="text-destructive font-semibold text-lg">Failed to load stocks</p>
               <p className="text-sm text-muted-foreground mt-2">Please try again later</p>
             </div>
-          ) : data && data.stocks.length > 0 ? (
-            <StockTable
-              stocks={data.stocks}
-              onStockClick={handleStockClick}
-              onShowChart={handleShowChart}
-              onStockDeleted={handleStockDeleted}
-              onFavoriteChanged={handleFavoriteChanged}
-              onDislikeChanged={handleDislikeChanged}
-            />
+          ) : allStocks.length > 0 ? (
+            <>
+              <StockTable
+                stocks={allStocks}
+                onStockClick={handleStockClick}
+                onShowChart={handleShowChart}
+                onStockDeleted={handleStockDeleted}
+                onFavoriteChanged={handleFavoriteChanged}
+                onDislikeChanged={handleDislikeChanged}
+              />
+
+              {/* Infinite scroll trigger */}
+              <div ref={loadMoreRef} className="py-4">
+                {isFetchingNextPage && (
+                  <div className="flex items-center justify-center">
+                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+                    <p className="ml-3 text-sm text-muted-foreground">Loading more...</p>
+                  </div>
+                )}
+                {!hasNextPage && allStocks.length > 0 && (
+                  <p className="text-center text-sm text-muted-foreground">
+                    All {allStocks.length} stocks loaded
+                  </p>
+                )}
+              </div>
+            </>
           ) : (
             <div className="text-center py-24">
               <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-muted mb-4">
