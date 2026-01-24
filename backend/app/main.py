@@ -1133,6 +1133,37 @@ def delete_user(
     logger.info(f"User deleted by admin: {user.nickname}")
     return {"message": "User deleted successfully"}
 
+@app.post("/api/auth/users/create-direct")
+def create_user_direct(
+    user_data: dict,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """사용자 직접 생성 - 마이그레이션용 (관리자 전용)"""
+    if not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Only admin can create users directly")
+
+    # 기존 사용자 확인
+    existing_user = db.query(User).filter(User.nickname == user_data['nickname']).first()
+    if existing_user:
+        return {"message": "User already exists", "user_id": existing_user.id}
+
+    # 새 사용자 생성
+    new_user = User(
+        nickname=user_data['nickname'],
+        pin_hash=user_data['pin_hash'],
+        is_admin=user_data.get('is_admin', False),
+        user_token=user_data.get('user_token', str(uuid.uuid4())),
+        created_at=datetime.utcnow()
+    )
+
+    db.add(new_user)
+    db.commit()
+    db.refresh(new_user)
+
+    logger.info(f"User created directly: {new_user.nickname}")
+    return {"message": "User created successfully", "user_id": new_user.id}
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
