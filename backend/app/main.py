@@ -215,6 +215,12 @@ def get_stocks(
     if sector:
         query = query.filter(Stock.sector == sector)
 
+    # 일관된 정렬: 시가총액 내림차순, NULL은 마지막, 같으면 ID 순
+    query = query.order_by(
+        Stock.market_cap.desc().nullslast(),
+        Stock.id.asc()
+    )
+
     total = query.count()
     stocks = query.offset(skip).limit(limit).all()
 
