@@ -15,7 +15,15 @@ if settings.DATABASE_URL.startswith("sqlite"):
         echo=False
     )
 else:
-    engine = create_engine(settings.DATABASE_URL)
+    # PostgreSQL 연결 풀 최적화
+    engine = create_engine(
+        settings.DATABASE_URL,
+        pool_size=20,              # 연결 풀 크기 증가
+        max_overflow=40,           # 추가 연결 허용
+        pool_pre_ping=True,        # 연결 유효성 검사
+        pool_recycle=3600,         # 1시간마다 연결 재생성
+        echo=False
+    )
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()

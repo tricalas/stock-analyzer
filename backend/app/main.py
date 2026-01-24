@@ -187,108 +187,88 @@ def get_stocks(
     total = query.count()
     stocks = query.offset(skip).limit(limit).all()
 
+    # 태그 정보를 한 번에 가져오기 (사용자별) - 태그가 있는 경우에만
+    tags_map = {}
+    latest_tag_dates = {}
+    if current_user:
+        from sqlalchemy import and_
+
+        # 모든 주식의 태그를 한 번에 가져오기
+        stock_ids = [s.id for s in stocks]
+        tag_assignments = db.query(StockTagAssignment).filter(
+            and_(
+                StockTagAssignment.stock_id.in_(stock_ids),
+                StockTagAssignment.user_token == current_user.user_token
+            )
+        ).order_by(StockTagAssignment.created_at.desc()).all()
+
+        # stock_id별로 그룹화
+        for ta in tag_assignments:
+            if ta.stock_id not in tags_map:
+                tags_map[ta.stock_id] = []
+                latest_tag_dates[ta.stock_id] = ta.created_at
+            tags_map[ta.stock_id].append(ta)
+
+        # 태그 ID들을 모아서 한 번에 조회
+        tag_ids = list(set(ta.tag_id for ta in tag_assignments))
+        if tag_ids:
+            tags_by_id = {tag.id: tag for tag in db.query(StockTag).filter(StockTag.id.in_(tag_ids)).all()}
+        else:
+            tags_by_id = {}
+
+    # 빠른 응답을 위해 최소한의 데이터만 반환
     stock_list = []
     for stock in stocks:
-        latest_price = db.query(StockPrice).filter_by(stock_id=stock.id).order_by(StockPrice.date.desc()).first()
-
-        # 히스토리 데이터 상태 확인
-        history_count = db.query(StockPriceHistory).filter(StockPriceHistory.stock_id == stock.id).count()
-        latest_history = db.query(StockPriceHistory).filter(
-            StockPriceHistory.stock_id == stock.id
-        ).order_by(StockPriceHistory.date.desc()).first()
-        oldest_history = db.query(StockPriceHistory).filter(
-            StockPriceHistory.stock_id == stock.id
-        ).order_by(StockPriceHistory.date.asc()).first()
-
-        # 90일 이동평균 계산 및 저장
-        ma90_price = None
-        if history_count >= 90:
-            recent_90_days = db.query(StockPriceHistory).filter(
-                StockPriceHistory.stock_id == stock.id
-            ).order_by(StockPriceHistory.date.desc()).limit(90).all()
-
-            if len(recent_90_days) == 90:
-                total_sum = sum(record.close_price for record in recent_90_days)
-                ma90_price = total_sum / 90
-
-                # DB에 저장
-                if stock.ma90_price != ma90_price:
-                    stock.ma90_price = ma90_price
-                    db.commit()
-
-        # 90일 이동평균 대비 현재가 비율 계산
+        # 90일 이동평균 비율 (간단 계산)
         ma90_percentage = None
         if stock.ma90_price and stock.current_price:
             ma90_percentage = ((stock.current_price - stock.ma90_price) / stock.ma90_price) * 100
 
-        # 태그 목록 확인 (사용자별)
+        # 태그 목록 (이미 가져온 데이터 사용)
         tags = []
         latest_tag_date = None
-        if current_user:
-            tag_assignments = db.query(StockTagAssignment).filter(
-                StockTagAssignment.stock_id == stock.id,
-                StockTagAssignment.user_token == current_user.user_token
-            ).order_by(StockTagAssignment.created_at.desc()).all()
-
-            # 최신 태그 활동 날짜
-            if tag_assignments:
-                latest_tag_date = tag_assignments[0].created_at
-
-            tags = [db.query(StockTag).filter(StockTag.id == ta.tag_id).first() for ta in tag_assignments]
+        if current_user and stock.id in tags_map:
+            latest_tag_date = latest_tag_dates.get(stock.id)
+            tags = [tags_by_id.get(ta.tag_id) for ta in tags_map[stock.id]]
             tags = [t for t in tags if t is not None]
 
         stock_data = {
+            "id": stock.id,
             "symbol": stock.symbol,
             "name": stock.name,
             "market": stock.market,
             "exchange": stock.exchange,
             "sector": stock.sector,
             "industry": stock.industry,
-
-            # 새로운 가격 정보 필드들
             "current_price": stock.current_price,
             "previous_close": stock.previous_close,
             "change_amount": stock.change_amount,
             "change_percent": stock.change_percent,
-
-            # 기업 정보 필드들
-            "face_value": stock.face_value,
             "market_cap": stock.market_cap,
-            "shares_outstanding": stock.shares_outstanding,
-            "foreign_ratio": stock.foreign_ratio,
             "trading_volume": stock.trading_volume,
-
-            # 재무 지표 필드들
             "per": stock.per,
             "roe": stock.roe,
-
-            # 순위 정보
             "market_cap_rank": stock.market_cap_rank,
-
-            "id": stock.id,
             "is_active": stock.is_active,
             "created_at": stock.created_at,
             "updated_at": stock.updated_at,
-
-            # 히스토리 데이터 상태
-            "history_records_count": history_count,
-            "history_latest_date": latest_history.date.isoformat() if latest_history else None,
-            "history_oldest_date": oldest_history.date.isoformat() if oldest_history else None,
-            "has_history_data": history_count > 0,
             "ma90_price": stock.ma90_price,
             "ma90_percentage": ma90_percentage,
-
-            # 이전 버전 호환성을 위한 필드들
-            "latest_price": latest_price.close if latest_price else stock.current_price,
-            "latest_change": latest_price.change if latest_price else stock.change_amount,
-            "latest_change_percent": latest_price.change_percent if latest_price else stock.change_percent,
-            "latest_volume": latest_price.volume if latest_price else stock.trading_volume,
-
-            # 태그 목록
             "tags": tags,
-
-            # 최신 태그 활동 날짜
             "latest_tag_date": latest_tag_date,
+
+            # 호환성을 위한 필드들 (최소화)
+            "face_value": stock.face_value,
+            "shares_outstanding": stock.shares_outstanding,
+            "foreign_ratio": stock.foreign_ratio,
+            "history_records_count": 0,
+            "history_latest_date": None,
+            "history_oldest_date": None,
+            "has_history_data": False,
+            "latest_price": stock.current_price,
+            "latest_change": stock.change_amount,
+            "latest_change_percent": stock.change_percent,
+            "latest_volume": stock.trading_volume,
         }
         stock_list.append(stock_data)
 
