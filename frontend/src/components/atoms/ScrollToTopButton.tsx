@@ -37,7 +37,7 @@ const ScrollToTopButton = React.memo(() => {
   return (
     <button
       onClick={scrollToTop}
-      className="fixed bottom-6 right-6 z-50 bg-white/80 hover:bg-white/90 text-gray-700 p-3 rounded-full shadow-lg transition-all duration-300 ease-in-out hover:shadow-xl hover:scale-110 cursor-pointer backdrop-blur-sm"
+      className="fixed bottom-6 right-6 z-50 bg-primary text-primary-foreground p-3 rounded-full shadow-lg transition-all duration-300 ease-in-out hover:shadow-2xl hover:scale-110 cursor-pointer"
       aria-label="맨 위로 이동"
     >
       <ChevronUp className="h-6 w-6" />

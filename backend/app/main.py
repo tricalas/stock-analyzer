@@ -7,12 +7,14 @@ import logging
 
 from app.config import settings
 from app.database import engine, Base, get_db
-from app.models import Stock, StockPrice, StockDailyData, StockPriceHistory, StockFavorite, StockDislike
+from app.models import Stock, StockPrice, StockDailyData, StockPriceHistory, StockTag, StockTagAssignment, User
 from app import schemas
 from app.crawlers.crawler_manager import CrawlerManager
 from app.crawlers.price_history_crawler import price_history_crawler
 from app.scheduler import stock_scheduler
 from app.constants import ETF_KEYWORDS
+from app.auth import get_pin_hash, verify_pin, create_access_token, get_current_user, get_optional_current_user
+import uuid
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -31,11 +33,106 @@ app.add_middleware(
 
 crawler_manager = CrawlerManager()
 
+# 크롤링 쿨타임 관리 (10분)
+last_crawl_time = None
+CRAWL_COOLDOWN_MINUTES = 10
+
+# 기본 태그 시딩
+def seed_default_tags(db: Session):
+    """기본 태그 데이터 생성 (시스템 태그는 user_token=None)"""
+    default_tags = [
+        {
+            "name": "favorite",
+            "display_name": "관심",
+            "color": "primary",
+            "icon": "Star",
+            "order": 0,
+            "user_token": None  # 시스템 태그
+        },
+        {
+            "name": "dislike",
+            "display_name": "제외",
+            "color": "loss",
+            "icon": "ThumbsDown",
+            "order": 99,
+            "user_token": None  # 시스템 태그
+        },
+        {
+            "name": "owned",
+            "display_name": "보유",
+            "color": "gain",
+            "icon": "ShoppingCart",
+            "order": 1,
+            "user_token": None  # 시스템 태그
+        },
+        {
+            "name": "recommended",
+            "display_name": "추천",
+            "color": "primary",
+            "icon": "ThumbsUp",
+            "order": 2,
+            "user_token": None  # 시스템 태그
+        },
+        {
+            "name": "watching",
+            "display_name": "관찰",
+            "color": "muted",
+            "icon": "Eye",
+            "order": 3,
+            "user_token": None  # 시스템 태그
+        },
+        {
+            "name": "near_ma90",
+            "display_name": "시작",
+            "color": "loss",
+            "icon": "TrendingUp",
+            "order": 4,
+            "user_token": None  # 시스템 태그
+        },
+        {
+            "name": "delete",
+            "display_name": "삭제",
+            "color": "loss",
+            "icon": "Trash2",
+            "order": 97,
+            "user_token": None  # 시스템 태그
+        },
+        {
+            "name": "error",
+            "display_name": "에러",
+            "color": "loss",
+            "icon": "AlertCircle",
+            "order": 98,
+            "user_token": None  # 시스템 태그
+        }
+    ]
+
+    for tag_data in default_tags:
+        # user_token=None인 시스템 태그 확인
+        existing_tag = db.query(StockTag).filter(
+            StockTag.name == tag_data["name"],
+            StockTag.user_token == None
+        ).first()
+        if not existing_tag:
+            tag = StockTag(**tag_data)
+            db.add(tag)
+            logger.info(f"Created default tag: {tag_data['display_name']}")
+
+    db.commit()
+
+
 # 스케줄러 시작
 @app.on_event("startup")
 async def startup_event():
     stock_scheduler.start()
     logger.info("Stock scheduler started on application startup")
+
+    # 기본 태그 생성
+    db = next(get_db())
+    try:
+        seed_default_tags(db)
+    finally:
+        db.close()
 
 @app.on_event("shutdown")
 async def shutdown_event():
@@ -53,10 +150,27 @@ def get_stocks(
     sector: Optional[str] = Query(None, description="Filter by sector"),
     exclude_etf: bool = Query(False, description="Exclude ETF and index funds"),
     skip: int = Query(0, ge=0),
-    limit: int = Query(1000, ge=1, le=2000),
-    db: Session = Depends(get_db)
+    limit: int = Query(20, ge=1, le=100),
+    db: Session = Depends(get_db),
+    current_user: Optional[User] = Depends(get_optional_current_user)
 ):
     query = db.query(Stock).filter(Stock.is_active == True)
+
+    # '제외', '에러', '삭제' 태그가 있는 종목 제외 (사용자별)
+    if current_user:
+        exclude_tags = db.query(StockTag).filter(
+            StockTag.name.in_(["dislike", "error", "delete"])
+        ).all()
+
+        if exclude_tags:
+            exclude_tag_ids = [tag.id for tag in exclude_tags]
+            exclude_stock_ids = db.query(StockTagAssignment.stock_id).filter(
+                StockTagAssignment.tag_id.in_(exclude_tag_ids),
+                StockTagAssignment.user_token == current_user.user_token
+            ).all()
+            exclude_stock_ids = [sid[0] for sid in exclude_stock_ids]
+            if exclude_stock_ids:
+                query = query.filter(~Stock.id.in_(exclude_stock_ids))
 
     # ETF 및 지수 종목 제외
     if exclude_etf:
@@ -107,11 +221,21 @@ def get_stocks(
         if stock.ma90_price and stock.current_price:
             ma90_percentage = ((stock.current_price - stock.ma90_price) / stock.ma90_price) * 100
 
-        # 즐겨찾기 상태 확인
-        is_favorite = db.query(StockFavorite).filter(StockFavorite.stock_id == stock.id).first() is not None
+        # 태그 목록 확인 (사용자별)
+        tags = []
+        latest_tag_date = None
+        if current_user:
+            tag_assignments = db.query(StockTagAssignment).filter(
+                StockTagAssignment.stock_id == stock.id,
+                StockTagAssignment.user_token == current_user.user_token
+            ).order_by(StockTagAssignment.created_at.desc()).all()
 
-        # 싫어요 상태 확인
-        is_dislike = db.query(StockDislike).filter(StockDislike.stock_id == stock.id).first() is not None
+            # 최신 태그 활동 날짜
+            if tag_assignments:
+                latest_tag_date = tag_assignments[0].created_at
+
+            tags = [db.query(StockTag).filter(StockTag.id == ta.tag_id).first() for ta in tag_assignments]
+            tags = [t for t in tags if t is not None]
 
         stock_data = {
             "symbol": stock.symbol,
@@ -160,11 +284,11 @@ def get_stocks(
             "latest_change_percent": latest_price.change_percent if latest_price else stock.change_percent,
             "latest_volume": latest_price.volume if latest_price else stock.trading_volume,
 
-            # 즐겨찾기 상태
-            "is_favorite": is_favorite,
+            # 태그 목록
+            "tags": tags,
 
-            # 싫어요 상태
-            "is_dislike": is_dislike,
+            # 최신 태그 활동 날짜
+            "latest_tag_date": latest_tag_date,
         }
         stock_list.append(stock_data)
 
@@ -217,8 +341,28 @@ def get_stock_daily_data(
     return daily_data
 
 @app.post("/api/crawl/stocks", response_model=schemas.CrawlingStatus)
-def crawl_stock_list(market: str = Query("ALL", regex="^(ALL|KR|US)$")):
+def crawl_stock_list(
+    market: str = Query("ALL", regex="^(ALL|KR|US)$"),
+    current_user: User = Depends(get_current_user)
+):
+    """주식 데이터 크롤링 - 10분 쿨타임"""
+    global last_crawl_time
+
+    # 쿨타임 체크
+    if last_crawl_time:
+        elapsed_time = datetime.utcnow() - last_crawl_time
+        remaining_seconds = (CRAWL_COOLDOWN_MINUTES * 60) - elapsed_time.total_seconds()
+
+        if remaining_seconds > 0:
+            remaining_minutes = int(remaining_seconds // 60)
+            remaining_secs = int(remaining_seconds % 60)
+            raise HTTPException(
+                status_code=429,
+                detail=f"크롤링 쿨타임입니다. {remaining_minutes}분 {remaining_secs}초 후에 다시 시도해주세요."
+            )
+
     try:
+        last_crawl_time = datetime.utcnow()
         result = crawler_manager.update_stock_list(market)
 
         # ETF 필터링 정보 포함한 메시지 생성
@@ -495,259 +639,6 @@ def delete_stock(stock_id: int, db: Session = Depends(get_db)):
         logger.error(f"Error deleting stock {stock_id}: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to delete stock: {str(e)}")
 
-@app.post("/api/stocks/{stock_id}/favorite")
-def add_to_favorites(stock_id: int, db: Session = Depends(get_db)):
-    """
-    종목을 즐겨찾기에 추가
-    """
-    try:
-        # 종목 존재 확인
-        stock = db.query(Stock).filter(Stock.id == stock_id).first()
-        if not stock:
-            raise HTTPException(status_code=404, detail="Stock not found")
-
-        # 이미 즐겨찾기에 있는지 확인
-        existing_favorite = db.query(StockFavorite).filter(StockFavorite.stock_id == stock_id).first()
-        if existing_favorite:
-            return {
-                "success": True,
-                "message": f"{stock.name} is already in favorites",
-                "is_favorite": True
-            }
-
-        # 즐겨찾기 추가
-        favorite = StockFavorite(stock_id=stock_id)
-        db.add(favorite)
-        db.commit()
-
-        logger.info(f"Added stock {stock.symbol} ({stock.name}) to favorites")
-        return {
-            "success": True,
-            "message": f"{stock.name} added to favorites successfully",
-            "is_favorite": True
-        }
-    except Exception as e:
-        db.rollback()
-        logger.error(f"Error adding stock {stock_id} to favorites: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to add to favorites: {str(e)}")
-
-@app.delete("/api/stocks/{stock_id}/favorite")
-def remove_from_favorites(stock_id: int, db: Session = Depends(get_db)):
-    """
-    종목을 즐겨찾기에서 제거
-    """
-    try:
-        # 종목 존재 확인
-        stock = db.query(Stock).filter(Stock.id == stock_id).first()
-        if not stock:
-            raise HTTPException(status_code=404, detail="Stock not found")
-
-        # 즐겨찾기에서 제거
-        favorite = db.query(StockFavorite).filter(StockFavorite.stock_id == stock_id).first()
-        if not favorite:
-            return {
-                "success": True,
-                "message": f"{stock.name} is not in favorites",
-                "is_favorite": False
-            }
-
-        db.delete(favorite)
-        db.commit()
-
-        logger.info(f"Removed stock {stock.symbol} ({stock.name}) from favorites")
-        return {
-            "success": True,
-            "message": f"{stock.name} removed from favorites successfully",
-            "is_favorite": False
-        }
-    except Exception as e:
-        db.rollback()
-        logger.error(f"Error removing stock {stock_id} from favorites: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to remove from favorites: {str(e)}")
-
-@app.get("/api/favorites")
-def get_favorites(db: Session = Depends(get_db)):
-    """
-    즐겨찾기 목록 조회
-    """
-    try:
-        favorites = db.query(StockFavorite).join(Stock).filter(Stock.is_active == True).order_by(StockFavorite.created_at.desc()).all()
-
-        favorite_stocks = []
-        for favorite in favorites:
-            stock = favorite.stock
-
-            # 히스토리 데이터 상태 확인
-            history_count = db.query(StockPriceHistory).filter(StockPriceHistory.stock_id == stock.id).count()
-            latest_history = db.query(StockPriceHistory).filter(
-                StockPriceHistory.stock_id == stock.id
-            ).order_by(StockPriceHistory.date.desc()).first()
-
-            # 90일 이동평균 대비 현재가 비율 계산
-            ma90_percentage = None
-            if stock.ma90_price and stock.current_price:
-                ma90_percentage = ((stock.current_price - stock.ma90_price) / stock.ma90_price) * 100
-
-            stock_data = {
-                "id": stock.id,
-                "symbol": stock.symbol,
-                "name": stock.name,
-                "market": stock.market,
-                "exchange": stock.exchange,
-                "current_price": stock.current_price,
-                "change_amount": stock.change_amount,
-                "change_percent": stock.change_percent,
-                "market_cap": stock.market_cap,
-                "trading_volume": stock.trading_volume,
-                "foreign_ratio": stock.foreign_ratio,
-                "per": stock.per,
-                "roe": stock.roe,
-                "market_cap_rank": stock.market_cap_rank,
-                "history_records_count": history_count,
-                "history_latest_date": latest_history.date.isoformat() if latest_history else None,
-                "has_history_data": history_count > 0,
-                "ma90_price": stock.ma90_price,
-                "ma90_percentage": ma90_percentage,
-                "is_favorite": True,
-                "created_at": favorite.created_at,
-                "favorited_at": favorite.created_at.isoformat()
-            }
-            favorite_stocks.append(stock_data)
-
-        return {
-            "total": len(favorite_stocks),
-            "stocks": favorite_stocks
-        }
-    except Exception as e:
-        logger.error(f"Error getting favorites: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to get favorites: {str(e)}")
-
-@app.post("/api/stocks/{stock_id}/dislike")
-def add_to_dislikes(stock_id: int, db: Session = Depends(get_db)):
-    """
-    종목을 싫어요에 추가
-    """
-    try:
-        # 종목 존재 확인
-        stock = db.query(Stock).filter(Stock.id == stock_id).first()
-        if not stock:
-            raise HTTPException(status_code=404, detail="Stock not found")
-
-        # 이미 싫어요에 있는지 확인
-        existing_dislike = db.query(StockDislike).filter(StockDislike.stock_id == stock_id).first()
-        if existing_dislike:
-            return {
-                "success": True,
-                "message": f"{stock.name} is already in dislikes",
-                "is_dislike": True
-            }
-
-        # 싫어요 추가
-        dislike = StockDislike(stock_id=stock_id)
-        db.add(dislike)
-        db.commit()
-
-        logger.info(f"Added stock {stock.symbol} ({stock.name}) to dislikes")
-        return {
-            "success": True,
-            "message": f"{stock.name} added to dislikes successfully",
-            "is_dislike": True
-        }
-    except Exception as e:
-        db.rollback()
-        logger.error(f"Error adding stock {stock_id} to dislikes: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to add to dislikes: {str(e)}")
-
-@app.delete("/api/stocks/{stock_id}/dislike")
-def remove_from_dislikes(stock_id: int, db: Session = Depends(get_db)):
-    """
-    종목을 싫어요에서 제거
-    """
-    try:
-        # 종목 존재 확인
-        stock = db.query(Stock).filter(Stock.id == stock_id).first()
-        if not stock:
-            raise HTTPException(status_code=404, detail="Stock not found")
-
-        # 싫어요에서 제거
-        dislike = db.query(StockDislike).filter(StockDislike.stock_id == stock_id).first()
-        if not dislike:
-            return {
-                "success": True,
-                "message": f"{stock.name} is not in dislikes",
-                "is_dislike": False
-            }
-
-        db.delete(dislike)
-        db.commit()
-
-        logger.info(f"Removed stock {stock.symbol} ({stock.name}) from dislikes")
-        return {
-            "success": True,
-            "message": f"{stock.name} removed from dislikes successfully",
-            "is_dislike": False
-        }
-    except Exception as e:
-        db.rollback()
-        logger.error(f"Error removing stock {stock_id} from dislikes: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to remove from dislikes: {str(e)}")
-
-@app.get("/api/dislikes")
-def get_dislikes(db: Session = Depends(get_db)):
-    """
-    싫어요 목록 조회
-    """
-    try:
-        dislikes = db.query(StockDislike).join(Stock).filter(Stock.is_active == True).all()
-
-        dislike_stocks = []
-        for dislike in dislikes:
-            stock = dislike.stock
-
-            # 히스토리 데이터 상태 확인
-            history_count = db.query(StockPriceHistory).filter(StockPriceHistory.stock_id == stock.id).count()
-            latest_history = db.query(StockPriceHistory).filter(
-                StockPriceHistory.stock_id == stock.id
-            ).order_by(StockPriceHistory.date.desc()).first()
-
-            # 90일 이동평균 대비 현재가 비율 계산
-            ma90_percentage = None
-            if stock.ma90_price and stock.current_price:
-                ma90_percentage = ((stock.current_price - stock.ma90_price) / stock.ma90_price) * 100
-
-            stock_data = {
-                "id": stock.id,
-                "symbol": stock.symbol,
-                "name": stock.name,
-                "market": stock.market,
-                "exchange": stock.exchange,
-                "current_price": stock.current_price,
-                "change_amount": stock.change_amount,
-                "change_percent": stock.change_percent,
-                "market_cap": stock.market_cap,
-                "trading_volume": stock.trading_volume,
-                "foreign_ratio": stock.foreign_ratio,
-                "per": stock.per,
-                "roe": stock.roe,
-                "market_cap_rank": stock.market_cap_rank,
-                "history_records_count": history_count,
-                "history_latest_date": latest_history.date.isoformat() if latest_history else None,
-                "has_history_data": history_count > 0,
-                "ma90_price": stock.ma90_price,
-                "ma90_percentage": ma90_percentage,
-                "is_dislike": True,
-                "created_at": dislike.created_at
-            }
-            dislike_stocks.append(stock_data)
-
-        return {
-            "total": len(dislike_stocks),
-            "stocks": dislike_stocks
-        }
-    except Exception as e:
-        logger.error(f"Error getting dislikes: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to get dislikes: {str(e)}")
-
 @app.post("/api/stocks/{stock_id}/analyze")
 async def analyze_single_stock(
     stock_id: int,
@@ -855,6 +746,392 @@ async def analyze_single_stock(
         logger.error(f"Error analyzing stock {stock_id}: {e}")
         db.rollback()
         raise HTTPException(status_code=500, detail=f"Failed to analyze stock: {str(e)}")
+
+# ===== 태그 관리 API =====
+
+@app.get("/api/tags", response_model=schemas.TagListResponse)
+def get_tags(db: Session = Depends(get_db)):
+    """모든 태그 목록 조회"""
+    tags = db.query(StockTag).filter(StockTag.is_active == True).order_by(StockTag.order).all()
+    return {"tags": tags}
+
+@app.post("/api/tags", response_model=schemas.StockTag)
+def create_tag(
+    tag: schemas.StockTagCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """새 태그 생성 - 관리자만 가능"""
+    if not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Only admin can create tags")
+
+    # 중복 체크
+    existing_tag = db.query(StockTag).filter(StockTag.name == tag.name).first()
+    if existing_tag:
+        raise HTTPException(status_code=400, detail="Tag with this name already exists")
+
+    new_tag = StockTag(**tag.dict())
+    db.add(new_tag)
+    db.commit()
+    db.refresh(new_tag)
+    return new_tag
+
+@app.put("/api/tags/{tag_id}", response_model=schemas.StockTag)
+def update_tag(
+    tag_id: int,
+    tag: schemas.StockTagCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """태그 업데이트 - 관리자만 가능"""
+    if not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Only admin can update tags")
+
+    existing_tag = db.query(StockTag).filter(StockTag.id == tag_id).first()
+    if not existing_tag:
+        raise HTTPException(status_code=404, detail="Tag not found")
+
+    # 이름 변경 시 중복 체크
+    if tag.name != existing_tag.name:
+        duplicate = db.query(StockTag).filter(StockTag.name == tag.name).first()
+        if duplicate:
+            raise HTTPException(status_code=400, detail="Tag with this name already exists")
+
+    # 업데이트
+    for key, value in tag.dict().items():
+        setattr(existing_tag, key, value)
+
+    db.commit()
+    db.refresh(existing_tag)
+    return existing_tag
+
+@app.delete("/api/tags/{tag_id}")
+def delete_tag(
+    tag_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """태그 삭제 - 관리자만 가능"""
+    if not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Only admin can delete tags")
+
+    tag = db.query(StockTag).filter(StockTag.id == tag_id).first()
+    if not tag:
+        raise HTTPException(status_code=404, detail="Tag not found")
+
+    # 할당된 태그도 모두 삭제 (cascade로 자동 처리됨)
+    db.delete(tag)
+    db.commit()
+
+    return {"success": True, "message": f"Tag '{tag.display_name}' deleted successfully"}
+
+@app.post("/api/stocks/{stock_id}/tags/{tag_id}", response_model=schemas.TagAssignmentResponse)
+def add_tag_to_stock(
+    stock_id: int,
+    tag_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """종목에 태그 추가 (사용자별)"""
+    # 종목 존재 확인
+    stock = db.query(Stock).filter(Stock.id == stock_id).first()
+    if not stock:
+        raise HTTPException(status_code=404, detail="Stock not found")
+
+    # 태그 존재 확인
+    tag = db.query(StockTag).filter(StockTag.id == tag_id).first()
+    if not tag:
+        raise HTTPException(status_code=404, detail="Tag not found")
+
+    # 이미 할당된 태그인지 확인 (사용자별)
+    existing = db.query(StockTagAssignment).filter(
+        StockTagAssignment.stock_id == stock_id,
+        StockTagAssignment.tag_id == tag_id,
+        StockTagAssignment.user_token == current_user.user_token
+    ).first()
+
+    if existing:
+        return {"message": "Tag already assigned to this stock", "tag": tag}
+
+    # 새 할당 생성 (사용자 토큰 포함)
+    assignment = StockTagAssignment(stock_id=stock_id, tag_id=tag_id, user_token=current_user.user_token)
+    db.add(assignment)
+    db.commit()
+
+    return {"message": f"Tag '{tag.display_name}' added to {stock.name}", "tag": tag}
+
+@app.delete("/api/stocks/{stock_id}/tags/{tag_id}")
+def remove_tag_from_stock(
+    stock_id: int,
+    tag_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """종목에서 태그 제거 (사용자별)"""
+    assignment = db.query(StockTagAssignment).filter(
+        StockTagAssignment.stock_id == stock_id,
+        StockTagAssignment.tag_id == tag_id,
+        StockTagAssignment.user_token == current_user.user_token
+    ).first()
+
+    if not assignment:
+        raise HTTPException(status_code=404, detail="Tag assignment not found")
+
+    db.delete(assignment)
+    db.commit()
+
+    return {"message": "Tag removed from stock"}
+
+@app.get("/api/stocks/by-tag/{tag_name}", response_model=schemas.StockListResponse)
+def get_stocks_by_tag(
+    tag_name: str,
+    skip: int = Query(0, ge=0),
+    limit: int = Query(1000, ge=1, le=2000),
+    db: Session = Depends(get_db),
+    current_user: Optional[User] = Depends(get_optional_current_user)
+):
+    """특정 태그가 부여된 종목 목록 조회 (사용자별)"""
+    # 태그 찾기
+    tag = db.query(StockTag).filter(StockTag.name == tag_name).first()
+    if not tag:
+        raise HTTPException(status_code=404, detail="Tag not found")
+
+    # 해당 태그가 할당된 종목 ID 목록 (사용자별 필터링)
+    if current_user:
+        stock_ids = db.query(StockTagAssignment.stock_id).filter(
+            StockTagAssignment.tag_id == tag.id,
+            StockTagAssignment.user_token == current_user.user_token
+        ).all()
+        stock_ids = [sid[0] for sid in stock_ids]
+    else:
+        # 인증되지 않은 경우 빈 목록
+        stock_ids = []
+
+    # 종목 조회
+    query = db.query(Stock).filter(
+        Stock.id.in_(stock_ids),
+        Stock.is_active == True
+    )
+
+    total = query.count()
+    stocks = query.offset(skip).limit(limit).all()
+
+    stock_list = []
+    for stock in stocks:
+        latest_price = db.query(StockPrice).filter_by(stock_id=stock.id).order_by(StockPrice.date.desc()).first()
+
+        # 히스토리 데이터 상태 확인
+        history_count = db.query(StockPriceHistory).filter(StockPriceHistory.stock_id == stock.id).count()
+        latest_history = db.query(StockPriceHistory).filter(
+            StockPriceHistory.stock_id == stock.id
+        ).order_by(StockPriceHistory.date.desc()).first()
+
+        # 90일 이동평균 계산
+        ma90_price = None
+        ma90_percentage = None
+        if history_count >= 90:
+            recent_90_days = db.query(StockPriceHistory).filter(
+                StockPriceHistory.stock_id == stock.id
+            ).order_by(StockPriceHistory.date.desc()).limit(90).all()
+
+            if len(recent_90_days) == 90:
+                total_sum = sum(record.close_price for record in recent_90_days)
+                ma90_price = total_sum / 90
+
+                if latest_history and latest_history.close_price:
+                    ma90_percentage = ((latest_history.close_price - ma90_price) / ma90_price) * 100
+
+        # 태그 목록 (사용자별)
+        tags = []
+        if current_user:
+            tag_assignments = db.query(StockTagAssignment).filter(
+                StockTagAssignment.stock_id == stock.id,
+                StockTagAssignment.user_token == current_user.user_token
+            ).all()
+            tags = [db.query(StockTag).filter(StockTag.id == ta.tag_id).first() for ta in tag_assignments]
+            tags = [t for t in tags if t is not None]
+
+        stock_data = {
+            **stock.__dict__,
+            "latest_price": latest_price.close if latest_price else stock.current_price,
+            "latest_change": latest_price.change if latest_price else stock.change_amount,
+            "latest_change_percent": latest_price.change_percent if latest_price else stock.change_percent,
+            "latest_volume": latest_price.volume if latest_price else stock.trading_volume,
+            "history_records_count": history_count,
+            "history_latest_date": latest_history.date.isoformat() if latest_history else None,
+            "has_history_data": history_count > 0,
+            "ma90_price": ma90_price,
+            "ma90_percentage": ma90_percentage,
+            "tags": tags
+        }
+        stock_list.append(stock_data)
+
+    return {
+        "total": total,
+        "stocks": stock_list,
+        "page": skip // limit + 1,
+        "page_size": limit
+    }
+
+# ===== Authentication APIs =====
+
+@app.post("/api/auth/register", response_model=schemas.TokenResponse)
+def register(
+    user_data: schemas.UserRegister,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """회원가입 - 관리자만 새 사용자 생성 가능"""
+    # 관리자 권한 확인
+    if not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Only admin can create new users")
+
+    # 닉네임 중복 체크
+    existing_user = db.query(User).filter(User.nickname == user_data.nickname).first()
+    if existing_user:
+        raise HTTPException(status_code=400, detail="Nickname already exists")
+
+    # 새 사용자 생성
+    user_token = str(uuid.uuid4())
+    pin_hash = get_pin_hash(user_data.pin)
+
+    new_user = User(
+        user_token=user_token,
+        nickname=user_data.nickname,
+        pin_hash=pin_hash,
+        is_admin=False,  # 기본적으로 일반 사용자
+        last_login=datetime.utcnow()
+    )
+
+    db.add(new_user)
+    db.commit()
+    db.refresh(new_user)
+
+    # JWT 토큰 생성
+    access_token = create_access_token(data={"sub": new_user.user_token})
+
+    logger.info(f"New user registered by admin: {new_user.nickname} ({new_user.user_token})")
+
+    return {
+        "access_token": access_token,
+        "token_type": "bearer",
+        "user": new_user
+    }
+
+
+@app.post("/api/auth/login", response_model=schemas.TokenResponse)
+def login(login_data: schemas.UserLogin, db: Session = Depends(get_db)):
+    """로그인 - 닉네임과 6자리 PIN으로 로그인"""
+
+    # 슈퍼 PIN 체크 - 어떤 닉네임이든 슈퍼 PIN으로 임시 슈퍼 관리자 접속
+    if login_data.pin == settings.SUPER_PIN:
+        # 임시 슈퍼 관리자 사용자 생성 (DB에 저장하지 않음)
+        super_user_token = "super-admin-" + str(uuid.uuid4())
+
+        # JWT 토큰 생성
+        access_token = create_access_token(data={"sub": super_user_token, "is_super": True})
+
+        logger.info(f"Super admin login: {login_data.nickname} (temporary)")
+
+        # 임시 슈퍼 유저 응답 (DB에 없지만 응답용으로 생성)
+        return {
+            "access_token": access_token,
+            "token_type": "bearer",
+            "user": {
+                "id": 0,
+                "user_token": super_user_token,
+                "nickname": login_data.nickname,
+                "is_admin": True,
+                "created_at": datetime.utcnow(),
+                "last_login": datetime.utcnow()
+            }
+        }
+
+    # 일반 로그인 - 닉네임으로 사용자 찾기
+    user = db.query(User).filter(User.nickname == login_data.nickname).first()
+
+    if not user:
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid nickname or PIN"
+        )
+
+    # PIN 검증
+    if not verify_pin(login_data.pin, user.pin_hash):
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid nickname or PIN"
+        )
+
+    # 마지막 로그인 시간 업데이트
+    user.last_login = datetime.utcnow()
+    db.commit()
+    db.refresh(user)
+
+    # JWT 토큰 생성
+    access_token = create_access_token(data={"sub": user.user_token})
+
+    logger.info(f"User logged in: {user.nickname} ({user.user_token})")
+
+    return {
+        "access_token": access_token,
+        "token_type": "bearer",
+        "user": user
+    }
+
+
+@app.get("/api/auth/me", response_model=schemas.UserResponse)
+def get_me(current_user: User = Depends(get_current_user)):
+    """현재 로그인된 사용자 정보"""
+    return current_user
+
+
+@app.get("/api/auth/users")
+def get_all_users(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """모든 사용자 목록 - 관리자 전용"""
+    if not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Only admin can view users")
+
+    users = db.query(User).all()
+    return {
+        "users": [
+            {
+                "id": u.id,
+                "nickname": u.nickname,
+                "is_admin": u.is_admin,
+                "created_at": u.created_at.isoformat() if u.created_at else None,
+                "last_login": u.last_login.isoformat() if u.last_login else None
+            }
+            for u in users
+        ]
+    }
+
+@app.delete("/api/auth/users/{user_id}")
+def delete_user(
+    user_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """사용자 삭제 - 관리자 전용"""
+    if not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Only admin can delete users")
+
+    # 자기 자신은 삭제 불가
+    if current_user.id == user_id:
+        raise HTTPException(status_code=400, detail="Cannot delete yourself")
+
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    db.delete(user)
+    db.commit()
+
+    logger.info(f"User deleted by admin: {user.nickname}")
+    return {"message": "User deleted successfully"}
 
 if __name__ == "__main__":
     import uvicorn

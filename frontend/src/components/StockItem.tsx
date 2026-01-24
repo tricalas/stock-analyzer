@@ -1,9 +1,10 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { Stock, stockApi } from '@/lib/api';
-import { ArrowUpIcon, ArrowDownIcon, BarChart3, TrendingUp, LineChart, Trash2, Star, ThumbsDown } from 'lucide-react';
+import { Stock, stockApi, Tag } from '@/lib/api';
+import { ArrowUpIcon, ArrowDownIcon, BarChart3, TrendingUp, LineChart, Trash2, Star, ThumbsDown, ShoppingCart, ThumbsUp, Eye, AlertCircle } from 'lucide-react';
 import { toast } from 'sonner';
+import { useTags } from '@/contexts/TagContext';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -30,23 +31,17 @@ interface StockItemProps {
 const StockItem = React.memo<StockItemProps>(({ stock, rank, onStockClick, onShowChart, onStockDeleted, onFavoriteChanged, onDislikeChanged }) => {
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
-  const [isFavoriting, setIsFavoriting] = useState(false);
-  const [isFavorite, setIsFavorite] = useState(stock.is_favorite || false);
-  const [isDisliking, setIsDisliking] = useState(false);
-  const [isDislike, setIsDislike] = useState(stock.is_dislike || false);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [showAnalysisModal, setShowAnalysisModal] = useState(false);
   const [analysisResult, setAnalysisResult] = useState<any>(null);
+  const { tags: availableTags } = useTags();
+  const [stockTags, setStockTags] = useState<Tag[]>(stock.tags || []);
+  const [togglingTags, setTogglingTags] = useState<Set<number>>(new Set());
 
-  // stock.is_favorite prop이 변경될 때마다 상태 동기화
+  // Sync stock tags when stock.tags changes
   useEffect(() => {
-    setIsFavorite(stock.is_favorite || false);
-  }, [stock.is_favorite]);
-
-  // stock.is_dislike prop이 변경될 때마다 상태 동기화
-  useEffect(() => {
-    setIsDislike(stock.is_dislike || false);
-  }, [stock.is_dislike]);
+    setStockTags(stock.tags || []);
+  }, [stock.tags]);
 
   const handleHistoryCrawl = async (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -99,59 +94,41 @@ const StockItem = React.memo<StockItemProps>(({ stock, rank, onStockClick, onSho
     }
   };
 
-  const handleToggleFavorite = async (e: React.MouseEvent) => {
+  const handleToggleTag = async (e: React.MouseEvent, tag: Tag) => {
     e.stopPropagation();
-    setIsFavoriting(true);
 
-    try {
-      let result;
-      const newFavoriteStatus = !isFavorite;
-
-      if (newFavoriteStatus) {
-        result = await stockApi.addToFavorites(stock.id);
-      } else {
-        result = await stockApi.removeFromFavorites(stock.id);
-      }
-
-      setIsFavorite(newFavoriteStatus);
-      onFavoriteChanged?.(stock.id, newFavoriteStatus);
-
-      toast.success(result.message || `${stock.name} ${newFavoriteStatus ? '즐겨찾기 추가' : '즐겨찾기 제거'} 완료!`);
-    } catch (error) {
-      console.error(`Error toggling favorite for ${stock.symbol}:`, error);
-      toast.error(`${stock.name} 즐겨찾기 ${isFavorite ? '제거' : '추가'} 실패`, {
-        description: '요청 중 오류가 발생했습니다.'
-      });
-    } finally {
-      setIsFavoriting(false);
+    // Check if this tag is already being toggled
+    if (togglingTags.has(tag.id)) {
+      return;
     }
-  };
 
-  const handleToggleDislike = async (e: React.MouseEvent) => {
-    e.stopPropagation();
-    setIsDisliking(true);
+    const hasTag = stockTags.some(t => t.id === tag.id);
+
+    // Add to toggling set
+    setTogglingTags(prev => new Set(prev).add(tag.id));
 
     try {
-      let result;
-      const newDislikeStatus = !isDislike;
-
-      if (newDislikeStatus) {
-        result = await stockApi.addToDislikes(stock.id);
+      if (hasTag) {
+        await stockApi.removeTagFromStock(stock.id, tag.id);
+        setStockTags(prev => prev.filter(t => t.id !== tag.id));
+        toast.success(`${tag.display_name} 태그 제거 완료!`);
       } else {
-        result = await stockApi.removeFromDislikes(stock.id);
+        await stockApi.addTagToStock(stock.id, tag.id);
+        setStockTags(prev => [...prev, tag]);
+        toast.success(`${tag.display_name} 태그 추가 완료!`);
       }
-
-      setIsDislike(newDislikeStatus);
-      onDislikeChanged?.(stock.id, newDislikeStatus);
-
-      toast.success(result.message || `${stock.name} ${newDislikeStatus ? '싫어요 추가' : '싫어요 제거'} 완료!`);
     } catch (error) {
-      console.error(`Error toggling dislike for ${stock.symbol}:`, error);
-      toast.error(`${stock.name} 싫어요 ${isDislike ? '제거' : '추가'} 실패`, {
+      console.error(`Error toggling tag ${tag.name} for ${stock.symbol}:`, error);
+      toast.error(`${tag.display_name} 태그 ${hasTag ? '제거' : '추가'} 실패`, {
         description: '요청 중 오류가 발생했습니다.'
       });
     } finally {
-      setIsDisliking(false);
+      // Remove from toggling set
+      setTogglingTags(prev => {
+        const next = new Set(prev);
+        next.delete(tag.id);
+        return next;
+      });
     }
   };
 
@@ -176,6 +153,39 @@ const StockItem = React.memo<StockItemProps>(({ stock, rank, onStockClick, onSho
     } finally {
       setIsAnalyzing(false);
     }
+  };
+
+  const getTagIcon = (iconName?: string) => {
+    const iconProps = { className: "h-3.5 w-3.5" };
+    switch (iconName) {
+      case 'Star':
+        return <Star {...iconProps} />;
+      case 'ThumbsDown':
+        return <ThumbsDown {...iconProps} />;
+      case 'ShoppingCart':
+        return <ShoppingCart {...iconProps} />;
+      case 'ThumbsUp':
+        return <ThumbsUp {...iconProps} />;
+      case 'Eye':
+        return <Eye {...iconProps} />;
+      case 'TrendingUp':
+        return <TrendingUp {...iconProps} />;
+      case 'AlertCircle':
+        return <AlertCircle {...iconProps} />;
+      case 'Trash2':
+        return <Trash2 {...iconProps} />;
+      default:
+        return null;
+    }
+  };
+
+  const getTagColorClass = (color?: string, isActive?: boolean) => {
+    // 기본 버튼 스타일 (선택 안 됨) - 흰색
+    if (!isActive) {
+      return 'bg-card text-foreground border-border hover:bg-muted/50';
+    }
+    // 선택됨 - 보라색
+    return 'bg-purple-600 text-white border-purple-600 hover:bg-purple-700';
   };
 
   const formatNumber = (num?: number) => {
@@ -208,69 +218,44 @@ const StockItem = React.memo<StockItemProps>(({ stock, rank, onStockClick, onSho
   };
 
   const getPriceColorClass = (changePercent?: number) => {
-    if (!changePercent) return 'text-gray-900';
+    if (!changePercent) return 'text-foreground';
 
     if (changePercent >= 3) {
-      return 'bg-red-500 text-white px-1 rounded font-bold';
+      return 'bg-gain text-gain-foreground px-2 py-0.5 rounded font-bold';
     } else if (changePercent <= -3) {
-      return 'bg-blue-500 text-white px-1 rounded';
+      return 'bg-loss text-loss-foreground px-2 py-0.5 rounded font-bold';
     } else if (changePercent > 0) {
-      return 'text-red-500 font-bold';
+      return 'text-gain font-semibold';
     } else if (changePercent < 0) {
-      return 'text-blue-600';
+      return 'text-loss font-semibold';
     }
-    return 'text-gray-900';
+    return 'text-foreground';
   };
 
   const getChangeColorClass = (changeValue?: number, changePercent?: number) => {
-    if (!changeValue && !changePercent) return 'text-gray-500';
+    if (!changeValue && !changePercent) return 'text-muted-foreground';
 
     const percent = changePercent || 0;
     if (percent >= 3) {
-      return 'bg-red-500 text-white px-1 rounded font-bold';
+      return 'bg-gain text-gain-foreground px-2 py-0.5 rounded font-bold';
     } else if (percent <= -3) {
-      return 'bg-blue-500 text-white px-1 rounded';
+      return 'bg-loss text-loss-foreground px-2 py-0.5 rounded font-bold';
     } else if (percent > 0) {
-      return 'text-red-500 font-bold';
+      return 'text-gain font-semibold';
     } else if (percent < 0) {
-      return 'text-blue-600';
+      return 'text-loss font-semibold';
     }
-    return 'text-gray-500';
+    return 'text-muted-foreground';
   };
 
   return (
     <>
       <tr
-        className="hover:bg-gray-50 cursor-pointer"
+        className="hover:bg-muted/50 cursor-pointer transition-colors duration-150 group"
         onClick={() => onStockClick?.(stock)}
       >
-      {/* 순위 */}
-      <td className="px-3 py-4 whitespace-nowrap text-sm text-center text-gray-900 font-medium">
-        {rank || '-'}
-      </td>
-
-      {/* 즐겨찾기 */}
-      <td className="px-3 py-4 whitespace-nowrap text-sm text-center">
-        <button
-          onClick={handleToggleFavorite}
-          disabled={isFavoriting}
-          className={`w-6 h-6 rounded-full flex items-center justify-center cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed ${
-            isFavorite
-              ? 'text-yellow-500 hover:text-yellow-600'
-              : 'text-gray-300 hover:text-gray-500'
-          }`}
-          title={isFavorite ? "즐겨찾기 제거" : "즐겨찾기 추가"}
-        >
-          {isFavoriting ? (
-            <div className="h-4 w-4 animate-spin rounded-full border border-current border-t-transparent"></div>
-          ) : (
-            <Star className={`h-4 w-4 ${isFavorite ? 'fill-current' : ''}`} />
-          )}
-        </button>
-      </td>
-
       {/* 종목명 */}
-      <td className="px-3 py-4 whitespace-nowrap">
+      <td className="px-6 py-4 whitespace-nowrap">
         <div>
           <div className="text-sm font-medium flex items-center space-x-2">
             <a
@@ -280,7 +265,7 @@ const StockItem = React.memo<StockItemProps>(({ stock, rank, onStockClick, onSho
               }
               target="_blank"
               rel="noopener noreferrer"
-              className="text-gray-900 font-bold hover:text-gray-700 hover:underline cursor-pointer"
+              className="text-foreground font-bold hover:text-primary hover:underline cursor-pointer transition-colors"
               onClick={(e) => e.stopPropagation()}
             >
               {stock.name}
@@ -292,7 +277,7 @@ const StockItem = React.memo<StockItemProps>(({ stock, rank, onStockClick, onSho
               }
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex items-center px-1.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800 hover:bg-green-200 cursor-pointer"
+              className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-primary/10 text-primary hover:bg-primary/20 cursor-pointer transition-colors"
               onClick={(e) => e.stopPropagation()}
               title="차트 보기"
             >
@@ -300,22 +285,25 @@ const StockItem = React.memo<StockItemProps>(({ stock, rank, onStockClick, onSho
               차트
             </a>
           </div>
-          <div className="text-xs text-gray-500">
+          <div className="text-xs text-muted-foreground">
             {stock.symbol}
             {stock.history_latest_date && (
-              <span className="ml-2 text-gray-400">
+              <span className="ml-2 text-muted-foreground/60">
                 | 최신: {new Date(stock.history_latest_date).toLocaleDateString('ko-KR')}
+              </span>
+            )}
+            {stock.latest_tag_date && (
+              <span className="ml-2 text-primary/70 text-[10px]">
+                | 📌 {new Date(stock.latest_tag_date).toLocaleDateString('ko-KR', {
+                  month: 'short',
+                  day: 'numeric',
+                  hour: '2-digit',
+                  minute: '2-digit'
+                })}
               </span>
             )}
           </div>
         </div>
-      </td>
-
-      {/* 현재가 */}
-      <td className="px-3 py-4 whitespace-nowrap text-sm text-right font-medium">
-        <span className={getPriceColorClass(stock.change_percent || stock.latest_change_percent)}>
-          {formatNumber(stock.current_price || stock.latest_price)}
-        </span>
       </td>
 
       {/* 전일비 */}
@@ -343,74 +331,68 @@ const StockItem = React.memo<StockItemProps>(({ stock, rank, onStockClick, onSho
         </span>
       </td>
 
-      {/* 시가총액 */}
-      <td className="px-3 py-4 whitespace-nowrap text-sm text-right text-gray-900">
+      {/* 시총 */}
+      <td className="px-3 py-4 whitespace-nowrap text-sm text-right text-foreground font-mono">
         {formatMarketCap(stock.market_cap)}
-      </td>
-
-      {/* 거래량 */}
-      <td className="px-3 py-4 whitespace-nowrap text-sm text-right text-gray-500">
-        {formatNumber(stock.trading_volume || stock.latest_volume)}
-      </td>
-
-      {/* 90일선 대비 */}
-      <td className="px-3 py-4 whitespace-nowrap text-sm text-right">
-        {stock.ma90_percentage !== undefined && stock.ma90_percentage !== null ? (
-          <span className={`font-medium ${
-            stock.ma90_percentage > 0 ? 'text-red-600' : stock.ma90_percentage < 0 ? 'text-blue-600' : 'text-gray-500'
-          }`}>
-            {stock.ma90_percentage > 0 ? '+' : ''}{stock.ma90_percentage.toFixed(1)}%
-          </span>
-        ) : (
-          <span className="text-gray-400">-</span>
-        )}
       </td>
 
       {/* 거래소 */}
       <td className="px-3 py-4 whitespace-nowrap text-center">
-        <span className={`px-2 py-1 rounded-full text-xs ${
+        <span className={`px-2 py-1 rounded-full text-xs font-medium ${
           stock.exchange === 'KOSPI'
-            ? 'bg-blue-100 text-blue-800'
+            ? 'bg-primary/10 text-primary'
             : stock.exchange === 'KOSDAQ'
-            ? 'bg-green-100 text-green-800'
+            ? 'bg-gain/10 text-gain'
             : stock.market === 'US'
-            ? 'bg-purple-100 text-purple-800'
-            : 'bg-gray-100 text-gray-800'
+            ? 'bg-secondary text-secondary-foreground'
+            : 'bg-muted text-muted-foreground'
         }`}>
           {stock.exchange || stock.market}
         </span>
       </td>
 
-      {/* 분석 */}
-      <td className="px-3 py-4 whitespace-nowrap text-center">
-        <button
-          onClick={handleAnalyze}
-          disabled={isAnalyzing}
-          className="inline-flex items-center px-2 py-1 rounded-md text-xs font-medium bg-blue-100 text-blue-800 hover:bg-blue-200 disabled:bg-gray-300 disabled:text-gray-500 disabled:cursor-not-allowed cursor-pointer"
-          title="단일 종목 분석"
-        >
-          {isAnalyzing ? (
-            <div className="h-3 w-3 animate-spin rounded-full border border-current border-t-transparent"></div>
-          ) : (
-            <TrendingUp className="h-3 w-3" />
-          )}
-        </button>
+      {/* 태그 */}
+      <td className="px-3 py-4 text-center">
+        {availableTags.length > 0 && (
+          <div className="flex flex-wrap gap-1.5 justify-center">
+            {availableTags.map((tag) => {
+              const hasTag = stockTags.some(t => t.id === tag.id);
+              const isToggling = togglingTags.has(tag.id);
+              return (
+                <button
+                  key={tag.id}
+                  onClick={(e) => handleToggleTag(e, tag)}
+                  disabled={isToggling}
+                  className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-semibold border transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer ${getTagColorClass(tag.color, hasTag)}`}
+                  title={hasTag ? `${tag.display_name} 제거` : `${tag.display_name} 추가`}
+                >
+                  {isToggling ? (
+                    <div className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-current border-t-transparent"></div>
+                  ) : (
+                    getTagIcon(tag.icon)
+                  )}
+                  <span>{tag.display_name}</span>
+                </button>
+              );
+            })}
+          </div>
+        )}
       </td>
     </tr>
 
     {/* 분석 결과 모달 */}
     {showAnalysisModal && analysisResult && (
-      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" onClick={() => setShowAnalysisModal(false)}>
-        <div className="bg-white rounded-lg p-6 max-w-4xl w-full mx-4 max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+      <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50" onClick={() => setShowAnalysisModal(false)}>
+        <div className="bg-card border border-border rounded-xl shadow-2xl p-6 max-w-4xl w-full mx-4 max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
           {/* 헤더 */}
           <div className="flex justify-between items-start mb-6">
             <div>
-              <h2 className="text-2xl font-bold text-gray-900">{stock.name} ({stock.symbol})</h2>
-              <p className="text-sm text-gray-500 mt-1">분석 결과</p>
+              <h2 className="text-2xl font-bold text-foreground">{stock.name} ({stock.symbol})</h2>
+              <p className="text-sm text-muted-foreground mt-1">분석 결과</p>
             </div>
             <button
               onClick={() => setShowAnalysisModal(false)}
-              className="text-gray-400 hover:text-gray-600 text-2xl leading-none"
+              className="text-muted-foreground hover:text-foreground text-2xl leading-none transition-colors"
             >
               ×
             </button>
@@ -418,31 +400,31 @@ const StockItem = React.memo<StockItemProps>(({ stock, rank, onStockClick, onSho
 
           {/* 통계 요약 */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-            <div className="bg-blue-50 rounded-lg p-4">
-              <p className="text-sm text-blue-600 font-medium">새로운 데이터</p>
-              <p className="text-3xl font-bold text-blue-900 mt-1">{analysisResult.stats.new_records}건</p>
+            <div className="bg-primary/10 border border-primary/20 rounded-lg p-4">
+              <p className="text-sm text-primary font-semibold">새로운 데이터</p>
+              <p className="text-3xl font-bold text-primary mt-1 font-mono">{analysisResult.stats.new_records}건</p>
             </div>
-            <div className="bg-gray-50 rounded-lg p-4">
-              <p className="text-sm text-gray-600 font-medium">중복 데이터</p>
-              <p className="text-3xl font-bold text-gray-900 mt-1">{analysisResult.stats.duplicate_records}건</p>
+            <div className="bg-muted/50 border border-border rounded-lg p-4">
+              <p className="text-sm text-muted-foreground font-semibold">중복 데이터</p>
+              <p className="text-3xl font-bold text-foreground mt-1 font-mono">{analysisResult.stats.duplicate_records}건</p>
             </div>
-            <div className="bg-green-50 rounded-lg p-4">
-              <p className="text-sm text-green-600 font-medium">전체 레코드</p>
-              <p className="text-3xl font-bold text-green-900 mt-1">{analysisResult.total_records}건</p>
+            <div className="bg-gain/10 border border-gain/20 rounded-lg p-4">
+              <p className="text-sm text-gain font-semibold">전체 레코드</p>
+              <p className="text-3xl font-bold text-gain mt-1 font-mono">{analysisResult.total_records}건</p>
             </div>
           </div>
 
           {/* 상세 정보 */}
-          <div className="border-t pt-4">
-            <h3 className="text-lg font-semibold text-gray-900 mb-3">상세 정보</h3>
+          <div className="border-t border-border pt-4">
+            <h3 className="text-lg font-semibold text-foreground mb-3">상세 정보</h3>
             <div className="space-y-2 text-sm">
-              <div className="flex justify-between py-2 border-b">
-                <span className="text-gray-600">종목 코드</span>
-                <span className="font-medium text-gray-900">{analysisResult.symbol}</span>
+              <div className="flex justify-between py-2 border-b border-border/50">
+                <span className="text-muted-foreground">종목 코드</span>
+                <span className="font-semibold text-foreground font-mono">{analysisResult.symbol}</span>
               </div>
-              <div className="flex justify-between py-2 border-b">
-                <span className="text-gray-600">최신 업데이트</span>
-                <span className="font-medium text-gray-900">
+              <div className="flex justify-between py-2 border-b border-border/50">
+                <span className="text-muted-foreground">최신 업데이트</span>
+                <span className="font-medium text-foreground">
                   {analysisResult.latest_update_date ? new Date(analysisResult.latest_update_date).toLocaleDateString('ko-KR', {
                     year: 'numeric',
                     month: 'long',
@@ -450,37 +432,37 @@ const StockItem = React.memo<StockItemProps>(({ stock, rank, onStockClick, onSho
                   }) : '-'}
                 </span>
               </div>
-              <div className="flex justify-between py-2 border-b">
-                <span className="text-gray-600">현재가</span>
-                <span className="font-medium text-gray-900">{stock.current_price ? `$${formatNumber(stock.current_price)}` : '-'}</span>
+              <div className="flex justify-between py-2 border-b border-border/50">
+                <span className="text-muted-foreground">현재가</span>
+                <span className="font-semibold text-foreground font-mono">{stock.current_price ? `$${formatNumber(stock.current_price)}` : '-'}</span>
               </div>
-              <div className="flex justify-between py-2 border-b">
-                <span className="text-gray-600">변동률</span>
-                <span className={`font-medium ${
-                  (stock.change_percent || 0) > 0 ? 'text-red-600' :
-                  (stock.change_percent || 0) < 0 ? 'text-blue-600' :
-                  'text-gray-600'
+              <div className="flex justify-between py-2 border-b border-border/50">
+                <span className="text-muted-foreground">변동률</span>
+                <span className={`font-semibold font-mono ${
+                  (stock.change_percent || 0) > 0 ? 'text-gain' :
+                  (stock.change_percent || 0) < 0 ? 'text-loss' :
+                  'text-muted-foreground'
                 }`}>
                   {stock.change_percent ? `${stock.change_percent > 0 ? '+' : ''}${stock.change_percent.toFixed(2)}%` : '-'}
                 </span>
               </div>
-              <div className="flex justify-between py-2 border-b">
-                <span className="text-gray-600">시가총액</span>
-                <span className="font-medium text-gray-900">
+              <div className="flex justify-between py-2 border-b border-border/50">
+                <span className="text-muted-foreground">시총</span>
+                <span className="font-semibold text-foreground font-mono">
                   {stock.market_cap ? `$${formatNumber(Math.round(stock.market_cap / 1000))}B` : '-'}
                 </span>
               </div>
               <div className="flex justify-between py-2">
-                <span className="text-gray-600">거래소</span>
-                <span className="font-medium text-gray-900">{stock.exchange || '-'}</span>
+                <span className="text-muted-foreground">거래소</span>
+                <span className="font-medium text-foreground">{stock.exchange || '-'}</span>
               </div>
             </div>
           </div>
 
           {/* 메시지 */}
           {analysisResult.message && (
-            <div className="mt-6 bg-gray-50 rounded-lg p-4">
-              <p className="text-sm text-gray-700">{analysisResult.message}</p>
+            <div className="mt-6 bg-muted/50 border border-border rounded-lg p-4">
+              <p className="text-sm text-foreground">{analysisResult.message}</p>
             </div>
           )}
 
@@ -488,7 +470,7 @@ const StockItem = React.memo<StockItemProps>(({ stock, rank, onStockClick, onSho
           <div className="mt-6 flex justify-end">
             <button
               onClick={() => setShowAnalysisModal(false)}
-              className="px-6 py-2 bg-gray-900 text-white rounded-lg hover:bg-gray-800 transition-colors"
+              className="px-6 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-all duration-200 font-medium"
             >
               닫기
             </button>

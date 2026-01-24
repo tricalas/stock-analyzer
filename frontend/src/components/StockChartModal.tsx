@@ -119,27 +119,29 @@ const StockChartModal: React.FC<StockChartModalProps> = ({ stock, isOpen, onClos
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       {/* 배경 오버레이 */}
       <div
-        className="fixed inset-0 bg-black bg-opacity-50 transition-opacity"
+        className="fixed inset-0 bg-black/60 backdrop-blur-sm transition-opacity"
         onClick={onClose}
       ></div>
 
       {/* 모달 컨텐츠 */}
-      <div className="relative bg-white rounded-xl shadow-2xl max-w-5xl w-full max-h-[90vh] overflow-y-auto transform transition-all">
+      <div className="relative bg-card border border-border rounded-xl shadow-2xl max-w-5xl w-full max-h-[90vh] overflow-y-auto transform transition-all">
         {/* Header */}
-        <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 z-10">
+        <div className="sticky top-0 bg-card border-b border-border px-6 py-4 z-10 backdrop-blur-sm">
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-3">
-              <TrendingUp className="h-6 w-6 text-blue-600" />
+              <div className="h-10 w-10 bg-primary/10 rounded-lg flex items-center justify-center">
+                <TrendingUp className="h-5 w-5 text-primary" />
+              </div>
               <div>
-                <h3 className="text-lg font-medium text-gray-900">
+                <h3 className="text-lg font-semibold text-foreground">
                   {stock.name} ({stock.symbol})
                 </h3>
-                <p className="text-sm text-gray-500">가격 역사</p>
+                <p className="text-sm text-muted-foreground">가격 역사</p>
               </div>
             </div>
             <button
               onClick={onClose}
-              className="bg-white rounded-md text-gray-400 hover:text-gray-600 focus:outline-none p-2 hover:bg-gray-100 transition-colors"
+              className="bg-muted rounded-lg text-muted-foreground hover:text-foreground focus:outline-none p-2 hover:bg-muted/80 transition-colors"
             >
               <X className="h-5 w-5" />
             </button>
@@ -151,16 +153,16 @@ const StockChartModal: React.FC<StockChartModalProps> = ({ stock, isOpen, onClos
 
             {/* Period Selector */}
             <div className="flex items-center space-x-2 mb-4">
-              <Calendar className="h-4 w-4 text-gray-500" />
-              <span className="text-sm text-gray-600">기간:</span>
+              <Calendar className="h-4 w-4 text-muted-foreground" />
+              <span className="text-sm text-muted-foreground font-medium">기간:</span>
               {[7, 14, 30, 60, 90].map(period => (
                 <button
                   key={period}
                   onClick={() => setDays(period)}
-                  className={`px-3 py-1 text-xs rounded-full transition-colors ${
+                  className={`px-3 py-1.5 text-xs rounded-lg font-medium transition-all ${
                     days === period
-                      ? 'bg-blue-100 text-blue-800 font-medium'
-                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                      ? 'bg-primary text-primary-foreground shadow-sm'
+                      : 'bg-muted text-muted-foreground hover:bg-muted/80'
                   }`}
                 >
                   {period}일
@@ -172,67 +174,67 @@ const StockChartModal: React.FC<StockChartModalProps> = ({ stock, isOpen, onClos
           <div className="mb-6">
             {loading ? (
               <div className="flex items-center justify-center py-12">
-                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
-                <span className="ml-2 text-gray-600">데이터 로딩 중...</span>
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+                <span className="ml-2 text-muted-foreground font-medium">데이터 로딩 중...</span>
               </div>
             ) : error ? (
               <div className="text-center py-12">
-                <p className="text-red-600 mb-2">{error}</p>
+                <p className="text-destructive mb-2 font-medium">{error}</p>
                 <button
                   onClick={fetchTableData}
-                  className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
+                  className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors font-medium"
                 >
                   다시 시도
                 </button>
               </div>
             ) : tableData.length === 0 ? (
               <div className="text-center py-12">
-                <p className="text-gray-500">가격 데이터가 없습니다.</p>
+                <p className="text-muted-foreground">가격 데이터가 없습니다.</p>
               </div>
             ) : (
-              <div className="overflow-x-auto max-h-96 overflow-y-auto border border-gray-200 rounded-lg">
-                <table className="min-w-full divide-y divide-gray-200">
-                  <thead className="bg-gray-50 sticky top-0">
+              <div className="overflow-x-auto max-h-96 overflow-y-auto border border-border rounded-lg">
+                <table className="min-w-full divide-y divide-border">
+                  <thead className="bg-muted/30 sticky top-0 backdrop-blur-sm">
                     <tr>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">날짜</th>
-                      <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">시가</th>
-                      <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">고가</th>
-                      <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">저가</th>
-                      <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">종가</th>
-                      <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">전일비</th>
-                      <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">등락률</th>
-                      <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">거래량</th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">날짜</th>
+                      <th className="px-4 py-3 text-right text-xs font-semibold text-muted-foreground uppercase tracking-wider">시가</th>
+                      <th className="px-4 py-3 text-right text-xs font-semibold text-muted-foreground uppercase tracking-wider">고가</th>
+                      <th className="px-4 py-3 text-right text-xs font-semibold text-muted-foreground uppercase tracking-wider">저가</th>
+                      <th className="px-4 py-3 text-right text-xs font-semibold text-muted-foreground uppercase tracking-wider">종가</th>
+                      <th className="px-4 py-3 text-right text-xs font-semibold text-muted-foreground uppercase tracking-wider">전일비</th>
+                      <th className="px-4 py-3 text-right text-xs font-semibold text-muted-foreground uppercase tracking-wider">등락률</th>
+                      <th className="px-4 py-3 text-right text-xs font-semibold text-muted-foreground uppercase tracking-wider">거래량</th>
                     </tr>
                   </thead>
-                  <tbody className="bg-white divide-y divide-gray-200">
+                  <tbody className="bg-card divide-y divide-border/50">
                     {tableData.map((row, index) => (
-                      <tr key={row.date} className={index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
-                        <td className="px-4 py-3 text-sm text-gray-900 whitespace-nowrap">
+                      <tr key={row.date} className="hover:bg-muted/50 transition-colors">
+                        <td className="px-4 py-3 text-sm text-foreground whitespace-nowrap">
                           {row.displayDate}
                         </td>
-                        <td className="px-4 py-3 text-sm text-gray-900 text-right whitespace-nowrap">
+                        <td className="px-4 py-3 text-sm text-foreground text-right whitespace-nowrap font-mono">
                           {formatPrice(row.open_price)}
                         </td>
-                        <td className="px-4 py-3 text-sm text-red-600 text-right whitespace-nowrap font-medium">
+                        <td className="px-4 py-3 text-sm text-gain text-right whitespace-nowrap font-medium font-mono">
                           {formatPrice(row.high_price)}
                         </td>
-                        <td className="px-4 py-3 text-sm text-blue-600 text-right whitespace-nowrap font-medium">
+                        <td className="px-4 py-3 text-sm text-loss text-right whitespace-nowrap font-medium font-mono">
                           {formatPrice(row.low_price)}
                         </td>
-                        <td className="px-4 py-3 text-sm text-gray-900 text-right whitespace-nowrap font-semibold">
+                        <td className="px-4 py-3 text-sm text-foreground text-right whitespace-nowrap font-semibold font-mono">
                           {formatPrice(row.close_price)}
                         </td>
-                        <td className={`px-4 py-3 text-sm text-right whitespace-nowrap font-medium ${
-                          row.change > 0 ? 'text-red-600' : row.change < 0 ? 'text-blue-600' : 'text-gray-500'
+                        <td className={`px-4 py-3 text-sm text-right whitespace-nowrap font-medium font-mono ${
+                          row.change > 0 ? 'text-gain' : row.change < 0 ? 'text-loss' : 'text-muted-foreground'
                         }`}>
                           {row.change > 0 ? '+' : ''}{formatPrice(Math.abs(row.change))}
                         </td>
-                        <td className={`px-4 py-3 text-sm text-right whitespace-nowrap font-medium ${
-                          row.changePercent > 0 ? 'text-red-600' : row.changePercent < 0 ? 'text-blue-600' : 'text-gray-500'
+                        <td className={`px-4 py-3 text-sm text-right whitespace-nowrap font-semibold font-mono ${
+                          row.changePercent > 0 ? 'text-gain' : row.changePercent < 0 ? 'text-loss' : 'text-muted-foreground'
                         }`}>
                           {row.changePercent > 0 ? '+' : ''}{row.changePercent.toFixed(2)}%
                         </td>
-                        <td className="px-4 py-3 text-sm text-gray-600 text-right whitespace-nowrap">
+                        <td className="px-4 py-3 text-sm text-muted-foreground text-right whitespace-nowrap font-mono">
                           {formatVolume(row.volume)}
                         </td>
                       </tr>
@@ -245,33 +247,33 @@ const StockChartModal: React.FC<StockChartModalProps> = ({ stock, isOpen, onClos
 
           {/* Summary Stats */}
           {tableData.length > 0 && (
-            <div className={`grid ${tableData.length >= 90 ? 'grid-cols-2 sm:grid-cols-5' : 'grid-cols-2 sm:grid-cols-4'} gap-4 bg-gray-50 p-4 rounded-lg`}>
+            <div className={`grid ${tableData.length >= 90 ? 'grid-cols-2 sm:grid-cols-5' : 'grid-cols-2 sm:grid-cols-4'} gap-4 bg-muted/30 p-4 rounded-lg border border-border`}>
               <div className="text-center">
-                <p className="text-xs text-gray-500">최고가</p>
-                <p className="text-sm font-medium">
+                <p className="text-xs text-muted-foreground font-medium">최고가</p>
+                <p className="text-sm font-semibold text-gain font-mono mt-1">
                   {formatPrice(Math.max(...tableData.map(d => d.high_price)))}
                 </p>
               </div>
               <div className="text-center">
-                <p className="text-xs text-gray-500">최저가</p>
-                <p className="text-sm font-medium">
+                <p className="text-xs text-muted-foreground font-medium">최저가</p>
+                <p className="text-sm font-semibold text-loss font-mono mt-1">
                   {formatPrice(Math.min(...tableData.map(d => d.low_price)))}
                 </p>
               </div>
               <div className="text-center">
-                <p className="text-xs text-gray-500">데이터 기간</p>
-                <p className="text-sm font-medium">{tableData.length}일</p>
+                <p className="text-xs text-muted-foreground font-medium">데이터 기간</p>
+                <p className="text-sm font-semibold text-foreground font-mono mt-1">{tableData.length}일</p>
               </div>
               <div className="text-center">
-                <p className="text-xs text-gray-500">최신 종가</p>
-                <p className="text-sm font-medium">
+                <p className="text-xs text-muted-foreground font-medium">최신 종가</p>
+                <p className="text-sm font-semibold text-foreground font-mono mt-1">
                   {tableData.length > 0 && formatPrice(tableData[0].close_price)}
                 </p>
               </div>
               {tableData.length >= 90 && (
                 <div className="text-center">
-                  <p className="text-xs text-gray-500">90일 이평선</p>
-                  <p className="text-sm font-medium text-blue-600">
+                  <p className="text-xs text-muted-foreground font-medium">90일 이평선</p>
+                  <p className="text-sm font-semibold text-primary font-mono mt-1">
                     {formatPrice(calculate90DayMA(tableData)!)}
                   </p>
                 </div>
@@ -281,10 +283,10 @@ const StockChartModal: React.FC<StockChartModalProps> = ({ stock, isOpen, onClos
         </div>
 
         {/* Footer */}
-        <div className="sticky bottom-0 bg-gray-50 border-t border-gray-200 px-6 py-3 flex justify-end">
+        <div className="sticky bottom-0 bg-card border-t border-border px-6 py-3 flex justify-end backdrop-blur-sm">
           <button
             type="button"
-            className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-colors"
+            className="px-6 py-2 text-sm font-semibold text-foreground bg-muted border border-border rounded-lg hover:bg-muted/80 focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 transition-all"
             onClick={onClose}
           >
             닫기

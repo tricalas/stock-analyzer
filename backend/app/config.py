@@ -6,6 +6,7 @@ class Settings(BaseSettings):
     DATABASE_URL: str = "sqlite:///./stock_analyzer.db"
     REDIS_URL: str = "redis://localhost:6379"
     SECRET_KEY: str = "your-secret-key-here"
+    SUPER_PIN: str = "999999"  # 슈퍼 관리자 PIN
     CORS_ORIGINS: Union[List[str], str] = "http://localhost:3000"
 
     @field_validator('CORS_ORIGINS', mode='before')

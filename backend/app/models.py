@@ -2,6 +2,22 @@ from sqlalchemy import Column, Integer, String, Float, DateTime, Boolean, Text, 
 from sqlalchemy.orm import relationship
 from datetime import datetime
 from app.database import Base
+import uuid
+
+class User(Base):
+    __tablename__ = "users"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_token = Column(String(255), unique=True, index=True, nullable=False, default=lambda: str(uuid.uuid4()))
+    nickname = Column(String(50), nullable=False)
+    pin_hash = Column(String(255), nullable=False)
+    is_admin = Column(Boolean, default=False, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    last_login = Column(DateTime)
+
+    __table_args__ = (
+        {'extend_existing': True}
+    )
 
 class Stock(Base):
     __tablename__ = "stocks"
@@ -44,8 +60,6 @@ class Stock(Base):
     price_data = relationship("StockPrice", back_populates="stock", cascade="all, delete-orphan")
     daily_data = relationship("StockDailyData", back_populates="stock", cascade="all, delete-orphan")
     price_history = relationship("StockPriceHistory", back_populates="stock", cascade="all, delete-orphan")
-    favorites = relationship("StockFavorite", back_populates="stock", cascade="all, delete-orphan")
-    dislikes = relationship("StockDislike", back_populates="stock", cascade="all, delete-orphan")
 
 class StockPrice(Base):
     __tablename__ = "stock_prices"
@@ -139,32 +153,43 @@ class CrawlingLog(Base):
     crawled_at = Column(DateTime, default=datetime.utcnow)
     duration_seconds = Column(Float)
 
-class StockFavorite(Base):
-    __tablename__ = "stock_favorites"
+
+class StockTag(Base):
+    __tablename__ = "stock_tags"
 
     id = Column(Integer, primary_key=True, index=True)
-    stock_id = Column(Integer, ForeignKey("stocks.id"), nullable=False, index=True)
+    name = Column(String(50), nullable=False, index=True)  # owned, recommended, watching, near_ma90
+    display_name = Column(String(100), nullable=False)  # 보유중, 추천종목, 관찰종목, 90일선 근처
+    color = Column(String(20))  # primary, gain, loss, muted
+    icon = Column(String(50))  # lucide icon 이름
+    order = Column(Integer, default=0)  # 표시 순서
+    is_active = Column(Boolean, default=True)
+    user_token = Column(String(255), nullable=True, index=True)  # 사용자 토큰 (NULL이면 시스템 태그)
     created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     # 관계 설정
-    stock = relationship("Stock", back_populates="favorites")
+    assignments = relationship("StockTagAssignment", back_populates="tag", cascade="all, delete-orphan")
 
     __table_args__ = (
-        UniqueConstraint('stock_id', name='unique_favorite_stock'),
+        UniqueConstraint('name', 'user_token', name='unique_tag_per_user'),
         {'extend_existing': True}
     )
 
-class StockDislike(Base):
-    __tablename__ = "stock_dislikes"
+class StockTagAssignment(Base):
+    __tablename__ = "stock_tag_assignments"
 
     id = Column(Integer, primary_key=True, index=True)
     stock_id = Column(Integer, ForeignKey("stocks.id"), nullable=False, index=True)
+    tag_id = Column(Integer, ForeignKey("stock_tags.id"), nullable=False, index=True)
+    user_token = Column(String(255), nullable=True, index=True)  # 사용자 토큰
     created_at = Column(DateTime, default=datetime.utcnow)
 
     # 관계 설정
-    stock = relationship("Stock", back_populates="dislikes")
+    stock = relationship("Stock")
+    tag = relationship("StockTag", back_populates="assignments")
 
     __table_args__ = (
-        UniqueConstraint('stock_id', name='unique_dislike_stock'),
+        UniqueConstraint('stock_id', 'tag_id', 'user_token', name='unique_stock_tag_user'),
         {'extend_existing': True}
     )

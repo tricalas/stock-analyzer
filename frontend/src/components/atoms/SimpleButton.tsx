@@ -20,11 +20,11 @@ const SimpleButton = React.memo<SimpleButtonProps>(({
   variant = 'secondary',
   loading = false
 }) => {
-  const baseClasses = "inline-flex items-center px-3 py-2 border rounded-md shadow-sm text-sm font-medium focus:outline-none focus:ring-2 focus:ring-offset-2 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50";
+  const baseClasses = "inline-flex items-center px-4 py-2 rounded-lg text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-offset-2 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 transition-all duration-200";
 
   const variantClasses = {
-    primary: "border-blue-500 text-white bg-blue-600 hover:bg-blue-700 focus:ring-blue-500",
-    secondary: "border-gray-300 text-gray-700 bg-white hover:bg-gray-50 focus:ring-blue-500"
+    primary: "bg-primary text-primary-foreground hover:bg-primary/90 focus:ring-primary shadow-md hover:shadow-lg",
+    secondary: "bg-card border border-border text-foreground hover:bg-muted focus:ring-primary shadow-sm hover:shadow-md"
   };
 
   return (

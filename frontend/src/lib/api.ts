@@ -9,6 +9,32 @@ const api = axios.create({
   },
 });
 
+// Add auth token to all requests
+api.interceptors.request.use((config) => {
+  if (typeof window !== 'undefined') {
+    const token = localStorage.getItem('auth_token');
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`;
+    }
+  }
+  return config;
+});
+
+// Handle 401 errors (unauthorized)
+api.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (error.response?.status === 401) {
+      // Token expired or invalid
+      if (typeof window !== 'undefined') {
+        localStorage.removeItem('auth_token');
+        window.location.href = '/login';
+      }
+    }
+    return Promise.reject(error);
+  }
+);
+
 export interface Stock {
   id: number;
   symbol: string;
@@ -61,6 +87,24 @@ export interface Stock {
 
   // 싫어요 상태
   is_dislike?: boolean;
+
+  // 태그 목록
+  tags?: Tag[];
+
+  // 최신 태그 활동 날짜
+  latest_tag_date?: string;
+}
+
+export interface Tag {
+  id: number;
+  name: string;
+  display_name: string;
+  color?: string;
+  icon?: string;
+  order?: number;
+  is_active?: boolean;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface StockListResponse {
@@ -190,6 +234,63 @@ export const stockApi = {
     return response.data;
   },
 
+  // 태그 관련 API
+  getTags: async (): Promise<{ tags: Tag[] }> => {
+    const response = await api.get('/api/tags');
+    return response.data;
+  },
+
+  createTag: async (tag: Partial<Tag>): Promise<Tag> => {
+    const response = await api.post('/api/tags', tag);
+    return response.data;
+  },
+
+  updateTag: async (tagId: number, tag: Partial<Tag>): Promise<Tag> => {
+    const response = await api.put(`/api/tags/${tagId}`, tag);
+    return response.data;
+  },
+
+  deleteTag: async (tagId: number) => {
+    const response = await api.delete(`/api/tags/${tagId}`);
+    return response.data;
+  },
+
+  addTagToStock: async (stockId: number, tagId: number) => {
+    const response = await api.post(`/api/stocks/${stockId}/tags/${tagId}`);
+    return response.data;
+  },
+
+  removeTagFromStock: async (stockId: number, tagId: number) => {
+    const response = await api.delete(`/api/stocks/${stockId}/tags/${tagId}`);
+    return response.data;
+  },
+
+  getStocksByTag: async (tagName: string, params?: {
+    skip?: number;
+    limit?: number;
+  }): Promise<StockListResponse> => {
+    const response = await api.get(`/api/stocks/by-tag/${tagName}`, { params });
+    return response.data;
+  },
+
+};
+
+// 유저 관리 API
+export const userApi = {
+  getAllUsers: async () => {
+    const response = await api.get('/api/auth/users');
+    return response.data;
+  },
+
+  createUser: async (nickname: string, pin: string) => {
+    const response = await api.post('/api/auth/register', { nickname, pin });
+    return response.data;
+  },
+
+  deleteUser: async (userId: number) => {
+    const response = await api.delete(`/api/auth/users/${userId}`);
+    return response.data;
+  },
 };
 
 export default api;

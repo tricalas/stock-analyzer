@@ -1,6 +1,7 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, field_validator
 from datetime import datetime, date
 from typing import Optional, List
+import re
 
 class StockBase(BaseModel):
     symbol: str
@@ -84,6 +85,26 @@ class StockDailyData(StockDailyDataBase):
     class Config:
         from_attributes = True
 
+class StockTagBase(BaseModel):
+    name: str
+    display_name: str
+    color: Optional[str] = None
+    icon: Optional[str] = None
+    order: Optional[int] = 0
+    is_active: Optional[bool] = True
+    user_token: Optional[str] = None
+
+class StockTagCreate(StockTagBase):
+    pass
+
+class StockTag(StockTagBase):
+    id: int
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
 class StockWithLatestPrice(Stock):
     latest_price: Optional[float] = None
     latest_change: Optional[float] = None
@@ -98,9 +119,11 @@ class StockWithLatestPrice(Stock):
     ma90_price: Optional[float] = None
     ma90_percentage: Optional[float] = None
 
-    # 즐겨찾기/싫어요 상태
-    is_favorite: Optional[bool] = None
-    is_dislike: Optional[bool] = None
+    # 태그 목록
+    tags: Optional[List['StockTag']] = None
+
+    # 최신 태그 활동 날짜
+    latest_tag_date: Optional[datetime] = None
 
 class StockPriceHistoryBase(BaseModel):
     date: date
@@ -134,3 +157,50 @@ class StockListResponse(BaseModel):
     stocks: List[StockWithLatestPrice]
     page: int
     page_size: int
+
+class TagAssignmentResponse(BaseModel):
+    message: str
+    tag: 'StockTag'
+
+class TagListResponse(BaseModel):
+    tags: List['StockTag']
+
+# ===== User & Auth Schemas =====
+
+class UserRegister(BaseModel):
+    nickname: str = Field(..., min_length=2, max_length=50)
+    pin: str = Field(..., min_length=6, max_length=6)
+
+    @field_validator('pin')
+    @classmethod
+    def validate_pin(cls, v):
+        if not re.match(r'^\d{6}$', v):
+            raise ValueError('PIN must be exactly 6 digits')
+        return v
+
+class UserLogin(BaseModel):
+    nickname: str = Field(..., min_length=2, max_length=50)
+    pin: str = Field(..., min_length=6, max_length=6)
+
+    @field_validator('pin')
+    @classmethod
+    def validate_pin(cls, v):
+        if not re.match(r'^\d{6}$', v):
+            raise ValueError('PIN must be exactly 6 digits')
+        return v
+
+class UserResponse(BaseModel):
+    id: int
+    user_token: str
+    nickname: str
+    is_admin: bool
+    created_at: datetime
+    last_login: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+class TokenResponse(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+    user: UserResponse

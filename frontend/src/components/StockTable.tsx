@@ -73,14 +73,14 @@ const StockTable = React.memo<StockTableProps>(({ stocks, onStockClick, onShowCh
 
     return (
       <th
-        className={`px-3 py-3 ${alignClass} text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors`}
+        className={`px-3 py-3 ${alignClass} text-xs font-semibold text-muted-foreground uppercase tracking-wider cursor-pointer hover:bg-muted/50 transition-all duration-200 ${isActive ? 'text-primary' : ''}`}
         onClick={() => handleSort(field)}
       >
         <div className={`flex items-center ${align === 'center' ? 'justify-center' : align === 'right' ? 'justify-end' : 'justify-start'} space-x-1`}>
           <span>{children}</span>
           <div className="flex flex-col">
-            <ChevronUp className={`h-3 w-3 ${isActive && sortDirection === 'asc' ? 'text-blue-600' : 'text-gray-300'}`} />
-            <ChevronDown className={`h-3 w-3 -mt-1 ${isActive && sortDirection === 'desc' ? 'text-blue-600' : 'text-gray-300'}`} />
+            <ChevronUp className={`h-3 w-3 transition-colors ${isActive && sortDirection === 'asc' ? 'text-primary' : 'text-muted-foreground/30'}`} />
+            <ChevronDown className={`h-3 w-3 -mt-1 transition-colors ${isActive && sortDirection === 'desc' ? 'text-primary' : 'text-muted-foreground/30'}`} />
           </div>
         </div>
       </th>
@@ -89,28 +89,26 @@ const StockTable = React.memo<StockTableProps>(({ stocks, onStockClick, onShowCh
 
   return (
     <div className="overflow-x-auto">
-      <table className="min-w-full divide-y divide-gray-200">
-        <thead className="bg-gray-50">
+      <table className="min-w-full divide-y divide-border">
+        <thead className="bg-muted/30 backdrop-blur-sm">
           <tr>
-            <SortableHeader field="market_cap_rank" align="center">순위</SortableHeader>
-            <SortableHeader field="is_favorite" align="center">⭐</SortableHeader>
-            <SortableHeader field="name" align="left">종목명</SortableHeader>
-            <SortableHeader field="current_price" align="right">현재가</SortableHeader>
+            <th className="px-6 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider cursor-pointer hover:bg-muted/50 transition-all duration-200">
+              <div className="flex items-center justify-start space-x-1">
+                <span>종목명</span>
+              </div>
+            </th>
             <SortableHeader field="change_amount" align="right">전일비</SortableHeader>
             <SortableHeader field="change_percent" align="right">등락률</SortableHeader>
-            <SortableHeader field="market_cap" align="right">시가총액</SortableHeader>
-            <SortableHeader field="trading_volume" align="right">거래량</SortableHeader>
-            <SortableHeader field="ma90_percentage" align="right">90일선</SortableHeader>
+            <SortableHeader field="market_cap" align="right">시총</SortableHeader>
             <SortableHeader field="exchange" align="center">거래소</SortableHeader>
-            <th className="px-3 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">분석</th>
+            <th className="px-3 py-3 text-center text-xs font-medium text-muted-foreground uppercase tracking-wider">태그</th>
           </tr>
         </thead>
-        <tbody className="bg-white divide-y divide-gray-200">
-          {sortedStocks.map((stock, index) => (
+        <tbody className="bg-card divide-y divide-border/50">
+          {sortedStocks.map((stock) => (
             <StockItem
               key={stock.id}
               stock={stock}
-              rank={index + 1}
               onStockClick={onStockClick}
               onShowChart={onShowChart}
               onStockDeleted={onStockDeleted}
