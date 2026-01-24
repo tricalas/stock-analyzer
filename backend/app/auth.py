@@ -13,7 +13,7 @@ from app.config import settings
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 # Bearer token scheme
-security = HTTPBearer()
+security = HTTPBearer(auto_error=False)
 
 # JWT settings
 ALGORITHM = "HS256"
