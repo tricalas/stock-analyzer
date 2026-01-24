@@ -4,6 +4,9 @@ from sqlalchemy.orm import Session
 from typing import List, Optional
 from datetime import datetime, date, timedelta
 import logging
+import hashlib
+import json
+from cachetools import TTLCache
 
 from app.config import settings
 from app.database import engine, Base, get_db
@@ -18,6 +21,14 @@ import uuid
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+# 캐시 설정 (최대 1000개 항목, 60초 TTL)
+stocks_cache = TTLCache(maxsize=1000, ttl=60)
+
+def invalidate_cache():
+    """모든 캐시를 무효화 (태그 변경 시 호출)"""
+    stocks_cache.clear()
+    logger.info("Cache cleared")
 
 Base.metadata.create_all(bind=engine)
 
@@ -154,6 +165,26 @@ def get_stocks(
     db: Session = Depends(get_db),
     current_user: Optional[User] = Depends(get_optional_current_user)
 ):
+    # 캐시 키 생성 (유저별, 조건별로 구분)
+    user_token = current_user.user_token if current_user else "anonymous"
+    cache_key_data = {
+        "user": user_token,
+        "market": market,
+        "exchange": exchange,
+        "sector": sector,
+        "exclude_etf": exclude_etf,
+        "skip": skip,
+        "limit": limit
+    }
+    cache_key = hashlib.md5(json.dumps(cache_key_data, sort_keys=True).encode()).hexdigest()
+
+    # 캐시 확인
+    if cache_key in stocks_cache:
+        logger.info(f"Cache HIT for {user_token[:8]}... {market=} {skip=}")
+        return stocks_cache[cache_key]
+
+    logger.info(f"Cache MISS for {user_token[:8]}... {market=} {skip=}")
+
     query = db.query(Stock).filter(Stock.is_active == True)
 
     # '제외', '에러', '삭제' 태그가 있는 종목 제외 (사용자별)
@@ -272,12 +303,15 @@ def get_stocks(
         }
         stock_list.append(stock_data)
 
-    return {
+    # 결과 생성 및 캐시에 저장
+    result = {
         "total": total,
         "stocks": stock_list,
         "page": skip // limit + 1,
         "page_size": limit
     }
+    stocks_cache[cache_key] = result
+    return result
 
 @app.get("/api/stocks/{stock_id}", response_model=schemas.Stock)
 def get_stock(stock_id: int, db: Session = Depends(get_db)):
@@ -838,6 +872,9 @@ def add_tag_to_stock(
     db.add(assignment)
     db.commit()
 
+    # 캐시 무효화
+    invalidate_cache()
+
     return {"message": f"Tag '{tag.display_name}' added to {stock.name}", "tag": tag}
 
 @app.delete("/api/stocks/{stock_id}/tags/{tag_id}")
@@ -859,6 +896,9 @@ def remove_tag_from_stock(
 
     db.delete(assignment)
     db.commit()
+
+    # 캐시 무효화
+    invalidate_cache()
 
     return {"message": "Tag removed from stock"}
 
