@@ -342,7 +342,7 @@ def get_stock_daily_data(
 
 @app.post("/api/crawl/stocks", response_model=schemas.CrawlingStatus)
 def crawl_stock_list(
-    market: str = Query("ALL", regex="^(ALL|KR|US)$"),
+    market: str = Query("ALL", pattern="^(ALL|KR|US)$"),
     current_user: User = Depends(get_current_user)
 ):
     """주식 데이터 크롤링 - 10분 쿨타임"""
