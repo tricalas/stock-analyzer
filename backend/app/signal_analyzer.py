@@ -76,16 +76,21 @@ class SignalAnalyzer:
             for idx, stock_id in enumerate(stock_ids, 1):
                 try:
                     # 종목 정보 조회 (진행 상황 표시용)
+                    logger.info(f"📊 [{idx}/{total_stocks}] Starting analysis for stock_id={stock_id}")
                     stock = db.query(Stock).filter(Stock.id == stock_id).first()
                     stock_name = stock.name if stock else f"ID: {stock_id}"
+                    logger.info(f"📊 [{idx}/{total_stocks}] Stock: {stock_name}")
 
                     # TaskProgress 업데이트
                     task_progress.current_item = idx
                     task_progress.current_stock_name = stock_name
                     task_progress.message = f"{idx}/{total_stocks} 종목 분석 중: {stock_name}"
                     db.commit()
+                    logger.info(f"📊 [{idx}/{total_stocks}] TaskProgress updated")
 
                     result = self._analyze_stock(stock_id, days, db)
+                    logger.info(f"📊 [{idx}/{total_stocks}] Analysis done: {result}")
+
                     if result['signals_count'] > 0:
                         stocks_with_signals += 1
                         signals_found += result['signals_count']
@@ -96,6 +101,8 @@ class SignalAnalyzer:
 
                 except Exception as e:
                     logger.error(f"❌ Error analyzing stock {stock_id}: {str(e)}")
+                    import traceback
+                    logger.error(traceback.format_exc())
                     task_progress.failed_count += 1
                     db.commit()
                     continue
