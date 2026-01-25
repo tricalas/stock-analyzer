@@ -353,7 +353,12 @@ export default function SignalsPage() {
                     return (
                       <tr
                         key={signal.id}
-                        className="hover:bg-muted/50 transition-colors"
+                        className="hover:bg-muted/50 transition-colors cursor-pointer"
+                        onClick={() => {
+                          if (stockInfo) {
+                            window.open(getNaverChartUrl(stockInfo), '_blank');
+                          }
+                        }}
                       >
                         {/* 종목명 */}
                         <td className="px-4 py-3 whitespace-nowrap">
