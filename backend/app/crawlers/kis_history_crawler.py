@@ -3,12 +3,13 @@
 """
 
 import logging
+import uuid
 from typing import List, Dict, Optional
 from datetime import datetime, date, timedelta
 from sqlalchemy.orm import Session
 
 from app.kis.kis_client import get_kis_client
-from app.models import Stock, StockPriceHistory
+from app.models import Stock, StockPriceHistory, TaskProgress
 from app.database import SessionLocal
 
 logger = logging.getLogger(__name__)
@@ -367,28 +368,68 @@ class KISHistoryCrawler:
         failed_count = 0
         total_records = 0
 
-        for i, stock in enumerate(stocks, 1):
-            result = self.collect_history_for_stock(stock, days=days, db=db)
+        # TaskProgress 생성
+        task_id = str(uuid.uuid4())
+        task_progress = TaskProgress(
+            task_id=task_id,
+            task_type="history_collection",
+            status="running",
+            total_items=total,
+            current_item=0,
+            message=f"히스토리 수집 시작 ({total}개 종목, {days}일)"
+        )
+        db.add(task_progress)
+        db.commit()
 
-            if result["success"]:
-                success_count += 1
-                total_records += result.get("records_saved", 0)
-            else:
-                failed_count += 1
+        try:
+            for i, stock in enumerate(stocks, 1):
+                # TaskProgress 업데이트
+                task_progress.current_item = i
+                task_progress.current_stock_name = stock.name
+                task_progress.message = f"{i}/{total} 종목 수집 중: {stock.name} ({stock.symbol})"
+                db.commit()
 
-            # 진행상황 로그 (50개마다)
-            if i % 50 == 0:
-                logger.info(f"Progress: {i}/{total} stocks processed ({success_count} success, {failed_count} failed)")
+                result = self.collect_history_for_stock(stock, days=days, db=db)
 
-        logger.info(f"Collection complete: {success_count}/{total} stocks, {total_records} records saved")
+                if result["success"]:
+                    success_count += 1
+                    total_records += result.get("records_saved", 0)
+                    task_progress.success_count += 1
+                else:
+                    failed_count += 1
+                    task_progress.failed_count += 1
 
-        return {
-            "success": True,
-            "total_stocks": total,
-            "success_count": success_count,
-            "failed_count": failed_count,
-            "total_records": total_records
-        }
+                db.commit()
+
+                # 진행상황 로그 (50개마다)
+                if i % 50 == 0:
+                    logger.info(f"Progress: {i}/{total} stocks processed ({success_count} success, {failed_count} failed)")
+
+            # TaskProgress 완료 처리
+            task_progress.status = "completed"
+            task_progress.current_item = total
+            task_progress.message = f"수집 완료: {success_count}/{total} 종목, {total_records}개 레코드 저장"
+            task_progress.completed_at = datetime.utcnow()
+            db.commit()
+
+            logger.info(f"Collection complete: {success_count}/{total} stocks, {total_records} records saved")
+
+            return {
+                "success": True,
+                "total_stocks": total,
+                "success_count": success_count,
+                "failed_count": failed_count,
+                "total_records": total_records,
+                "task_id": task_id
+            }
+
+        except Exception as e:
+            # TaskProgress 실패 처리
+            task_progress.status = "failed"
+            task_progress.error_message = str(e)
+            task_progress.completed_at = datetime.utcnow()
+            db.commit()
+            raise
 
 
 # 전역 인스턴스

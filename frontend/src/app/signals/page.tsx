@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import AppLayout from '@/components/AppLayout';
 import { TrendingUp, TrendingDown, Calendar, DollarSign, Activity, RefreshCw } from 'lucide-react';
@@ -42,9 +42,27 @@ interface SignalListResponse {
   };
 }
 
+interface TaskProgress {
+  task_id: string;
+  task_type: string;
+  status: string;
+  total_items: number;
+  current_item: number;
+  current_stock_name?: string;
+  success_count: number;
+  failed_count: number;
+  message?: string;
+  error_message?: string;
+  started_at: string;
+  updated_at: string;
+  completed_at?: string;
+}
+
 export default function SignalsPage() {
   const queryClient = useQueryClient();
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [currentTaskId, setCurrentTaskId] = useState<string | null>(null);
+  const [showProgress, setShowProgress] = useState(false);
 
   // 저장된 신호 조회 (빠름)
   const { data, isLoading, error } = useQuery<SignalListResponse>({
@@ -57,6 +75,47 @@ export default function SignalsPage() {
     refetchInterval: 30000, // 30초마다 자동 갱신
   });
 
+  // 작업 진행 상황 조회
+  const { data: progressData } = useQuery<TaskProgress>({
+    queryKey: ['task-progress', currentTaskId],
+    queryFn: async () => {
+      if (!currentTaskId) return null;
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/tasks/${currentTaskId}`);
+      if (!response.ok) throw new Error('Failed to fetch task progress');
+      return response.json();
+    },
+    enabled: !!currentTaskId && showProgress,
+    refetchInterval: (data) => {
+      // 작업이 완료되면 폴링 중지
+      if (data?.status === 'completed' || data?.status === 'failed') {
+        return false;
+      }
+      return 2000; // 2초마다 갱신
+    },
+  });
+
+  // 진행 상황이 완료되면 신호 목록 갱신
+  useEffect(() => {
+    if (progressData?.status === 'completed') {
+      setTimeout(() => {
+        queryClient.invalidateQueries({ queryKey: ['stored-signals'] });
+        setShowProgress(false);
+        setCurrentTaskId(null);
+        setIsRefreshing(false);
+        toast.success('신호 분석 완료', {
+          description: progressData.message || '최신 매매 신호를 확인하세요',
+        });
+      }, 1000);
+    } else if (progressData?.status === 'failed') {
+      setShowProgress(false);
+      setCurrentTaskId(null);
+      setIsRefreshing(false);
+      toast.error('분석 실패', {
+        description: progressData.error_message || '잠시 후 다시 시도해주세요',
+      });
+    }
+  }, [progressData?.status, progressData?.message, queryClient]);
+
   // 재분석 뮤테이션
   const refreshMutation = useMutation({
     mutationFn: async () => {
@@ -67,25 +126,23 @@ export default function SignalsPage() {
       if (!response.ok) throw new Error('Failed to refresh signals');
       return response.json();
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
       toast.success('신호 재분석을 시작했습니다', {
-        description: '분석이 완료되면 자동으로 업데이트됩니다 (약 1-2분 소요)',
+        description: '실시간으로 진행 상황을 확인할 수 있습니다',
       });
-      setIsRefreshing(true);
 
-      // 2분 후 쿼리 무효화
-      setTimeout(() => {
-        queryClient.invalidateQueries({ queryKey: ['stored-signals'] });
-        setIsRefreshing(false);
-        toast.success('신호 분석 완료', {
-          description: '최신 매매 신호를 확인하세요',
-        });
-      }, 120000);
+      // task_id로 진행 상황 추적 시작
+      if (data.task_id) {
+        setCurrentTaskId(data.task_id);
+        setShowProgress(true);
+        setIsRefreshing(true);
+      }
     },
     onError: () => {
       toast.error('재분석 실패', {
         description: '잠시 후 다시 시도해주세요',
       });
+      setIsRefreshing(false);
     },
   });
 
@@ -138,6 +195,61 @@ export default function SignalsPage() {
             {refreshMutation.isPending || isRefreshing ? '분석 중...' : '재분석'}
           </button>
         </div>
+
+        {/* Progress Display */}
+        {showProgress && progressData && (
+          <div className="bg-primary/10 border border-primary/30 rounded-xl p-6">
+            <div className="space-y-4">
+              {/* Progress Header */}
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <RefreshCw className="h-5 w-5 text-primary animate-spin" />
+                  <div>
+                    <h3 className="font-semibold text-foreground">신호 분석 진행 중</h3>
+                    <p className="text-sm text-muted-foreground">{progressData.message}</p>
+                  </div>
+                </div>
+                <div className="text-right">
+                  <p className="text-sm font-medium text-foreground">
+                    {progressData.current_item} / {progressData.total_items}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    {Math.round((progressData.current_item / progressData.total_items) * 100)}% 완료
+                  </p>
+                </div>
+              </div>
+
+              {/* Progress Bar */}
+              <div className="w-full bg-muted rounded-full h-3">
+                <div
+                  className="bg-primary rounded-full h-3 transition-all duration-300 ease-out"
+                  style={{
+                    width: `${(progressData.current_item / progressData.total_items) * 100}%`,
+                  }}
+                />
+              </div>
+
+              {/* Current Stock */}
+              {progressData.current_stock_name && (
+                <p className="text-sm text-muted-foreground">
+                  현재 분석 중: <span className="font-medium text-foreground">{progressData.current_stock_name}</span>
+                </p>
+              )}
+
+              {/* Stats */}
+              <div className="flex gap-4 text-sm">
+                <span className="text-green-600 dark:text-green-400">
+                  성공: {progressData.success_count}
+                </span>
+                {progressData.failed_count > 0 && (
+                  <span className="text-red-600 dark:text-red-400">
+                    실패: {progressData.failed_count}
+                  </span>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Stats */}
         {data && (

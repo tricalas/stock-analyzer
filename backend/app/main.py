@@ -15,7 +15,7 @@ import orjson
 
 from app.config import settings
 from app.database import engine, Base, get_db
-from app.models import Stock, StockPrice, StockDailyData, StockPriceHistory, StockTag, StockTagAssignment, User, StockSignal
+from app.models import Stock, StockPrice, StockDailyData, StockPriceHistory, StockTag, StockTagAssignment, User, StockSignal, TaskProgress
 from app import schemas
 from app.crawlers.crawler_manager import CrawlerManager
 from app.crawlers.price_history_crawler import price_history_crawler
@@ -1848,13 +1848,84 @@ def refresh_signals(
 
     background_tasks.add_task(run_analysis)
 
+    # 최신 TaskProgress를 조회하여 task_id 반환 (약간의 지연 허용)
+    import time
+    time.sleep(0.5)  # 백그라운드 작업이 TaskProgress를 생성할 시간 확보
+    latest_task = db.query(TaskProgress).filter(
+        TaskProgress.task_type == "signal_analysis"
+    ).order_by(desc(TaskProgress.started_at)).first()
+
     return {
         "success": True,
         "message": f"신호 분석 작업이 시작되었습니다 (mode: {mode})",
         "mode": mode,
         "days": days,
-        "note": "Check logs for progress. Use GET /api/signals to view results."
+        "task_id": latest_task.task_id if latest_task else None,
+        "note": f"Use GET /api/tasks/{{task_id}} to check progress"
     }
+
+
+# ===== Task Progress Endpoints =====
+
+@app.get("/api/tasks/{task_id}", response_model=schemas.TaskProgress)
+def get_task_progress(
+    task_id: str,
+    db: Session = Depends(get_db)
+):
+    """
+    특정 작업의 진행 상황 조회
+
+    Args:
+        task_id: 작업 ID (UUID)
+
+    Returns:
+        TaskProgress 객체
+    """
+    task = db.query(TaskProgress).filter(TaskProgress.task_id == task_id).first()
+
+    if not task:
+        raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
+
+    return task
+
+
+@app.get("/api/tasks/latest/{task_type}", response_model=schemas.TaskProgress)
+def get_latest_task_by_type(
+    task_type: str,
+    db: Session = Depends(get_db)
+):
+    """
+    특정 작업 타입의 최신 진행 상황 조회
+
+    Args:
+        task_type: 작업 타입 (history_collection, signal_analysis)
+
+    Returns:
+        최신 TaskProgress 객체
+    """
+    task = db.query(TaskProgress).filter(
+        TaskProgress.task_type == task_type
+    ).order_by(desc(TaskProgress.started_at)).first()
+
+    if not task:
+        raise HTTPException(status_code=404, detail=f"No task found for type: {task_type}")
+
+    return task
+
+
+@app.get("/api/tasks/running", response_model=List[schemas.TaskProgress])
+def get_running_tasks(db: Session = Depends(get_db)):
+    """
+    현재 실행 중인 모든 작업 조회
+
+    Returns:
+        실행 중인 TaskProgress 객체 리스트
+    """
+    tasks = db.query(TaskProgress).filter(
+        TaskProgress.status == "running"
+    ).order_by(desc(TaskProgress.started_at)).all()
+
+    return tasks
 
 
 @app.get("/api/signals/scan")

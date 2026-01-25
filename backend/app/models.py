@@ -233,3 +233,35 @@ class StockSignal(Base):
         Index('idx_signal_type_date', 'signal_type', 'signal_date'),
         {'extend_existing': True}
     )
+
+class TaskProgress(Base):
+    """백그라운드 작업 진행 상황 추적"""
+    __tablename__ = "task_progress"
+
+    id = Column(Integer, primary_key=True, index=True)
+    task_id = Column(String(100), unique=True, nullable=False, index=True)  # UUID
+    task_type = Column(String(50), nullable=False)  # "history_collection", "signal_analysis"
+
+    # 진행 상황
+    status = Column(String(20), nullable=False)  # "running", "completed", "failed"
+    total_items = Column(Integer, default=0)
+    current_item = Column(Integer, default=0)
+    current_stock_name = Column(String(255))  # 현재 처리 중인 종목
+
+    # 결과
+    success_count = Column(Integer, default=0)
+    failed_count = Column(Integer, default=0)
+    message = Column(Text)  # 상태 메시지
+    error_message = Column(Text)  # 에러 메시지
+
+    # 시간
+    started_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    completed_at = Column(DateTime)
+
+    __table_args__ = (
+        # 최신 작업 조회를 위한 인덱스
+        Index('idx_task_started', 'started_at'),
+        Index('idx_task_status', 'status'),
+        {'extend_existing': True}
+    )

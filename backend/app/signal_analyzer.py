@@ -3,12 +3,13 @@
 """
 import logging
 import json
+import uuid
 from datetime import datetime, date
 from typing import List, Dict, Optional
 from sqlalchemy.orm import Session
 from sqlalchemy import desc
 
-from app.models import Stock, StockPriceHistory, StockSignal
+from app.models import Stock, StockPriceHistory, StockSignal, TaskProgress
 from app.technical_indicators import generate_breakout_pullback_signals
 from app.database import get_db
 
@@ -45,29 +46,65 @@ class SignalAnalyzer:
             db = next(get_db())
             close_db = True
 
+        # 작업 진행 상황 추적 생성
+        task_id = str(uuid.uuid4())
+        task_progress = None
+
         try:
             # 분석할 종목 선택
             stock_ids = self._get_stock_ids_by_mode(mode, limit, db)
 
             logger.info(f"🔍 Starting signal analysis for {len(stock_ids)} stocks (mode: {mode})...")
 
+            # TaskProgress 생성
+            task_progress = TaskProgress(
+                task_id=task_id,
+                task_type="signal_analysis",
+                status="running",
+                total_items=len(stock_ids),
+                current_item=0,
+                message=f"신호 분석 시작 ({mode} 모드, {len(stock_ids)}개 종목)"
+            )
+            db.add(task_progress)
+            db.commit()
+
             total_stocks = len(stock_ids)
             signals_found = 0
             stocks_with_signals = 0
             total_signals_saved = 0
 
-            for stock_id in stock_ids:
+            for idx, stock_id in enumerate(stock_ids, 1):
                 try:
+                    # 종목 정보 조회 (진행 상황 표시용)
+                    stock = db.query(Stock).filter(Stock.id == stock_id).first()
+                    stock_name = stock.name if stock else f"ID: {stock_id}"
+
+                    # TaskProgress 업데이트
+                    task_progress.current_item = idx
+                    task_progress.current_stock_name = stock_name
+                    task_progress.message = f"{idx}/{total_stocks} 종목 분석 중: {stock_name}"
+                    db.commit()
+
                     result = self._analyze_stock(stock_id, days, db)
                     if result['signals_count'] > 0:
                         stocks_with_signals += 1
                         signals_found += result['signals_count']
                         total_signals_saved += result['saved_count']
+                        task_progress.success_count += 1
+                    else:
+                        task_progress.success_count += 1
 
                 except Exception as e:
                     logger.error(f"❌ Error analyzing stock {stock_id}: {str(e)}")
+                    task_progress.failed_count += 1
+                    db.commit()
                     continue
 
+            # TaskProgress 완료 처리
+            task_progress.status = "completed"
+            task_progress.current_item = total_stocks
+            task_progress.message = f"분석 완료: {stocks_with_signals}/{total_stocks} 종목에서 {total_signals_saved}개 신호 발견"
+            task_progress.completed_at = datetime.utcnow()
             db.commit()
 
             stats = {
@@ -76,7 +113,8 @@ class SignalAnalyzer:
                 "total_signals_found": signals_found,
                 "total_signals_saved": total_signals_saved,
                 "analyzed_at": datetime.utcnow().isoformat(),
-                "mode": mode
+                "mode": mode,
+                "task_id": task_id
             }
 
             logger.info(
@@ -89,6 +127,14 @@ class SignalAnalyzer:
 
         except Exception as e:
             logger.error(f"❌ Error in signal analysis: {str(e)}")
+
+            # TaskProgress 실패 처리
+            if task_progress:
+                task_progress.status = "failed"
+                task_progress.error_message = str(e)
+                task_progress.completed_at = datetime.utcnow()
+                db.commit()
+
             db.rollback()
             raise
         finally:

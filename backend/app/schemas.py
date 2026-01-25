@@ -239,3 +239,26 @@ class SignalListResponse(BaseModel):
     signals: List[StockSignalWithStock]
     analyzed_at: Optional[datetime] = None  # 마지막 분석 시간
     stats: Optional[dict] = None  # 통계 정보
+
+# ===== Task Progress Schemas =====
+
+class TaskProgressBase(BaseModel):
+    task_id: str
+    task_type: str  # "history_collection", "signal_analysis"
+    status: str  # "running", "completed", "failed"
+    total_items: int
+    current_item: int
+    current_stock_name: Optional[str] = None
+    success_count: int
+    failed_count: int
+    message: Optional[str] = None
+    error_message: Optional[str] = None
+
+class TaskProgress(TaskProgressBase):
+    id: int
+    started_at: datetime
+    updated_at: datetime
+    completed_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
