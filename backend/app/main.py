@@ -276,22 +276,32 @@ def get_stocks(
         query = query.filter(Stock.sector == sector)
 
     # 동적 정렬: order_by, order_dir 파라미터 기반
-    sort_field_map = {
-        "market_cap": Stock.market_cap,
-        "change_percent": Stock.change_percent
-    }
-    sort_field = sort_field_map.get(order_by, Stock.market_cap)
-
-    if order_dir == "asc":
-        query = query.order_by(
-            sort_field.asc().nullslast(),
-            Stock.id.asc()
-        )
+    # 동일 값일 때 일관된 정렬을 위해 보조 키 추가
+    if order_by == "change_percent":
+        if order_dir == "asc":
+            query = query.order_by(
+                Stock.change_percent.asc().nullslast(),
+                Stock.market_cap.desc().nullslast(),
+                Stock.id.asc()
+            )
+        else:
+            query = query.order_by(
+                Stock.change_percent.desc().nullslast(),
+                Stock.market_cap.desc().nullslast(),
+                Stock.id.asc()
+            )
     else:
-        query = query.order_by(
-            sort_field.desc().nullslast(),
-            Stock.id.asc()
-        )
+        # 기본: 시가총액순
+        if order_dir == "asc":
+            query = query.order_by(
+                Stock.market_cap.asc().nullslast(),
+                Stock.id.asc()
+            )
+        else:
+            query = query.order_by(
+                Stock.market_cap.desc().nullslast(),
+                Stock.id.asc()
+            )
 
     # COUNT 최적화: 첫 페이지(skip==0)에서만 정확한 count 계산
     # 이후 페이지에서는 캐시된 값 사용 (3-5배 속도 향상)
