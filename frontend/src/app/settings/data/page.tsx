@@ -77,6 +77,32 @@ export default function DataCollectionPage() {
 
   const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
+  // 페이지 로드 시 실행 중인 작업 확인
+  useEffect(() => {
+    const checkRunningTask = async () => {
+      try {
+        const token = localStorage.getItem('auth_token');
+        if (!token) return;
+
+        const response = await fetch(`${API_URL}/api/tasks/latest/history_collection`, {
+          headers: { 'Authorization': `Bearer ${token}` },
+        });
+
+        if (response.ok) {
+          const task: TaskProgress = await response.json();
+          if (task.status === 'running') {
+            setHistoryTaskId(task.task_id);
+            setShowHistoryProgress(true);
+          }
+        }
+      } catch (error) {
+        console.error('Error checking running task:', error);
+      }
+    };
+
+    checkRunningTask();
+  }, [API_URL]);
+
   // 히스토리 수집 진행 상황 조회
   const { data: historyProgress } = useQuery<TaskProgress>({
     queryKey: ['history-progress', historyTaskId],

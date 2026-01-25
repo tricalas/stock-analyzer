@@ -42,6 +42,28 @@ export default function SignalAnalysisPage() {
 
   const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
+  // 페이지 로드 시 실행 중인 작업 확인
+  useEffect(() => {
+    const checkRunningTask = async () => {
+      try {
+        const response = await fetch(`${API_URL}/api/tasks/latest/signal_analysis`);
+
+        if (response.ok) {
+          const task: TaskProgress = await response.json();
+          if (task.status === 'running') {
+            setCurrentTaskId(task.task_id);
+            setShowProgress(true);
+            setIsAnalyzing(true);
+          }
+        }
+      } catch (error) {
+        console.error('Error checking running task:', error);
+      }
+    };
+
+    checkRunningTask();
+  }, [API_URL]);
+
   // 신호 통계 조회
   const { data: signalData, refetch: refetchSignals } = useQuery<SignalListResponse>({
     queryKey: ['signal-stats'],
