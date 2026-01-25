@@ -186,7 +186,7 @@ export default function SignalsPage() {
               매매 신호
             </h1>
             <p className="text-muted-foreground mt-2">
-              추세선 돌파 + 되돌림 전략으로 발견된 매수 신호
+              분석을 통해 발견된 매수 신호
             </p>
           </div>
           <button

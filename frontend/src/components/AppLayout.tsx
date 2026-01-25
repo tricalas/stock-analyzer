@@ -16,7 +16,7 @@ export default function AppLayout({ children, favoriteCount, dislikeCount }: App
       <Sidebar favoriteCount={favoriteCount} dislikeCount={dislikeCount} />
 
       {/* Main Content */}
-      <div className="lg:pl-52 pl-14">
+      <div className="lg:pl-40 pl-12">
         {/* Page Content */}
         <main className="min-h-screen">
           {children}
