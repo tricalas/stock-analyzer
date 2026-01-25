@@ -193,7 +193,7 @@ export default function Home() {
 
             <div className="flex items-center gap-4">
             {lastUpdateTime && (
-              <div className="text-sm text-muted-foreground">
+              <div key={lastUpdateTime} className="text-sm text-muted-foreground">
                 <span className="font-medium">최근:</span>{' '}
                 <span className="text-foreground">
                   {new Date(lastUpdateTime).toLocaleString('ko-KR', {
