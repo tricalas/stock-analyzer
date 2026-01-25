@@ -30,6 +30,17 @@ export default function Home() {
     if (savedTime) {
       setLastUpdateTime(savedTime);
     }
+
+    // Listen for storage changes (for multi-tab synchronization)
+    const handleStorageChange = (e: StorageEvent) => {
+      if (e.key === 'lastStockUpdate' && e.newValue) {
+        console.log('Storage changed, updating lastUpdateTime to:', e.newValue);
+        setLastUpdateTime(e.newValue);
+      }
+    };
+
+    window.addEventListener('storage', handleStorageChange);
+    return () => window.removeEventListener('storage', handleStorageChange);
   }, []);
 
   const {
@@ -87,22 +98,33 @@ export default function Home() {
     setIsRefreshing(true);
     toast.info('데이터를 가져오는 중입니다... (약 20초 소요)');
     try {
+      console.log('Starting crawl with market:', activeTab);
       const result = await stockApi.crawlStocks(activeTab);
+      console.log('Crawl result:', result);
+
       await refetch();
+
       // 마지막 업데이트 시간 저장
       const now = new Date().toISOString();
+      console.log('Updating lastStockUpdate to:', now);
       localStorage.setItem('lastStockUpdate', now);
       setLastUpdateTime(now);
+
       toast.success(`성공적으로 ${result.success}개 종목 업데이트 완료!`);
+      console.log('Successfully updated lastUpdateTime');
     } catch (error: any) {
       console.error('Failed to refresh stocks:', error);
+      console.error('Error response:', error.response);
+
       // 쿨타임 에러 처리
       if (error.response?.status === 429) {
         toast.error('쿨타임 중입니다', {
           description: error.response?.data?.detail || '잠시 후 다시 시도해주세요.'
         });
       } else {
-        toast.error('데이터 업데이트 실패');
+        toast.error('데이터 업데이트 실패', {
+          description: error.message || '오류가 발생했습니다.'
+        });
       }
     } finally {
       setIsRefreshing(false);
