@@ -61,7 +61,8 @@ def set_cache(key: str, value: dict, ttl: int = 300):
     if USE_REDIS:
         try:
             # orjson.dumps returns bytes, perfect for Redis
-            redis_client.setex(f"stocks:{key}", ttl, orjson.dumps(value))
+            # OPT_SERIALIZE_NUMPY handles numpy types, OPT_PASSTHROUGH_DATETIME handles datetime
+            redis_client.setex(f"stocks:{key}", ttl, orjson.dumps(value, default=str))
         except Exception as e:
             logger.error(f"❌ Redis set failed: {e}")
     else:
@@ -329,6 +330,7 @@ def get_stocks(
 
     # 태그 정보를 한 번에 가져오기 (사용자별) - 태그가 있는 경우에만
     tags_map = {}
+    tags_by_id = {}
     latest_tag_dates = {}
     if current_user:
         from sqlalchemy import and_
@@ -498,6 +500,7 @@ def search_stocks(
 
     # 태그 정보를 한 번에 가져오기 (사용자별)
     tags_map = {}
+    tags_by_id = {}
     latest_tag_dates = {}
     if current_user and stocks:
         from sqlalchemy import and_
@@ -1466,6 +1469,7 @@ def get_stocks_by_tag(
 
     # 태그 정보를 한 번에 가져오기
     tags_map = {}
+    tags_by_id = {}
     if stocks:
         stock_ids = [s.id for s in stocks]
         tag_assignments = db.query(StockTagAssignment).filter(
