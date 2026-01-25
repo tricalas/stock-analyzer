@@ -146,6 +146,14 @@ def seed_default_tags(db: Session):
             "icon": "Eye",
             "order": 3,
             "user_token": None  # 시스템 태그
+        },
+        {
+            "name": "error",
+            "display_name": "에러",
+            "color": "loss",
+            "icon": "AlertCircle",
+            "order": 98,
+            "user_token": None  # 시스템 태그
         }
     ]
 
