@@ -94,7 +94,7 @@ export default function LoginPage() {
             </div>
 
             <h1 className="text-5xl font-bold bg-gradient-to-r from-blue-400 via-purple-400 to-pink-400 bg-clip-text text-transparent mb-3">
-              오스카투자
+              신신투자
             </h1>
             <p className="text-blue-300/80 text-sm font-medium flex items-center justify-center gap-2">
               <Shield className="w-4 h-4" />

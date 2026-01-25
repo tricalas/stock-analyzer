@@ -147,6 +147,15 @@ export const stockApi = {
     return response.data;
   },
 
+  searchStocks: async (params: {
+    q: string;
+    market?: string;
+    limit?: number;
+  }): Promise<StockListResponse> => {
+    const response = await api.get('/api/stocks/search', { params });
+    return response.data;
+  },
+
   getStock: async (id: number): Promise<Stock> => {
     const response = await api.get(`/api/stocks/${id}`);
     return response.data;

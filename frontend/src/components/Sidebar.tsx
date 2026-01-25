@@ -78,7 +78,7 @@ export default function Sidebar({ favoriteCount = 0, dislikeCount = 0 }: Sidebar
           <div className="bg-primary/10 p-1.5 rounded-lg">
             <TrendingUp className="h-4 w-4 text-primary" />
           </div>
-          <span className="text-base font-bold text-foreground">오스카투자</span>
+          <span className="text-base font-bold text-foreground">신신투자</span>
         </div>
         <div className="lg:hidden bg-primary/10 p-1.5 rounded-lg">
           <TrendingUp className="h-4 w-4 text-primary" />

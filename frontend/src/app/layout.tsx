@@ -15,7 +15,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "오스카투자",
+  title: "신신투자",
   description: "Stock market analysis tool for Korean and US markets",
 };
 

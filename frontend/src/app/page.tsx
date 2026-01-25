@@ -6,6 +6,7 @@ import { stockApi, Stock } from '@/lib/api';
 import StockTable from '@/components/StockTable';
 import StockChartModal from '@/components/StockChartModal';
 import AppLayout from '@/components/AppLayout';
+import SearchBar from '@/components/SearchBar';
 import { Download, TrendingUp } from 'lucide-react';
 import SimpleButton from '@/components/atoms/SimpleButton';
 import ScrollToTopButton from '@/components/atoms/ScrollToTopButton';
@@ -158,10 +159,17 @@ export default function Home() {
   return (
     <AppLayout>
       <div className="p-4 lg:p-8 space-y-6">
-        {/* Controls */}
-        <div className="flex items-center justify-between">
-          <h2 className="text-xl font-bold text-foreground">US Market</h2>
-          <div className="flex items-center gap-4">
+        {/* Controls - Sticky Header */}
+        <div className="sticky top-0 z-20 -mx-4 lg:-mx-8 px-4 lg:px-8 py-4 bg-background/95 backdrop-blur-sm border-b border-border mb-6">
+          <div className="flex items-center justify-between gap-4">
+            <h2 className="text-xl font-bold text-foreground">US Market</h2>
+
+            {/* 검색바 */}
+            <div className="flex-1 max-w-2xl">
+              <SearchBar onStockSelect={handleShowChart} />
+            </div>
+
+            <div className="flex items-center gap-4">
             {lastUpdateTime && (
               <div className="text-sm text-muted-foreground">
                 <span className="font-medium">최근:</span>{' '}
@@ -193,6 +201,7 @@ export default function Home() {
               )}
             </button>
           </div>
+        </div>
         </div>
 
         {/* Stocks Table */}

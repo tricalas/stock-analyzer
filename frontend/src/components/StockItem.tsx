@@ -5,6 +5,7 @@ import { Stock, stockApi, Tag } from '@/lib/api';
 import { ArrowUpIcon, ArrowDownIcon, BarChart3, TrendingUp, LineChart, Trash2, Star, ThumbsDown, ShoppingCart, ThumbsUp, Eye, AlertCircle } from 'lucide-react';
 import { toast } from 'sonner';
 import { useTags } from '@/contexts/TagContext';
+import { useQueryClient } from '@tanstack/react-query';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -37,6 +38,7 @@ const StockItem = React.memo<StockItemProps>(({ stock, rank, onStockClick, onSho
   const { tags: availableTags } = useTags();
   const [stockTags, setStockTags] = useState<Tag[]>(stock.tags || []);
   const [togglingTags, setTogglingTags] = useState<Set<number>>(new Set());
+  const queryClient = useQueryClient();
 
   // Sync stock tags when stock.tags changes
   useEffect(() => {
@@ -111,10 +113,14 @@ const StockItem = React.memo<StockItemProps>(({ stock, rank, onStockClick, onSho
       if (hasTag) {
         await stockApi.removeTagFromStock(stock.id, tag.id);
         setStockTags(prev => prev.filter(t => t.id !== tag.id));
+        // Invalidate tag-based queries to refresh data
+        queryClient.invalidateQueries({ queryKey: ['stocks', 'TAG'] });
         toast.success(`${tag.display_name} 태그 제거 완료!`);
       } else {
         await stockApi.addTagToStock(stock.id, tag.id);
         setStockTags(prev => [...prev, tag]);
+        // Invalidate tag-based queries to refresh data
+        queryClient.invalidateQueries({ queryKey: ['stocks', 'TAG'] });
         toast.success(`${tag.display_name} 태그 추가 완료!`);
       }
     } catch (error) {

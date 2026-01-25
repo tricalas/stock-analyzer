@@ -381,6 +381,162 @@ def get_stocks(
     set_cache(cache_key, result, ttl=300)  # 5분 캐시
     return result
 
+@app.get("/api/stocks/search", response_model=schemas.StockListResponse)
+def search_stocks(
+    q: str = Query(..., min_length=1, description="Search query (name or symbol)"),
+    market: Optional[str] = Query(None, description="Filter by market (KR, US)"),
+    limit: int = Query(10, ge=1, le=50),
+    db: Session = Depends(get_db),
+    current_user: Optional[User] = Depends(get_optional_current_user)
+):
+    """종목 검색 API - 종목명 또는 심볼로 검색 (자동완성용)"""
+    # 캐시 키 생성
+    user_token = current_user.user_token if current_user else "anonymous"
+    cache_key_data = {
+        "endpoint": "search",
+        "user": user_token,
+        "q": q.lower(),
+        "market": market,
+        "limit": limit
+    }
+    cache_key = hashlib.md5(orjson.dumps(cache_key_data, option=orjson.OPT_SORT_KEYS)).hexdigest()
+
+    # 캐시 확인
+    cached_data = get_cache(cache_key)
+    if cached_data:
+        logger.info(f"✅ Search cache HIT for '{q}'")
+        return cached_data
+
+    logger.info(f"⏳ Search cache MISS for '{q}'")
+
+    # 검색 쿼리 구성
+    query = db.query(Stock).filter(Stock.is_active == True)
+
+    # '제외', '에러', '삭제' 태그가 있는 종목 제외 (사용자별)
+    if current_user:
+        exclude_tags = db.query(StockTag).filter(
+            StockTag.name.in_(["dislike", "error", "delete"])
+        ).all()
+
+        if exclude_tags:
+            exclude_tag_ids = [tag.id for tag in exclude_tags]
+            exclude_stock_ids = db.query(StockTagAssignment.stock_id).filter(
+                StockTagAssignment.tag_id.in_(exclude_tag_ids),
+                StockTagAssignment.user_token == current_user.user_token
+            ).all()
+            exclude_stock_ids = [sid[0] for sid in exclude_stock_ids]
+            if exclude_stock_ids:
+                query = query.filter(~Stock.id.in_(exclude_stock_ids))
+
+    # 종목명 또는 심볼로 검색 (대소문자 구분 없음)
+    search_filter = (
+        Stock.name.ilike(f'%{q}%') |
+        Stock.symbol.ilike(f'%{q}%')
+    )
+    query = query.filter(search_filter)
+
+    # 마켓 필터
+    if market:
+        query = query.filter(Stock.market == market)
+
+    # 시가총액 내림차순 정렬 (검색 결과에서도 큰 기업이 먼저)
+    query = query.order_by(
+        Stock.market_cap.desc().nullslast(),
+        Stock.id.asc()
+    )
+
+    # 제한된 수만 가져오기 (자동완성용)
+    stocks = query.limit(limit).all()
+    total = len(stocks)
+
+    # 태그 정보를 한 번에 가져오기 (사용자별)
+    tags_map = {}
+    latest_tag_dates = {}
+    if current_user and stocks:
+        from sqlalchemy import and_
+
+        stock_ids = [s.id for s in stocks]
+        tag_assignments = db.query(StockTagAssignment).filter(
+            and_(
+                StockTagAssignment.stock_id.in_(stock_ids),
+                StockTagAssignment.user_token == current_user.user_token
+            )
+        ).order_by(StockTagAssignment.created_at.desc()).all()
+
+        # stock_id별로 그룹화
+        for ta in tag_assignments:
+            if ta.stock_id not in tags_map:
+                tags_map[ta.stock_id] = []
+                latest_tag_dates[ta.stock_id] = ta.created_at
+            tags_map[ta.stock_id].append(ta)
+
+        # 태그 ID들을 모아서 한 번에 조회
+        tag_ids = list(set(ta.tag_id for ta in tag_assignments))
+        if tag_ids:
+            tags_by_id = {tag.id: tag for tag in db.query(StockTag).filter(StockTag.id.in_(tag_ids)).all()}
+        else:
+            tags_by_id = {}
+
+    # 검색 결과 구성
+    stock_list = []
+    for stock in stocks:
+        # 90일 이동평균 비율
+        ma90_percentage = None
+        if stock.ma90_price and stock.current_price:
+            ma90_percentage = ((stock.current_price - stock.ma90_price) / stock.ma90_price) * 100
+
+        # 태그 목록
+        tags = []
+        latest_tag_date = None
+        if current_user and stock.id in tags_map:
+            latest_tag_date = latest_tag_dates.get(stock.id)
+            tags = [tags_by_id.get(ta.tag_id) for ta in tags_map[stock.id]]
+            tags = [t for t in tags if t is not None]
+
+        stock_data = {
+            "id": stock.id,
+            "symbol": stock.symbol,
+            "name": stock.name,
+            "market": stock.market,
+            "exchange": stock.exchange,
+            "sector": stock.sector,
+            "industry": stock.industry,
+            "current_price": stock.current_price,
+            "previous_close": stock.previous_close,
+            "change_amount": stock.change_amount,
+            "change_percent": stock.change_percent,
+            "market_cap": stock.market_cap,
+            "trading_volume": stock.trading_volume,
+            "per": stock.per,
+            "roe": stock.roe,
+            "market_cap_rank": stock.market_cap_rank,
+            "is_active": stock.is_active,
+            "created_at": stock.created_at,
+            "updated_at": stock.updated_at,
+            "ma90_price": stock.ma90_price,
+            "ma90_percentage": ma90_percentage,
+            "tags": tags,
+            "latest_tag_date": latest_tag_date,
+
+            # 호환성을 위한 최소 필드
+            "latest_price": stock.current_price,
+            "latest_change": stock.change_amount,
+            "latest_change_percent": stock.change_percent,
+            "latest_volume": stock.trading_volume,
+        }
+        stock_list.append(stock_data)
+
+    # 결과 생성 및 캐시에 저장 (검색은 1분 캐시)
+    result = {
+        "total": total,
+        "stocks": stock_list,
+        "page": 1,
+        "page_size": limit
+    }
+    set_cache(cache_key, result, ttl=60)  # 1분 캐시
+    return result
+
+
 @app.get("/api/stocks/{stock_id}", response_model=schemas.Stock)
 def get_stock(stock_id: int, db: Session = Depends(get_db)):
     stock = db.query(Stock).filter(Stock.id == stock_id).first()
