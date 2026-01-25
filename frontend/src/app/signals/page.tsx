@@ -1,9 +1,9 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
-import { useInfiniteQuery, useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useEffect, useRef } from 'react';
+import { useInfiniteQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import AppLayout from '@/components/AppLayout';
-import { TrendingUp, TrendingDown, Activity, RefreshCw, Calendar, Loader2, Star, Trash2 } from 'lucide-react';
+import { TrendingUp, TrendingDown, Activity, Calendar, Loader2, Star, Trash2 } from 'lucide-react';
 import { Toaster, toast } from 'sonner';
 import { getNaverChartUrl, getNaverInfoUrl, openNaverChartPopup } from '@/lib/naverStock';
 import { stockApi } from '@/lib/api';
@@ -45,29 +45,10 @@ interface SignalListResponse {
   };
 }
 
-interface TaskProgress {
-  task_id: string;
-  task_type: string;
-  status: string;
-  total_items: number;
-  current_item: number;
-  current_stock_name?: string;
-  success_count: number;
-  failed_count: number;
-  message?: string;
-  error_message?: string;
-  started_at: string;
-  updated_at: string;
-  completed_at?: string;
-}
-
 const PAGE_SIZE = 30;
 
 export default function SignalsPage() {
   const queryClient = useQueryClient();
-  const [isRefreshing, setIsRefreshing] = useState(false);
-  const [currentTaskId, setCurrentTaskId] = useState<string | null>(null);
-  const [showProgress, setShowProgress] = useState(false);
   const loadMoreRef = useRef<HTMLDivElement>(null);
 
   // 무한 스크롤로 신호 조회
@@ -98,25 +79,6 @@ export default function SignalsPage() {
     refetchInterval: 60000, // 1분마다 자동 갱신
   });
 
-  // 작업 진행 상황 조회
-  const { data: taskProgress } = useQuery<TaskProgress | null>({
-    queryKey: ['task-progress', currentTaskId],
-    queryFn: async () => {
-      if (!currentTaskId) return null;
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/tasks/${currentTaskId}`);
-      if (!response.ok) throw new Error('Failed to fetch task progress');
-      return response.json();
-    },
-    enabled: !!currentTaskId && showProgress,
-    refetchInterval: (query) => {
-      const data = query.state.data;
-      if (data?.status === 'completed' || data?.status === 'failed') {
-        return false;
-      }
-      return 2000;
-    },
-  });
-
   // Infinite scroll with IntersectionObserver
   useEffect(() => {
     if (!loadMoreRef.current) return;
@@ -134,57 +96,6 @@ export default function SignalsPage() {
 
     return () => observer.disconnect();
   }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
-
-  // 진행 상황이 완료되면 신호 목록 갱신
-  useEffect(() => {
-    if (taskProgress?.status === 'completed') {
-      setTimeout(() => {
-        queryClient.invalidateQueries({ queryKey: ['stored-signals-infinite'] });
-        setShowProgress(false);
-        setCurrentTaskId(null);
-        setIsRefreshing(false);
-        toast.success('신호 분석 완료', {
-          description: taskProgress.message || '최신 매매 신호를 확인하세요',
-        });
-      }, 1000);
-    } else if (taskProgress?.status === 'failed') {
-      setShowProgress(false);
-      setCurrentTaskId(null);
-      setIsRefreshing(false);
-      toast.error('분석 실패', {
-        description: taskProgress.error_message || '잠시 후 다시 시도해주세요',
-      });
-    }
-  }, [taskProgress?.status, taskProgress?.message, taskProgress?.error_message, queryClient]);
-
-  // 재분석 뮤테이션
-  const refreshMutation = useMutation({
-    mutationFn: async () => {
-      const response = await fetch(
-        `${process.env.NEXT_PUBLIC_API_URL}/api/signals/refresh?mode=all&days=120&force_full=true`,
-        { method: 'POST' }
-      );
-      if (!response.ok) throw new Error('Failed to refresh signals');
-      return response.json();
-    },
-    onSuccess: (data) => {
-      toast.success('신호 재분석을 시작했습니다', {
-        description: '실시간으로 진행 상황을 확인할 수 있습니다',
-      });
-
-      if (data.task_id) {
-        setCurrentTaskId(data.task_id);
-        setShowProgress(true);
-        setIsRefreshing(true);
-      }
-    },
-    onError: () => {
-      toast.error('재분석 실패', {
-        description: '잠시 후 다시 시도해주세요',
-      });
-      setIsRefreshing(false);
-    },
-  });
 
   // 신호 삭제 뮤테이션
   const deleteMutation = useMutation({
@@ -268,67 +179,8 @@ export default function SignalsPage() {
               <Trash2 className="h-4 w-4" />
               삭제
             </button>
-            <button
-              onClick={() => refreshMutation.mutate()}
-              disabled={refreshMutation.isPending || isRefreshing}
-              className="px-4 py-2 rounded-lg text-sm font-medium bg-primary text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-            >
-              <RefreshCw className={`h-4 w-4 ${(refreshMutation.isPending || isRefreshing) ? 'animate-spin' : ''}`} />
-              {refreshMutation.isPending || isRefreshing ? '분석 중...' : '재분석'}
-            </button>
           </div>
         </div>
-
-        {/* Progress Display */}
-        {showProgress && taskProgress && (
-          <div className="bg-primary/10 border border-primary/30 rounded-xl p-6">
-            <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <RefreshCw className="h-5 w-5 text-primary animate-spin" />
-                  <div>
-                    <h3 className="font-semibold text-foreground">신호 분석 진행 중</h3>
-                    <p className="text-sm text-muted-foreground">{taskProgress.message}</p>
-                  </div>
-                </div>
-                <div className="text-right">
-                  <p className="text-sm font-medium text-foreground">
-                    {taskProgress.current_item} / {taskProgress.total_items}
-                  </p>
-                  <p className="text-xs text-muted-foreground">
-                    {Math.round((taskProgress.current_item / taskProgress.total_items) * 100)}% 완료
-                  </p>
-                </div>
-              </div>
-
-              <div className="w-full bg-muted rounded-full h-3">
-                <div
-                  className="bg-primary rounded-full h-3 transition-all duration-300 ease-out"
-                  style={{
-                    width: `${(taskProgress.current_item / taskProgress.total_items) * 100}%`,
-                  }}
-                />
-              </div>
-
-              {taskProgress.current_stock_name && (
-                <p className="text-sm text-muted-foreground">
-                  현재 분석 중: <span className="font-medium text-foreground">{taskProgress.current_stock_name}</span>
-                </p>
-              )}
-
-              <div className="flex gap-4 text-sm">
-                <span className="text-green-600 dark:text-green-400">
-                  성공: {taskProgress.success_count}
-                </span>
-                {taskProgress.failed_count > 0 && (
-                  <span className="text-red-600 dark:text-red-400">
-                    실패: {taskProgress.failed_count}
-                  </span>
-                )}
-              </div>
-            </div>
-          </div>
-        )}
 
         {/* Stats */}
         {stats && (
@@ -632,16 +484,8 @@ export default function SignalsPage() {
               </div>
               <p className="text-foreground font-semibold text-lg">매수 신호가 없습니다</p>
               <p className="text-sm text-muted-foreground mt-2">
-                "재분석" 버튼을 눌러 최신 신호를 분석하세요
+                설정 &gt; 신호 분석에서 분석을 실행하세요
               </p>
-              <button
-                onClick={() => refreshMutation.mutate()}
-                disabled={refreshMutation.isPending || isRefreshing}
-                className="mt-4 px-6 py-2 rounded-lg text-sm font-medium bg-primary text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center gap-2"
-              >
-                <RefreshCw className={`h-4 w-4 ${(refreshMutation.isPending || isRefreshing) ? 'animate-spin' : ''}`} />
-                {refreshMutation.isPending || isRefreshing ? '분석 중...' : '지금 분석하기'}
-              </button>
             </div>
           )
         )}

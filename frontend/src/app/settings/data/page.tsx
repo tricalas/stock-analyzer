@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Database, RefreshCw, X, Settings2, Zap, Clock, SkipForward, TrendingUp, Download } from 'lucide-react';
+import { Database, RefreshCw, X, Settings2, Zap, Clock, SkipForward, TrendingUp, Download, StopCircle, CloudOff } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '@/contexts/AuthContext';
 import { useQuery } from '@tanstack/react-query';
@@ -96,7 +96,7 @@ export default function DataCollectionPage() {
     enabled: !!historyTaskId && showHistoryProgress,
     refetchInterval: (query) => {
       const data = query.state.data;
-      if (data?.status === 'completed' || data?.status === 'failed') {
+      if (data?.status === 'completed' || data?.status === 'failed' || data?.status === 'cancelled') {
         return false;
       }
       return 1000; // 1초마다 업데이트
@@ -105,7 +105,7 @@ export default function DataCollectionPage() {
 
   // 진행 상황 완료 시 자동 숨김
   useEffect(() => {
-    if (historyProgress?.status === 'completed' || historyProgress?.status === 'failed') {
+    if (historyProgress?.status === 'completed' || historyProgress?.status === 'failed' || historyProgress?.status === 'cancelled') {
       setTimeout(() => {
         setShowHistoryProgress(false);
         setHistoryTaskId(null);
@@ -282,6 +282,41 @@ export default function DataCollectionPage() {
 
   const failedCount = collectionLogs?.filter(log => log.status === 'failed').length || 0;
 
+  // 작업 취소 함수
+  const handleCancelTask = async () => {
+    if (!historyTaskId) return;
+
+    try {
+      const token = localStorage.getItem('auth_token');
+      if (!token) {
+        toast.error('로그인이 필요합니다.');
+        return;
+      }
+
+      const response = await fetch(`${API_URL}/api/tasks/${historyTaskId}/cancel`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to cancel task');
+      }
+
+      const result = await response.json();
+      if (result.success) {
+        toast.success('작업이 취소되었습니다.');
+      } else {
+        toast.info(result.message);
+      }
+    } catch (error) {
+      console.error('Error cancelling task:', error);
+      toast.error('작업 취소에 실패했습니다.');
+    }
+  };
+
   // 진행률 계산
   const progressPercent = historyProgress
     ? Math.round((historyProgress.current_item / historyProgress.total_items) * 100)
@@ -430,7 +465,7 @@ export default function DataCollectionPage() {
             <div className={`border rounded-lg p-4 mb-4 ${
               historyProgress.status === 'completed'
                 ? 'bg-green-500/10 border-green-500/30'
-                : historyProgress.status === 'failed'
+                : historyProgress.status === 'failed' || historyProgress.status === 'cancelled'
                 ? 'bg-red-500/10 border-red-500/30'
                 : 'bg-primary/10 border-primary/30'
             }`}>
@@ -444,6 +479,10 @@ export default function DataCollectionPage() {
                       <div className="h-4 w-4 rounded-full bg-green-500 flex items-center justify-center">
                         <span className="text-white text-[10px]">✓</span>
                       </div>
+                    ) : historyProgress.status === 'cancelled' ? (
+                      <div className="h-4 w-4 rounded-full bg-orange-500 flex items-center justify-center">
+                        <StopCircle className="w-3 h-3 text-white" />
+                      </div>
                     ) : (
                       <div className="h-4 w-4 rounded-full bg-red-500 flex items-center justify-center">
                         <span className="text-white text-[10px]">!</span>
@@ -452,20 +491,41 @@ export default function DataCollectionPage() {
                     <div>
                       <h4 className="text-sm font-semibold text-foreground">
                         {historyProgress.status === 'running' ? '수집 진행 중' :
-                         historyProgress.status === 'completed' ? '수집 완료' : '수집 실패'}
+                         historyProgress.status === 'completed' ? '수집 완료' :
+                         historyProgress.status === 'cancelled' ? '수집 취소됨' : '수집 실패'}
                       </h4>
                       <p className="text-xs text-muted-foreground">{historyProgress.message}</p>
                     </div>
                   </div>
-                  <div className="text-right">
-                    <p className="text-sm font-medium text-foreground">
-                      {historyProgress.current_item.toLocaleString()} / {historyProgress.total_items.toLocaleString()}
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      {progressPercent}% 완료
-                    </p>
+                  <div className="flex items-center gap-3">
+                    {/* 취소 버튼 */}
+                    {historyProgress.status === 'running' && (
+                      <button
+                        onClick={handleCancelTask}
+                        className="flex items-center gap-1 px-2 py-1 text-xs bg-red-500/10 hover:bg-red-500/20 text-red-600 dark:text-red-400 rounded transition-colors"
+                      >
+                        <StopCircle className="w-3 h-3" />
+                        취소
+                      </button>
+                    )}
+                    <div className="text-right">
+                      <p className="text-sm font-medium text-foreground">
+                        {historyProgress.current_item.toLocaleString()} / {historyProgress.total_items.toLocaleString()}
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        {progressPercent}% 완료
+                      </p>
+                    </div>
                   </div>
                 </div>
+
+                {/* 브라우저 독립 실행 안내 */}
+                {historyProgress.status === 'running' && (
+                  <div className="flex items-center gap-1.5 text-xs text-blue-600 dark:text-blue-400 bg-blue-500/10 px-2 py-1 rounded">
+                    <CloudOff className="w-3 h-3" />
+                    브라우저를 닫아도 작업이 계속 실행됩니다
+                  </div>
+                )}
 
                 {/* 프로그레스 바 */}
                 <div className="w-full bg-muted rounded-full h-2.5">

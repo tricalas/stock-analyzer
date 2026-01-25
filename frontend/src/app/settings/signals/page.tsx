@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { TrendingUp, RefreshCw, Activity, Calendar, Play } from 'lucide-react';
+import { TrendingUp, RefreshCw, Activity, Calendar, Play, StopCircle, CloudOff } from 'lucide-react';
 import { toast } from 'sonner';
 
 interface TaskProgress {
@@ -63,7 +63,7 @@ export default function SignalAnalysisPage() {
     enabled: !!currentTaskId && showProgress,
     refetchInterval: (query) => {
       const data = query.state.data;
-      if (data?.status === 'completed' || data?.status === 'failed') {
+      if (data?.status === 'completed' || data?.status === 'failed' || data?.status === 'cancelled') {
         return false;
       }
       return 2000;
@@ -89,15 +89,52 @@ export default function SignalAnalysisPage() {
       toast.error('분석 실패', {
         description: progressData.error_message || '잠시 후 다시 시도해주세요',
       });
+    } else if (progressData?.status === 'cancelled') {
+      setShowProgress(false);
+      setCurrentTaskId(null);
+      setIsAnalyzing(false);
+      toast.info('분석 취소됨', {
+        description: '사용자에 의해 작업이 취소되었습니다',
+      });
     }
   }, [progressData?.status, progressData?.message, progressData?.error_message, refetchSignals]);
+
+  // 작업 취소 함수
+  const handleCancelTask = async () => {
+    if (!currentTaskId) return;
+
+    try {
+      const token = localStorage.getItem('auth_token');
+      const response = await fetch(`${API_URL}/api/tasks/${currentTaskId}/cancel`, {
+        method: 'POST',
+        headers: {
+          'Authorization': token ? `Bearer ${token}` : '',
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to cancel task');
+      }
+
+      const result = await response.json();
+      if (result.success) {
+        toast.success('작업이 취소되었습니다.');
+      } else {
+        toast.info(result.message);
+      }
+    } catch (error) {
+      console.error('Error cancelling task:', error);
+      toast.error('작업 취소에 실패했습니다.');
+    }
+  };
 
   // 신호 분석 시작
   const handleStartAnalysis = async (mode: 'all' | 'favorites' = 'all') => {
     try {
       setIsAnalyzing(true);
       const response = await fetch(
-        `${API_URL}/api/signals/refresh?mode=${mode}&days=120`,
+        `${API_URL}/api/signals/refresh?mode=${mode}&days=120&force_full=true`,
         { method: 'POST' }
       );
 
@@ -227,15 +264,35 @@ export default function SignalAnalysisPage() {
                     <p className="text-sm text-muted-foreground">{progressData.message}</p>
                   </div>
                 </div>
-                <div className="text-right">
-                  <p className="text-sm font-medium text-foreground">
-                    {progressData.current_item} / {progressData.total_items}
-                  </p>
-                  <p className="text-xs text-muted-foreground">
-                    {Math.round((progressData.current_item / progressData.total_items) * 100)}% 완료
-                  </p>
+                <div className="flex items-center gap-3">
+                  {/* 취소 버튼 */}
+                  {progressData.status === 'running' && (
+                    <button
+                      onClick={handleCancelTask}
+                      className="flex items-center gap-1 px-2 py-1 text-xs bg-red-500/10 hover:bg-red-500/20 text-red-600 dark:text-red-400 rounded transition-colors"
+                    >
+                      <StopCircle className="w-3 h-3" />
+                      취소
+                    </button>
+                  )}
+                  <div className="text-right">
+                    <p className="text-sm font-medium text-foreground">
+                      {progressData.current_item} / {progressData.total_items}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {Math.round((progressData.current_item / progressData.total_items) * 100)}% 완료
+                    </p>
+                  </div>
                 </div>
               </div>
+
+              {/* 브라우저 독립 실행 안내 */}
+              {progressData.status === 'running' && (
+                <div className="flex items-center gap-1.5 text-xs text-blue-600 dark:text-blue-400 bg-blue-500/10 px-2 py-1 rounded">
+                  <CloudOff className="w-3 h-3" />
+                  브라우저를 닫아도 작업이 계속 실행됩니다
+                </div>
+              )}
 
               {/* 프로그레스 바 */}
               <div className="w-full bg-muted rounded-full h-2">

@@ -23,6 +23,8 @@ from app.scheduler import stock_scheduler
 from app.constants import ETF_KEYWORDS
 from app.auth import get_pin_hash, verify_pin, create_access_token, get_current_user, get_optional_current_user
 from app.signal_analyzer import signal_analyzer
+from app.tasks import collect_history_task, analyze_signals_task, retry_failed_stocks_task
+from app.celery_app import celery_app
 import uuid
 
 logging.basicConfig(level=logging.INFO)
@@ -1722,34 +1724,19 @@ def create_user_direct(
     return {"message": "User created successfully", "user_id": new_user.id}
 
 
-# ==================== 히스토리 데이터 수집 ====================
-
-def run_background_history_collection(days: int, task_id: str, mode: str = "all", max_workers: int = 5):
-    """백그라운드에서 실행될 히스토리 수집 작업 (병렬 처리)"""
-    try:
-        from app.crawlers.kis_history_crawler import kis_history_crawler
-        logger.info(f"Starting background history collection ({days} days, mode: {mode}, workers: {max_workers}) with task_id: {task_id}")
-
-        if mode == "tagged":
-            result = kis_history_crawler.collect_history_for_tagged_stocks(days=days, task_id=task_id, max_workers=max_workers)
-        else:  # "all"
-            result = kis_history_crawler.collect_history_for_all_stocks(days=days, task_id=task_id, max_workers=max_workers)
-
-        logger.info(f"History collection completed: {result}")
-    except Exception as e:
-        logger.error(f"Error during background history collection: {str(e)}")
-
+# ==================== 히스토리 데이터 수집 (Celery 기반) ====================
 
 @app.post("/api/stocks/collect-history")
 def collect_history_for_stocks(
-    background_tasks: BackgroundTasks,
     days: int = Query(120, ge=1, le=365),
     mode: str = Query("all", pattern="^(all|tagged)$"),
     workers: int = Query(5, ge=1, le=20, description="병렬 워커 수 (1~20, 기본 5)"),
     current_user: User = Depends(get_current_user)
 ):
     """
-    종목들의 히스토리 데이터 수집 (병렬 처리)
+    종목들의 히스토리 데이터 수집 (Celery 백그라운드 작업)
+
+    브라우저를 닫아도 작업이 계속 실행됩니다.
 
     Args:
         days: 수집할 일수 (1~365일, 기본 120일)
@@ -1759,45 +1746,58 @@ def collect_history_for_stocks(
     Returns:
         수집 작업 시작 메시지 및 task_id
     """
-    import uuid
-
     # task_id 생성
     task_id = str(uuid.uuid4())
 
-    # 백그라운드 작업 추가
-    background_tasks.add_task(run_background_history_collection, days, task_id, mode, workers)
+    # Celery 태스크 비동기 실행 (task_id를 Celery task ID로도 사용)
+    collect_history_task.apply_async(
+        kwargs={
+            "days": days,
+            "task_id": task_id,
+            "mode": mode,
+            "max_workers": workers
+        },
+        task_id=task_id
+    )
 
     mode_text = "전체 종목" if mode == "all" else "태그된 종목"
-    # task_id와 함께 즉시 응답 반환
     return {
         "success": True,
         "message": f"히스토리 수집 작업이 시작되었습니다. ({mode_text}, {days}일치 데이터, 워커 {workers}개)",
         "days": days,
         "mode": mode,
         "workers": workers,
-        "task_id": task_id
+        "task_id": task_id,
+        "note": "브라우저를 닫아도 작업이 계속 실행됩니다."
     }
 
 
 # 기존 API 호환성 유지
 @app.post("/api/stocks/tagged/collect-history")
 def collect_history_for_tagged_stocks_api(
-    background_tasks: BackgroundTasks,
     days: int = Query(120, ge=1, le=365),
     workers: int = Query(5, ge=1, le=20),
     current_user: User = Depends(get_current_user)
 ):
-    """태그된 종목 히스토리 수집 (기존 API 호환, 병렬 처리)"""
-    import uuid
+    """태그된 종목 히스토리 수집 (Celery 백그라운드 작업)"""
     task_id = str(uuid.uuid4())
-    background_tasks.add_task(run_background_history_collection, days, task_id, "tagged", workers)
+    collect_history_task.apply_async(
+        kwargs={
+            "days": days,
+            "task_id": task_id,
+            "mode": "tagged",
+            "max_workers": workers
+        },
+        task_id=task_id
+    )
     return {
         "success": True,
         "message": f"히스토리 수집 작업이 시작되었습니다. (태그된 종목, {days}일치 데이터, 워커 {workers}개)",
         "days": days,
         "mode": "tagged",
         "workers": workers,
-        "task_id": task_id
+        "task_id": task_id,
+        "note": "브라우저를 닫아도 작업이 계속 실행됩니다."
     }
 
 
@@ -2079,11 +2079,12 @@ def refresh_signals(
     limit: int = Query(500, ge=10, le=2000),
     days: int = Query(120, ge=60, le=365),
     force_full: bool = Query(False, description="True면 델타 무시하고 전체 스캔"),
-    db: Session = Depends(get_db),
     current_user: Optional[User] = Depends(get_optional_current_user)
 ):
     """
-    매매 신호 재분석 (별도 스레드에서 실행)
+    매매 신호 재분석 (Celery 백그라운드 작업)
+
+    브라우저를 닫아도 작업이 계속 실행됩니다.
 
     Args:
         mode: 분석 모드 (tagged, all, top)
@@ -2094,34 +2095,22 @@ def refresh_signals(
     Returns:
         작업 시작 메시지
     """
-    import threading
+    # task_id 생성
+    task_id = str(uuid.uuid4())
 
-    def run_analysis_thread():
-        try:
-            logger.info(f"🔍 Signal analysis thread started (mode: {mode}, force_full: {force_full})...")
-            result = signal_analyzer.analyze_and_store_signals(
-                mode=mode,
-                limit=limit,
-                days=days,
-                force_full=force_full
-            )
-            logger.info(f"✅ Signal analysis completed: {result}")
-        except Exception as e:
-            logger.error(f"❌ Error in signal analysis thread: {str(e)}")
-            import traceback
-            logger.error(traceback.format_exc())
+    # Celery 태스크 비동기 실행
+    analyze_signals_task.apply_async(
+        kwargs={
+            "task_id": task_id,
+            "mode": mode,
+            "limit": limit,
+            "days": days,
+            "force_full": force_full
+        },
+        task_id=task_id
+    )
 
-    # 별도 스레드에서 실행 (daemon=True: 메인 프로세스 종료 시 함께 종료)
-    thread = threading.Thread(target=run_analysis_thread, daemon=True)
-    thread.start()
-    logger.info(f"🚀 Signal analysis thread launched (thread_id: {thread.ident})")
-
-    # 스레드가 TaskProgress를 생성할 시간 확보
-    import time
-    time.sleep(0.5)
-    latest_task = db.query(TaskProgress).filter(
-        TaskProgress.task_type == "signal_analysis"
-    ).order_by(desc(TaskProgress.started_at)).first()
+    logger.info(f"🚀 Signal analysis Celery task launched (task_id: {task_id})")
 
     delta_msg = "전체 스캔" if force_full else "델타 분석 (변경된 종목만)"
     return {
@@ -2130,8 +2119,8 @@ def refresh_signals(
         "mode": mode,
         "days": days,
         "force_full": force_full,
-        "task_id": latest_task.task_id if latest_task else None,
-        "note": f"Use GET /api/tasks/{{task_id}} to check progress"
+        "task_id": task_id,
+        "note": "브라우저를 닫아도 작업이 계속 실행됩니다. GET /api/tasks/{task_id}로 진행 상황을 확인하세요."
     }
 
 
@@ -2196,6 +2185,126 @@ def get_running_tasks(db: Session = Depends(get_db)):
     ).order_by(desc(TaskProgress.started_at)).all()
 
     return tasks
+
+
+@app.post("/api/tasks/{task_id}/cancel")
+def cancel_task(
+    task_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    실행 중인 작업 취소
+
+    Celery 워커에서 실행 중인 작업을 강제로 종료합니다.
+
+    Args:
+        task_id: 작업 ID (UUID)
+
+    Returns:
+        취소 결과 메시지
+    """
+    # DB에서 작업 조회
+    task = db.query(TaskProgress).filter(TaskProgress.task_id == task_id).first()
+
+    if not task:
+        raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
+
+    if task.status != "running":
+        return {
+            "success": False,
+            "message": f"작업이 실행 중이 아닙니다. (현재 상태: {task.status})"
+        }
+
+    # Celery 태스크 취소 (terminate=True: 강제 종료)
+    celery_app.control.revoke(task_id, terminate=True, signal='SIGTERM')
+
+    # DB 상태 업데이트
+    task.status = "cancelled"
+    task.message = "사용자에 의해 취소됨"
+    task.completed_at = datetime.utcnow()
+    db.commit()
+
+    logger.info(f"🛑 Task {task_id} cancelled by user")
+
+    return {
+        "success": True,
+        "message": "작업이 취소되었습니다",
+        "task_id": task_id
+    }
+
+
+@app.post("/api/tasks/{task_id}/restart")
+def restart_task(
+    task_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    실패하거나 취소된 작업 재시작
+
+    동일한 설정으로 새로운 작업을 시작합니다.
+
+    Args:
+        task_id: 재시작할 원본 작업 ID
+
+    Returns:
+        새로운 task_id와 함께 재시작 결과
+    """
+    # DB에서 원본 작업 조회
+    task = db.query(TaskProgress).filter(TaskProgress.task_id == task_id).first()
+
+    if not task:
+        raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
+
+    if task.status == "running":
+        return {
+            "success": False,
+            "message": "작업이 아직 실행 중입니다. 취소 후 재시작하세요."
+        }
+
+    # 새 task_id 생성
+    new_task_id = str(uuid.uuid4())
+
+    # 작업 타입에 따라 재시작
+    if task.task_type == "history_collection":
+        # 기본 설정으로 재시작 (tagged 모드, 100일)
+        collect_history_task.apply_async(
+            kwargs={
+                "days": 100,
+                "task_id": new_task_id,
+                "mode": "tagged",
+                "max_workers": 5
+            },
+            task_id=new_task_id
+        )
+        logger.info(f"🔄 History collection restarted: {task_id} -> {new_task_id}")
+
+    elif task.task_type == "signal_analysis":
+        analyze_signals_task.apply_async(
+            kwargs={
+                "task_id": new_task_id,
+                "mode": "tagged",
+                "limit": 500,
+                "days": 120,
+                "force_full": False
+            },
+            task_id=new_task_id
+        )
+        logger.info(f"🔄 Signal analysis restarted: {task_id} -> {new_task_id}")
+
+    else:
+        raise HTTPException(
+            status_code=400,
+            detail=f"알 수 없는 작업 타입: {task.task_type}"
+        )
+
+    return {
+        "success": True,
+        "message": "작업이 재시작되었습니다",
+        "original_task_id": task_id,
+        "new_task_id": new_task_id
+    }
 
 
 # ==================== 히스토리 수집 로그 ====================
@@ -2278,13 +2387,14 @@ def get_task_logs(
 @app.post("/api/tasks/{task_id}/retry-failed")
 def retry_failed_stocks(
     task_id: str,
-    background_tasks: BackgroundTasks,
     days: int = Query(120, ge=1, le=365),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
     """
-    특정 작업에서 실패한 종목들만 재시도
+    특정 작업에서 실패한 종목들만 재시도 (Celery 백그라운드 작업)
+
+    브라우저를 닫아도 작업이 계속 실행됩니다.
 
     Args:
         task_id: 재시도할 TaskProgress의 task_id
@@ -2293,8 +2403,7 @@ def retry_failed_stocks(
     Returns:
         재시도 작업 정보
     """
-    from app.models import HistoryCollectionLog, Stock
-    import uuid
+    from app.models import HistoryCollectionLog
 
     # 실패한 종목 조회
     failed_logs = db.query(HistoryCollectionLog).filter(
@@ -2312,13 +2421,13 @@ def retry_failed_stocks(
     # 실패한 종목 ID 추출
     failed_stock_ids = [log.stock_id for log in failed_logs]
 
-    # Stock 객체 조회
-    failed_stocks = db.query(Stock).filter(
+    # 활성 종목만 확인
+    active_stocks = db.query(Stock).filter(
         Stock.id.in_(failed_stock_ids),
         Stock.is_active == True
     ).all()
 
-    if not failed_stocks:
+    if not active_stocks:
         return {
             "success": False,
             "message": "재시도 가능한 종목이 없습니다.",
@@ -2328,29 +2437,26 @@ def retry_failed_stocks(
     # 새 task_id 생성
     new_task_id = str(uuid.uuid4())
 
-    # 백그라운드 작업으로 재시도 실행
-    def retry_collection():
-        try:
-            from app.crawlers.kis_history_crawler import kis_history_crawler
-            logger.info(f"Retrying {len(failed_stocks)} failed stocks with task_id: {new_task_id}")
-            result = kis_history_crawler._collect_history_for_stocks(
-                failed_stocks,
-                days,
-                db,
-                task_id=new_task_id
-            )
-            logger.info(f"Retry completed: {result}")
-        except Exception as e:
-            logger.error(f"Error during retry: {str(e)}")
+    # Celery 태스크 비동기 실행
+    retry_failed_stocks_task.apply_async(
+        kwargs={
+            "task_id": new_task_id,
+            "stock_ids": [s.id for s in active_stocks],
+            "days": days,
+            "max_workers": 5
+        },
+        task_id=new_task_id
+    )
 
-    background_tasks.add_task(retry_collection)
+    logger.info(f"🔄 Retrying {len(active_stocks)} failed stocks with Celery task: {new_task_id}")
 
     return {
         "success": True,
-        "message": f"{len(failed_stocks)}개 실패 종목 재시도가 시작되었습니다.",
+        "message": f"{len(active_stocks)}개 실패 종목 재시도가 시작되었습니다.",
         "task_id": new_task_id,
-        "retry_count": len(failed_stocks),
-        "original_failed_count": len(failed_logs)
+        "retry_count": len(active_stocks),
+        "original_failed_count": len(failed_logs),
+        "note": "브라우저를 닫아도 작업이 계속 실행됩니다."
     }
 
 
