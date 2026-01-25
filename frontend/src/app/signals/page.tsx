@@ -1,39 +1,92 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useState } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import AppLayout from '@/components/AppLayout';
-import { TrendingUp, TrendingDown, Calendar, DollarSign, Activity } from 'lucide-react';
-import { Toaster } from '@/components/ui/sonner';
+import { TrendingUp, TrendingDown, Calendar, DollarSign, Activity, RefreshCw } from 'lucide-react';
+import { Toaster, toast } from 'sonner';
 
-interface SignalStock {
-  stock_id: number;
+interface Stock {
+  id: number;
   symbol: string;
   name: string;
   market: string;
-  latest_signal_date: string;
-  signal_price: number;
-  current_price: number;
-  price_change_pct: number;
-  signal_count: number;
+  current_price?: number;
 }
 
-interface SignalScanResponse {
-  total_scanned: number;
-  total_with_signals: number;
-  stocks_with_signals: SignalStock[];
-  scanned_at: string;
+interface StockSignal {
+  id: number;
+  stock_id: number;
+  signal_type: string;
+  signal_date: string;
+  signal_price: number;
+  strategy_name: string;
+  current_price?: number;
+  return_percent?: number;
+  details?: string;
+  is_active: boolean;
+  analyzed_at: string;
+  updated_at: string;
+  stock?: Stock;
+}
+
+interface SignalListResponse {
+  total: number;
+  signals: StockSignal[];
+  analyzed_at?: string;
+  stats?: {
+    total_signals: number;
+    positive_returns: number;
+    negative_returns: number;
+    avg_return: number;
+  };
 }
 
 export default function SignalsPage() {
-  const { data, isLoading, error, refetch } = useQuery<SignalScanResponse>({
-    queryKey: ['signals-scan'],
+  const queryClient = useQueryClient();
+  const [isRefreshing, setIsRefreshing] = useState(false);
+
+  // 저장된 신호 조회 (빠름)
+  const { data, isLoading, error } = useQuery<SignalListResponse>({
+    queryKey: ['stored-signals'],
     queryFn: async () => {
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/signals/scan`);
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/signals?limit=100`);
       if (!response.ok) throw new Error('Failed to fetch signals');
       return response.json();
     },
-    staleTime: 5 * 60 * 1000, // 5분 캐싱
+    refetchInterval: 30000, // 30초마다 자동 갱신
+  });
+
+  // 재분석 뮤테이션
+  const refreshMutation = useMutation({
+    mutationFn: async () => {
+      const response = await fetch(
+        `${process.env.NEXT_PUBLIC_API_URL}/api/signals/refresh?mode=top&limit=500&days=120`,
+        { method: 'POST' }
+      );
+      if (!response.ok) throw new Error('Failed to refresh signals');
+      return response.json();
+    },
+    onSuccess: () => {
+      toast.success('신호 재분석을 시작했습니다', {
+        description: '분석이 완료되면 자동으로 업데이트됩니다 (약 1-2분 소요)',
+      });
+      setIsRefreshing(true);
+
+      // 2분 후 쿼리 무효화
+      setTimeout(() => {
+        queryClient.invalidateQueries({ queryKey: ['stored-signals'] });
+        setIsRefreshing(false);
+        toast.success('신호 분석 완료', {
+          description: '최신 매매 신호를 확인하세요',
+        });
+      }, 120000);
+    },
+    onError: () => {
+      toast.error('재분석 실패', {
+        description: '잠시 후 다시 시도해주세요',
+      });
+    },
   });
 
   const formatPrice = (price: number, market: string) => {
@@ -52,6 +105,16 @@ export default function SignalsPage() {
     });
   };
 
+  const formatDateTime = (dateStr: string) => {
+    const date = new Date(dateStr);
+    return date.toLocaleString('ko-KR', {
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  };
+
   return (
     <AppLayout>
       <div className="p-4 lg:p-8 space-y-6">
@@ -67,22 +130,24 @@ export default function SignalsPage() {
             </p>
           </div>
           <button
-            onClick={() => refetch()}
-            className="px-4 py-2 rounded-lg text-sm font-medium bg-primary text-primary-foreground hover:bg-primary/90 transition-colors"
+            onClick={() => refreshMutation.mutate()}
+            disabled={refreshMutation.isPending || isRefreshing}
+            className="px-4 py-2 rounded-lg text-sm font-medium bg-primary text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
           >
-            새로고침
+            <RefreshCw className={`h-4 w-4 ${(refreshMutation.isPending || isRefreshing) ? 'animate-spin' : ''}`} />
+            {refreshMutation.isPending || isRefreshing ? '분석 중...' : '재분석'}
           </button>
         </div>
 
         {/* Stats */}
         {data && (
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <div className="bg-card border border-border rounded-xl p-6">
               <div className="flex items-center gap-3">
                 <Activity className="h-8 w-8 text-blue-500" />
                 <div>
-                  <p className="text-sm text-muted-foreground">스캔된 종목</p>
-                  <p className="text-2xl font-bold text-foreground">{data.total_scanned}개</p>
+                  <p className="text-sm text-muted-foreground">총 신호</p>
+                  <p className="text-2xl font-bold text-foreground">{data.stats?.total_signals || 0}개</p>
                 </div>
               </div>
             </div>
@@ -91,9 +156,21 @@ export default function SignalsPage() {
               <div className="flex items-center gap-3">
                 <TrendingUp className="h-8 w-8 text-green-500" />
                 <div>
-                  <p className="text-sm text-muted-foreground">매수 신호 발견</p>
+                  <p className="text-sm text-muted-foreground">수익 중</p>
                   <p className="text-2xl font-bold text-green-600 dark:text-green-400">
-                    {data.total_with_signals}개
+                    {data.stats?.positive_returns || 0}개
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div className="bg-card border border-border rounded-xl p-6">
+              <div className="flex items-center gap-3">
+                <TrendingDown className="h-8 w-8 text-red-500" />
+                <div>
+                  <p className="text-sm text-muted-foreground">손실 중</p>
+                  <p className="text-2xl font-bold text-red-600 dark:text-red-400">
+                    {data.stats?.negative_returns || 0}개
                   </p>
                 </div>
               </div>
@@ -103,14 +180,9 @@ export default function SignalsPage() {
               <div className="flex items-center gap-3">
                 <Calendar className="h-8 w-8 text-purple-500" />
                 <div>
-                  <p className="text-sm text-muted-foreground">마지막 스캔</p>
+                  <p className="text-sm text-muted-foreground">마지막 분석</p>
                   <p className="text-sm font-medium text-foreground">
-                    {new Date(data.scanned_at).toLocaleString('ko-KR', {
-                      month: 'short',
-                      day: 'numeric',
-                      hour: '2-digit',
-                      minute: '2-digit',
-                    })}
+                    {data.analyzed_at ? formatDateTime(data.analyzed_at) : '분석 대기중'}
                   </p>
                 </div>
               </div>
@@ -125,7 +197,7 @@ export default function SignalsPage() {
               <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
               <div className="absolute inset-0 animate-ping rounded-full h-12 w-12 border border-primary/20"></div>
             </div>
-            <p className="mt-4 text-sm text-muted-foreground font-medium">신호 스캔 중...</p>
+            <p className="mt-4 text-sm text-muted-foreground font-medium">신호 로딩 중...</p>
           </div>
         )}
 
@@ -141,25 +213,27 @@ export default function SignalsPage() {
         )}
 
         {/* Signal Cards */}
-        {data && data.stocks_with_signals.length > 0 ? (
+        {data && data.signals.length > 0 ? (
           <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-4">
-            {data.stocks_with_signals.map((stock) => (
+            {data.signals.map((signal) => (
               <div
-                key={stock.stock_id}
+                key={signal.id}
                 className="bg-card border border-border rounded-xl p-6 hover:shadow-lg hover:border-primary/50 transition-all cursor-pointer"
                 onClick={() => {
+                  if (!signal.stock) return;
+
                   const width = Math.floor(window.screen.width * 0.7);
                   const height = window.screen.height;
                   const left = Math.floor(window.screen.width * 0.3);
                   const top = 0;
 
-                  const naverSymbol = stock.market === 'US' && stock.symbol.includes('NASDAQ')
-                    ? `${stock.symbol}.O`
-                    : stock.symbol;
+                  const naverSymbol = signal.stock.market === 'US' && signal.stock.symbol.includes('NASDAQ')
+                    ? `${signal.stock.symbol}.O`
+                    : signal.stock.symbol;
 
-                  const url = stock.market === 'US'
+                  const url = signal.stock.market === 'US'
                     ? `https://m.stock.naver.com/fchart/foreign/stock/${naverSymbol}`
-                    : `https://m.stock.naver.com/fchart/domestic/stock/${stock.symbol}`;
+                    : `https://m.stock.naver.com/fchart/domestic/stock/${signal.stock.symbol}`;
 
                   window.open(
                     url,
@@ -171,24 +245,24 @@ export default function SignalsPage() {
                 {/* Header */}
                 <div className="flex items-start justify-between mb-4">
                   <div>
-                    <h3 className="text-lg font-bold text-foreground">{stock.name}</h3>
+                    <h3 className="text-lg font-bold text-foreground">{signal.stock?.name || '종목명 없음'}</h3>
                     <p className="text-sm text-muted-foreground">
-                      {stock.symbol} • {stock.market}
+                      {signal.stock?.symbol || 'N/A'} • {signal.stock?.market || 'N/A'}
                     </p>
                   </div>
                   <div className="px-2 py-1 rounded-md bg-primary/10 text-primary text-xs font-medium">
-                    {stock.signal_count}개 신호
+                    {signal.signal_type.toUpperCase()}
                   </div>
                 </div>
 
                 {/* Signal Info */}
                 <div className="space-y-3">
-                  {/* 최근 신호 날짜 */}
+                  {/* 신호 날짜 */}
                   <div className="flex items-center gap-2 text-sm">
                     <Calendar className="h-4 w-4 text-muted-foreground" />
-                    <span className="text-muted-foreground">최근 신호:</span>
+                    <span className="text-muted-foreground">신호 날짜:</span>
                     <span className="font-medium text-foreground">
-                      {formatDate(stock.latest_signal_date)}
+                      {formatDate(signal.signal_date)}
                     </span>
                   </div>
 
@@ -197,42 +271,46 @@ export default function SignalsPage() {
                     <DollarSign className="h-4 w-4 text-muted-foreground" />
                     <span className="text-muted-foreground">신호 가격:</span>
                     <span className="font-medium text-foreground">
-                      {formatPrice(stock.signal_price, stock.market)}
+                      {formatPrice(signal.signal_price, signal.stock?.market || 'KR')}
                     </span>
                   </div>
 
                   {/* 현재가 */}
-                  <div className="flex items-center gap-2 text-sm">
-                    <Activity className="h-4 w-4 text-muted-foreground" />
-                    <span className="text-muted-foreground">현재가:</span>
-                    <span className="font-medium text-foreground">
-                      {formatPrice(stock.current_price, stock.market)}
-                    </span>
-                  </div>
+                  {signal.current_price && (
+                    <div className="flex items-center gap-2 text-sm">
+                      <Activity className="h-4 w-4 text-muted-foreground" />
+                      <span className="text-muted-foreground">현재가:</span>
+                      <span className="font-medium text-foreground">
+                        {formatPrice(signal.current_price, signal.stock?.market || 'KR')}
+                      </span>
+                    </div>
+                  )}
 
                   {/* 수익률 */}
-                  <div className="pt-3 border-t border-border">
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm text-muted-foreground">신호 대비 수익률</span>
-                      <div className="flex items-center gap-1">
-                        {stock.price_change_pct >= 0 ? (
-                          <>
-                            <TrendingUp className="h-4 w-4 text-green-500" />
-                            <span className="text-lg font-bold text-green-600 dark:text-green-400">
-                              +{stock.price_change_pct.toFixed(2)}%
-                            </span>
-                          </>
-                        ) : (
-                          <>
-                            <TrendingDown className="h-4 w-4 text-red-500" />
-                            <span className="text-lg font-bold text-red-600 dark:text-red-400">
-                              {stock.price_change_pct.toFixed(2)}%
-                            </span>
-                          </>
-                        )}
+                  {signal.return_percent !== undefined && signal.return_percent !== null && (
+                    <div className="pt-3 border-t border-border">
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm text-muted-foreground">신호 대비 수익률</span>
+                        <div className="flex items-center gap-1">
+                          {signal.return_percent >= 0 ? (
+                            <>
+                              <TrendingUp className="h-4 w-4 text-green-500" />
+                              <span className="text-lg font-bold text-green-600 dark:text-green-400">
+                                +{signal.return_percent.toFixed(2)}%
+                              </span>
+                            </>
+                          ) : (
+                            <>
+                              <TrendingDown className="h-4 w-4 text-red-500" />
+                              <span className="text-lg font-bold text-red-600 dark:text-red-400">
+                                {signal.return_percent.toFixed(2)}%
+                              </span>
+                            </>
+                          )}
+                        </div>
                       </div>
                     </div>
-                  </div>
+                  )}
                 </div>
               </div>
             ))}
@@ -245,21 +323,22 @@ export default function SignalsPage() {
               </div>
               <p className="text-foreground font-semibold text-lg">매수 신호가 없습니다</p>
               <p className="text-sm text-muted-foreground mt-2">
-                관심 종목에 태그를 추가하고 히스토리 데이터를 수집하세요
+                "재분석" 버튼을 눌러 최신 신호를 분석하세요
               </p>
+              <button
+                onClick={() => refreshMutation.mutate()}
+                disabled={refreshMutation.isPending || isRefreshing}
+                className="mt-4 px-6 py-2 rounded-lg text-sm font-medium bg-primary text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center gap-2"
+              >
+                <RefreshCw className={`h-4 w-4 ${(refreshMutation.isPending || isRefreshing) ? 'animate-spin' : ''}`} />
+                {refreshMutation.isPending || isRefreshing ? '분석 중...' : '지금 분석하기'}
+              </button>
             </div>
           )
         )}
       </div>
 
-      <Toaster
-        position="top-center"
-        toastOptions={{
-          style: {
-            zIndex: 9999,
-          },
-        }}
-      />
+      <Toaster position="top-center" richColors />
     </AppLayout>
   );
 }
