@@ -156,7 +156,7 @@ export default function SignalAnalysisPage() {
   };
 
   // 신호 분석 시작
-  const handleStartAnalysis = async (mode: 'all' | 'favorites' = 'all') => {
+  const handleStartAnalysis = async (mode: 'all' | 'tagged' = 'all') => {
     try {
       setIsAnalyzing(true);
       const response = await fetch(
@@ -172,7 +172,7 @@ export default function SignalAnalysisPage() {
         setCurrentTaskId(data.task_id);
         setShowProgress(true);
         toast.success('신호 분석을 시작했습니다', {
-          description: mode === 'all' ? '모든 종목을 분석합니다' : '관심 종목만 분석합니다',
+          description: mode === 'all' ? '모든 종목을 분석합니다' : '태그된 종목만 분석합니다',
         });
       }
     } catch (error) {
@@ -262,7 +262,7 @@ export default function SignalAnalysisPage() {
 
             {/* 관심 종목만 */}
             <button
-              onClick={() => handleStartAnalysis('favorites')}
+              onClick={() => handleStartAnalysis('tagged')}
               disabled={isAnalyzing}
               className="flex items-center gap-4 p-4 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-left"
             >
