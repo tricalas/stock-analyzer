@@ -90,7 +90,8 @@ export default function Settings() {
       return response.json();
     },
     enabled: !!historyTaskId && showHistoryProgress,
-    refetchInterval: (data) => {
+    refetchInterval: (query) => {
+      const data = query.state.data;
       if (data?.status === 'completed' || data?.status === 'failed') {
         return false;
       }
