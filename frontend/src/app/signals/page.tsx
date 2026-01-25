@@ -162,9 +162,11 @@ export default function SignalsPage() {
               <TrendingUp className="h-8 w-8 text-primary" />
               매매 신호
             </h1>
-            <p className="text-muted-foreground mt-2">
-              분석을 통해 발견된 매수 신호 {total > 0 && <span className="text-foreground font-medium">({total}개)</span>}
-            </p>
+            {total > 0 && (
+              <p className="text-muted-foreground mt-2">
+                <span className="text-foreground font-medium">{total}개</span>
+              </p>
+            )}
           </div>
           <div className="flex items-center gap-2">
             <button
