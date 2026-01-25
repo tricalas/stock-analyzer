@@ -11,6 +11,7 @@ interface Stock {
   symbol: string;
   name: string;
   market: string;
+  exchange?: string;
   current_price?: number;
 }
 
@@ -335,24 +336,12 @@ export default function SignalsPage() {
                 onClick={() => {
                   if (!signal.stock) return;
 
-                  const width = Math.floor(window.screen.width * 0.7);
-                  const height = window.screen.height;
-                  const left = Math.floor(window.screen.width * 0.3);
-                  const top = 0;
-
-                  const naverSymbol = signal.stock.market === 'US' && signal.stock.symbol.includes('NASDAQ')
-                    ? `${signal.stock.symbol}.O`
-                    : signal.stock.symbol;
-
+                  // 네이버 차트 URL 생성 (StockItem.tsx와 동일한 로직)
                   const url = signal.stock.market === 'US'
-                    ? `https://m.stock.naver.com/fchart/foreign/stock/${naverSymbol}`
+                    ? `https://m.stock.naver.com/fchart/foreign/stock/${signal.stock.exchange === 'NASDAQ' ? signal.stock.symbol + '.O' : signal.stock.symbol}`
                     : `https://m.stock.naver.com/fchart/domestic/stock/${signal.stock.symbol}`;
 
-                  window.open(
-                    url,
-                    '_blank',
-                    `width=${width},height=${height},left=${left},top=${top},resizable=yes,scrollbars=yes`
-                  );
+                  window.open(url, '_blank');
                 }}
               >
                 {/* Header */}
