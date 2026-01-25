@@ -255,6 +255,9 @@ class SignalAnalyzer:
                 min_touches=3
             )
 
+            # 90일 이동평균선 계산
+            signals_df['sma_90'] = df['close'].rolling(window=90, min_periods=60).mean()
+
             # 매수 신호만 추출 (컬럼명: buy_signal)
             buy_signals = signals_df[signals_df['buy_signal'] == 1].copy()
 
@@ -265,10 +268,16 @@ class SignalAnalyzer:
             signals = []
             for idx, row in buy_signals.iterrows():
                 signal_price = row.get('close', 0)
+                sma_90 = row.get('sma_90', 0)
                 return_pct = 0.0
+                sma_90_ratio = 0.0
 
                 if current_price and signal_price > 0:
                     return_pct = ((current_price - signal_price) / signal_price) * 100
+
+                # 90일선 대비 비율 계산 (예: 105.5 = 90일선보다 5.5% 위)
+                if sma_90 and sma_90 > 0:
+                    sma_90_ratio = (signal_price / sma_90) * 100
 
                 signal_info = {
                     'signal_date': idx.date() if hasattr(idx, 'date') else idx,
@@ -278,7 +287,9 @@ class SignalAnalyzer:
                     'details': {
                         'strategy': 'descending_trendline_breakout',
                         'trendline_slope': float(row.get('trendline_slope', 0)),
-                        'trendline_intercept': float(row.get('trendline_intercept', 0))
+                        'trendline_intercept': float(row.get('trendline_intercept', 0)),
+                        'sma_90': float(sma_90) if sma_90 else None,
+                        'sma_90_ratio': float(round(sma_90_ratio, 1)) if sma_90_ratio else None
                     }
                 }
                 signals.append(signal_info)

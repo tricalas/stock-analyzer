@@ -8,7 +8,7 @@ import StockChartModal from '@/components/StockChartModal';
 import AppLayout from '@/components/AppLayout';
 import SearchBar from '@/components/SearchBar';
 import { RefreshCw, TrendingUp } from 'lucide-react';
-import { getNaverChartUrl } from '@/lib/naverStock';
+import { openNaverChartPopup } from '@/lib/naverStock';
 import SimpleButton from '@/components/atoms/SimpleButton';
 import ScrollToTopButton from '@/components/atoms/ScrollToTopButton';
 import SortDropdown, { SortField, SortDirection } from '@/components/SortDropdown';
@@ -183,7 +183,7 @@ export default function Home() {
   };
 
   const handleStockClick = (stock: Stock) => {
-    window.open(getNaverChartUrl(stock), '_blank');
+    openNaverChartPopup(stock);
   };
 
   return (

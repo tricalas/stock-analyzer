@@ -375,6 +375,7 @@ export default function SignalsPage() {
                     <th className="px-4 py-3 text-center text-xs font-semibold text-muted-foreground uppercase tracking-wider">신호일</th>
                     <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">종목</th>
                     <th className="px-4 py-3 text-right text-xs font-semibold text-muted-foreground uppercase tracking-wider">신호가</th>
+                    <th className="px-4 py-3 text-right text-xs font-semibold text-muted-foreground uppercase tracking-wider">90일선</th>
                     <th className="px-4 py-3 text-right text-xs font-semibold text-muted-foreground uppercase tracking-wider">현재가</th>
                     <th className="px-4 py-3 text-right text-xs font-semibold text-muted-foreground uppercase tracking-wider">수익률</th>
                     <th className="px-4 py-3 text-center text-xs font-semibold text-muted-foreground uppercase tracking-wider">거래소</th>
@@ -439,6 +440,29 @@ export default function SignalsPage() {
                           <span className="text-sm font-mono text-foreground">
                             {formatPrice(signal.signal_price, signal.stock?.market || 'KR')}
                           </span>
+                        </td>
+
+                        {/* 90일선 대비 */}
+                        <td className="px-4 py-3 whitespace-nowrap text-right">
+                          {(() => {
+                            try {
+                              const details = signal.details ? JSON.parse(signal.details) : null;
+                              const ratio = details?.sma_90_ratio;
+                              if (ratio) {
+                                const diff = ratio - 100;
+                                return (
+                                  <span className={`text-sm font-medium ${
+                                    diff >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'
+                                  }`}>
+                                    {diff >= 0 ? '+' : ''}{diff.toFixed(1)}%
+                                  </span>
+                                );
+                              }
+                              return <span className="text-sm text-muted-foreground">-</span>;
+                            } catch {
+                              return <span className="text-sm text-muted-foreground">-</span>;
+                            }
+                          })()}
                         </td>
 
                         {/* 현재가 */}
