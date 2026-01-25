@@ -382,6 +382,10 @@ def get_stocks(
                         "color": tag_obj.color,
                         "icon": tag_obj.icon,
                         "order": tag_obj.order,
+                        "is_active": tag_obj.is_active,
+                        "user_token": tag_obj.user_token,
+                        "created_at": tag_obj.created_at.isoformat() if tag_obj.created_at else None,
+                        "updated_at": tag_obj.updated_at.isoformat() if tag_obj.updated_at else None,
                     })
 
         stock_data = {
@@ -552,6 +556,10 @@ def search_stocks(
                         "color": tag_obj.color,
                         "icon": tag_obj.icon,
                         "order": tag_obj.order,
+                        "is_active": tag_obj.is_active,
+                        "user_token": tag_obj.user_token,
+                        "created_at": tag_obj.created_at.isoformat() if tag_obj.created_at else None,
+                        "updated_at": tag_obj.updated_at.isoformat() if tag_obj.updated_at else None,
                     })
 
         stock_data = {
@@ -1513,6 +1521,10 @@ def get_stocks_by_tag(
                         "color": tag_obj.color,
                         "icon": tag_obj.icon,
                         "order": tag_obj.order,
+                        "is_active": tag_obj.is_active,
+                        "user_token": tag_obj.user_token,
+                        "created_at": tag_obj.created_at.isoformat() if tag_obj.created_at else None,
+                        "updated_at": tag_obj.updated_at.isoformat() if tag_obj.updated_at else None,
                     })
 
         stock_data = {
