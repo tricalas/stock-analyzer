@@ -1123,6 +1123,51 @@ def cleanup_etf_stocks(db: Session = Depends(get_db)):
         logger.error(f"Error during ETF cleanup: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.delete("/api/stocks/cleanup-kr")
+def cleanup_korean_stocks(db: Session = Depends(get_db)):
+    """한국 주식 종목들을 데이터베이스에서 완전히 삭제"""
+    try:
+        # 한국 종목들 찾기
+        kr_stocks = db.query(Stock).filter(Stock.market == 'KR').all()
+
+        logger.info(f"Found {len(kr_stocks)} Korean stocks to delete")
+
+        deleted_count = 0
+        deleted_stocks = []
+
+        for stock in kr_stocks:
+            try:
+                stock_info = {"id": stock.id, "symbol": stock.symbol, "name": stock.name}
+
+                # 관련 데이터 삭제
+                db.query(StockPriceHistory).filter(StockPriceHistory.stock_id == stock.id).delete()
+                db.query(StockSignal).filter(StockSignal.stock_id == stock.id).delete()
+                db.query(StockTagAssignment).filter(StockTagAssignment.stock_id == stock.id).delete()
+
+                # 종목 삭제
+                db.delete(stock)
+                db.commit()
+
+                deleted_count += 1
+                deleted_stocks.append(stock_info)
+                logger.info(f"Deleted Korean stock: {stock.symbol} - {stock.name}")
+
+            except Exception as e:
+                db.rollback()
+                logger.error(f"Failed to delete {stock.symbol}: {str(e)}")
+                continue
+
+        return {
+            "deleted_count": deleted_count,
+            "deleted_stocks": deleted_stocks[:20],  # 처음 20개만 반환
+            "message": f"Successfully deleted {deleted_count} Korean stocks from database"
+        }
+
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Error during Korean stocks cleanup: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.delete("/api/stocks/{stock_id}")
 def delete_stock(stock_id: int, db: Session = Depends(get_db)):
     """

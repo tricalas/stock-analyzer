@@ -161,25 +161,31 @@ class SignalAnalyzer:
         db: Session,
         delta_only: bool = True
     ) -> List[int]:
-        """모드에 따라 분석할 종목 ID 목록 가져오기 (최적화됨)"""
+        """모드에 따라 분석할 종목 ID 목록 가져오기 (최적화됨, US 마켓만)"""
         from app.models import StockTagAssignment
         from sqlalchemy import func, or_
 
         if mode == "tagged":
-            # 태그가 있는 종목만
-            tagged_stocks = db.query(StockTagAssignment.stock_id).distinct().all()
+            # 태그가 있는 US 종목만
+            tagged_stocks = db.query(StockTagAssignment.stock_id).join(
+                Stock, Stock.id == StockTagAssignment.stock_id
+            ).filter(Stock.market == 'US').distinct().all()
             stock_ids = set(sid[0] for sid in tagged_stocks)
 
         elif mode == "top":
-            # 시총 상위 N개
+            # 시총 상위 N개 (US만)
             top_stocks = db.query(Stock.id).filter(
-                Stock.is_active == True
+                Stock.is_active == True,
+                Stock.market == 'US'
             ).order_by(Stock.market_cap.desc().nullslast()).limit(limit or 500).all()
             stock_ids = set(s.id for s in top_stocks)
 
         else:  # "all"
-            # 모든 활성 종목
-            all_stocks = db.query(Stock.id).filter(Stock.is_active == True).all()
+            # 모든 활성 US 종목
+            all_stocks = db.query(Stock.id).filter(
+                Stock.is_active == True,
+                Stock.market == 'US'
+            ).all()
             stock_ids = set(s.id for s in all_stocks)
 
         # 히스토리 데이터가 60일 이상인 종목 한 번에 조회 (최적화)
