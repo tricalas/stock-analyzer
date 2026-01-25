@@ -447,27 +447,15 @@ export default function SignalsPage() {
                             {/* 신호 타입 배지 */}
                             {(() => {
                               const isApproaching = signal.strategy_name === 'approaching_breakout';
-                              let details;
-                              try {
-                                details = signal.details ? JSON.parse(signal.details) : null;
-                              } catch { details = null; }
-
                               if (isApproaching) {
-                                const confirmed = details?.breakout_confirmed;
                                 return (
-                                  <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${
-                                    confirmed === true
-                                      ? 'bg-green-500/20 text-green-600 dark:text-green-400'
-                                      : confirmed === false
-                                      ? 'bg-red-500/20 text-red-600 dark:text-red-400'
-                                      : 'bg-yellow-500/20 text-yellow-600 dark:text-yellow-400'
-                                  }`}>
-                                    {confirmed === true ? '✓ 돌파성공' : confirmed === false ? '✗ 실패' : '⏳ 임박'}
+                                  <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-yellow-500/20 text-yellow-600 dark:text-yellow-400">
+                                    임박
                                   </span>
                                 );
                               }
                               return (
-                                <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-blue-500/20 text-blue-600 dark:text-blue-400">
+                                <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-green-500/20 text-green-600 dark:text-green-400">
                                   돌파
                                 </span>
                               );
