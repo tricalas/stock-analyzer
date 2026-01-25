@@ -449,18 +449,25 @@ class KISHistoryCrawler:
 
         # 워커 전용 DB 세션 생성
         db = SessionLocal()
+        symbol = stock_data.get("symbol", "unknown")
 
         try:
+            logger.debug(f"[Worker] Starting processing: {symbol}")
+
             # Stock 객체 다시 조회 (세션 분리)
             stock = db.query(Stock).filter(Stock.id == stock_data["id"]).first()
             if not stock:
+                logger.warning(f"[Worker] Stock not found: {symbol}")
+                with lock:
+                    counters["failed"] += 1
+                    counters["processed"] += 1
                 return {"success": False, "mode": "error", "error": "Stock not found"}
 
             # 스마트 체크: 수집 필요 여부 판단
             should_collect, mode, last_date = self._should_collect_history(stock, db)
+            logger.debug(f"[Worker] {symbol}: mode={mode}, last_date={last_date}")
 
             if mode == "skip":
-                logger.debug(f"Skip {stock.symbol}: already up to date (last: {last_date})")
                 with lock:
                     counters["skipped"] += 1
                     counters["success"] += 1
@@ -518,7 +525,7 @@ class KISHistoryCrawler:
             }
 
         except Exception as e:
-            logger.error(f"Worker error for stock {stock_data['symbol']}: {str(e)}")
+            logger.error(f"[Worker] Error for {symbol}: {str(e)}", exc_info=True)
             with lock:
                 counters["failed"] += 1
                 counters["processed"] += 1
@@ -526,6 +533,7 @@ class KISHistoryCrawler:
 
         finally:
             db.close()
+            logger.debug(f"[Worker] Completed: {symbol}")
 
     def _collect_history_for_stocks(
         self,
@@ -607,33 +615,46 @@ class KISHistoryCrawler:
                     for stock_data in stock_data_list
                 }
 
+                logger.info(f"Submitted {len(futures)} tasks to ThreadPool")
+
                 # 완료되는 대로 처리
+                last_update = 0
                 for future in as_completed(futures):
                     stock_data = futures[future]
 
                     try:
-                        result = future.result()
+                        result = future.result(timeout=300)  # 5분 타임아웃
                     except Exception as e:
                         logger.error(f"Future error for {stock_data['symbol']}: {str(e)}")
+                        with lock:
+                            counters["failed"] += 1
+                            counters["processed"] += 1
 
-                    # 진행상황 업데이트 (10개마다)
+                    # 진행상황 업데이트 (매번)
                     with lock:
                         processed = counters["processed"]
 
-                    if processed % 10 == 0 or processed == total:
-                        # TaskProgress 업데이트
-                        task_progress.current_item = processed
-                        task_progress.success_count = counters["success"]
-                        task_progress.failed_count = counters["failed"]
-                        task_progress.message = (
-                            f"{processed}/{total} 종목 처리 완료 "
-                            f"(스킵: {counters['skipped']}, 증분: {counters['incremental']}, "
-                            f"전체: {counters['full']})"
-                        )
-                        db.commit()
+                    # DB 업데이트 (5개마다 또는 처음)
+                    if processed - last_update >= 5 or processed == total or processed <= 1:
+                        try:
+                            # TaskProgress 새로 조회 후 업데이트
+                            db.refresh(task_progress)
+                            task_progress.current_item = processed
+                            task_progress.success_count = counters["success"]
+                            task_progress.failed_count = counters["failed"]
+                            task_progress.message = (
+                                f"{processed}/{total} 종목 처리 완료 "
+                                f"(스킵: {counters['skipped']}, 증분: {counters['incremental']}, "
+                                f"전체: {counters['full']})"
+                            )
+                            db.commit()
+                            last_update = processed
+                        except Exception as e:
+                            logger.warning(f"Failed to update TaskProgress: {str(e)}")
+                            db.rollback()
 
-                    # 콘솔 로그 (50개마다)
-                    if processed % 50 == 0:
+                    # 콘솔 로그 (20개마다)
+                    if processed % 20 == 0 or processed == 1:
                         logger.info(
                             f"Progress: {processed}/{total} stocks "
                             f"(skip: {counters['skipped']}, inc: {counters['incremental']}, "
