@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import ORJSONResponse
 from starlette.middleware.gzip import GZipMiddleware
 from sqlalchemy.orm import Session
-from sqlalchemy import desc, case
+from sqlalchemy import desc, case, text
 from typing import List, Optional
 from datetime import datetime, date, timedelta
 import logging
