@@ -7,6 +7,8 @@ from app.config import settings
 from datetime import datetime
 import pytz
 
+# signal_analyzer는 순환 참조 방지를 위해 함수 내부에서 import
+
 logger = logging.getLogger(__name__)
 
 class StockScheduler:
@@ -44,6 +46,27 @@ class StockScheduler:
                 replace_existing=True
             )
             logger.info("📅 Scheduled: US market history collection (Tue-Sat 06:10 KST)")
+
+            # 신호 분석 작업: 히스토리 수집 후 약 50분 뒤 실행
+            # 한국 장: 17:00 (히스토리 수집 16:10 + 50분)
+            self.scheduler.add_job(
+                func=self._analyze_signals,
+                trigger=CronTrigger(hour=17, minute=0, day_of_week='mon-fri', timezone=kst),
+                id='kr_market_signal_analysis',
+                name='Korean Market Signal Analysis',
+                replace_existing=True
+            )
+            logger.info("📊 Scheduled: Korean market signal analysis (Mon-Fri 17:00 KST)")
+
+            # 미국 장: 07:00 (히스토리 수집 06:10 + 50분)
+            self.scheduler.add_job(
+                func=self._analyze_signals,
+                trigger=CronTrigger(hour=7, minute=0, day_of_week='tue-sat', timezone=kst),
+                id='us_market_signal_analysis',
+                name='US Market Signal Analysis',
+                replace_existing=True
+            )
+            logger.info("📊 Scheduled: US market signal analysis (Tue-Sat 07:00 KST)")
 
         else:
             logger.info("⚠️ Auto history collection DISABLED - using manual updates only")
@@ -145,6 +168,35 @@ class StockScheduler:
         finally:
             # 원래 값 복구
             settings.HISTORY_COLLECTION_DAYS = original_days
+
+    def _analyze_signals(self):
+        """신호 분석 실행 (스케줄러용)"""
+        try:
+            # 순환 참조 방지를 위해 여기서 import
+            from app.signal_analyzer import signal_analyzer
+
+            mode = settings.HISTORY_COLLECTION_MODE.lower()
+            logger.info(f"📊 Starting scheduled signal analysis (mode: {mode})...")
+
+            result = signal_analyzer.analyze_and_store_signals(
+                mode=mode,
+                limit=settings.HISTORY_COLLECTION_LIMIT if mode == "top" else None,
+                days=120  # 신호 분석은 항상 120일
+            )
+
+            if result.get("stocks_with_signals", 0) > 0:
+                logger.info(
+                    f"✅ Signal analysis completed ({mode} mode): "
+                    f"{result['stocks_with_signals']}/{result['total_stocks']} stocks, "
+                    f"{result['total_signals_saved']} signals saved"
+                )
+            else:
+                logger.warning(f"⚠️ Signal analysis completed with no signals found ({mode} mode)")
+
+            return result
+        except Exception as e:
+            logger.error(f"❌ Error in scheduled signal analysis: {str(e)}")
+            return {"error": str(e)}
 
 # 전역 스케줄러 인스턴스
 stock_scheduler = StockScheduler()

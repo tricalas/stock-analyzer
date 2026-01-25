@@ -193,3 +193,43 @@ class StockTagAssignment(Base):
         UniqueConstraint('stock_id', 'tag_id', 'user_token', name='unique_stock_tag_user'),
         {'extend_existing': True}
     )
+
+class StockSignal(Base):
+    """매매 신호 분석 결과 저장"""
+    __tablename__ = "stock_signals"
+
+    id = Column(Integer, primary_key=True, index=True)
+    stock_id = Column(Integer, ForeignKey("stocks.id"), nullable=False, index=True)
+
+    # 신호 정보
+    signal_type = Column(String(20), nullable=False)  # "buy", "sell", "hold"
+    signal_date = Column(Date, nullable=False, index=True)  # 신호 발생 날짜
+    signal_price = Column(Float, nullable=False)  # 신호 발생 시 가격
+
+    # 전략 정보
+    strategy_name = Column(String(50), nullable=False)  # "breakout_pullback"
+
+    # 성과 정보
+    current_price = Column(Float)  # 현재 가격
+    return_percent = Column(Float)  # 수익률 (%)
+
+    # 신호 세부 정보 (JSON)
+    details = Column(Text)  # JSON 형태로 저장 (breakout_date, pullback_date 등)
+
+    # 메타 정보
+    is_active = Column(Boolean, default=True, nullable=False)  # 활성 신호 여부
+    analyzed_at = Column(DateTime, default=datetime.utcnow, index=True)  # 분석 시간
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    # 관계 설정
+    stock = relationship("Stock")
+
+    __table_args__ = (
+        # 같은 종목, 같은 날짜, 같은 전략에 대해서는 하나의 신호만 저장
+        UniqueConstraint('stock_id', 'signal_date', 'strategy_name', name='unique_stock_signal'),
+        # 분석 시간과 활성 상태로 검색을 위한 복합 인덱스
+        Index('idx_signal_analyzed_active', 'analyzed_at', 'is_active'),
+        # 신호 타입과 날짜로 검색을 위한 복합 인덱스
+        Index('idx_signal_type_date', 'signal_type', 'signal_date'),
+        {'extend_existing': True}
+    )

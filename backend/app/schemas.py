@@ -204,3 +204,38 @@ class TokenResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
     user: UserResponse
+
+# ===== Signal Schemas =====
+
+class StockSignalBase(BaseModel):
+    stock_id: int
+    signal_type: str  # "buy", "sell", "hold"
+    signal_date: date
+    signal_price: float
+    strategy_name: str
+    current_price: Optional[float] = None
+    return_percent: Optional[float] = None
+    details: Optional[str] = None  # JSON string
+
+class StockSignalCreate(StockSignalBase):
+    pass
+
+class StockSignal(StockSignalBase):
+    id: int
+    is_active: bool
+    analyzed_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+class StockSignalWithStock(StockSignal):
+    """종목 정보를 포함한 신호"""
+    stock: Optional[Stock] = None
+
+class SignalListResponse(BaseModel):
+    """신호 목록 응답"""
+    total: int
+    signals: List[StockSignalWithStock]
+    analyzed_at: Optional[datetime] = None  # 마지막 분석 시간
+    stats: Optional[dict] = None  # 통계 정보

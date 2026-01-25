@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import ORJSONResponse
 from starlette.middleware.gzip import GZipMiddleware
 from sqlalchemy.orm import Session
+from sqlalchemy import desc
 from typing import List, Optional
 from datetime import datetime, date, timedelta
 import logging
@@ -14,13 +15,14 @@ import orjson
 
 from app.config import settings
 from app.database import engine, Base, get_db
-from app.models import Stock, StockPrice, StockDailyData, StockPriceHistory, StockTag, StockTagAssignment, User
+from app.models import Stock, StockPrice, StockDailyData, StockPriceHistory, StockTag, StockTagAssignment, User, StockSignal
 from app import schemas
 from app.crawlers.crawler_manager import CrawlerManager
 from app.crawlers.price_history_crawler import price_history_crawler
 from app.scheduler import stock_scheduler
 from app.constants import ETF_KEYWORDS
 from app.auth import get_pin_hash, verify_pin, create_access_token, get_current_user, get_optional_current_user
+from app.signal_analyzer import signal_analyzer
 import uuid
 
 logging.basicConfig(level=logging.INFO)
@@ -1732,6 +1734,126 @@ def get_trading_signals(
             }
             for _, row in pullbacks.iterrows()
         ]
+    }
+
+
+@app.get("/api/signals", response_model=schemas.SignalListResponse)
+def get_stored_signals(
+    signal_type: Optional[str] = Query(None, description="Signal type filter (buy, sell)"),
+    limit: int = Query(100, ge=1, le=500),
+    db: Session = Depends(get_db),
+    current_user: Optional[User] = Depends(get_optional_current_user)
+):
+    """
+    저장된 매매 신호 조회 (DB에서 읽기만 함 - 빠름)
+
+    Args:
+        signal_type: 신호 타입 필터
+        limit: 최대 조회 개수
+
+    Returns:
+        저장된 신호 목록
+    """
+    # 활성 신호 조회
+    query = db.query(StockSignal).filter(StockSignal.is_active == True)
+
+    if signal_type:
+        query = query.filter(StockSignal.signal_type == signal_type)
+
+    # 최신 신호부터
+    signals = query.order_by(
+        desc(StockSignal.signal_date)
+    ).limit(limit).all()
+
+    # 종목 정보 로드
+    stock_ids = [s.stock_id for s in signals]
+    stocks_map = {}
+    if stock_ids:
+        stocks = db.query(Stock).filter(Stock.id.in_(stock_ids)).all()
+        stocks_map = {s.id: s for s in stocks}
+
+    # 응답 생성
+    signal_responses = []
+    for signal in signals:
+        signal_dict = {
+            "id": signal.id,
+            "stock_id": signal.stock_id,
+            "signal_type": signal.signal_type,
+            "signal_date": signal.signal_date,
+            "signal_price": signal.signal_price,
+            "strategy_name": signal.strategy_name,
+            "current_price": signal.current_price,
+            "return_percent": signal.return_percent,
+            "details": signal.details,
+            "is_active": signal.is_active,
+            "analyzed_at": signal.analyzed_at,
+            "updated_at": signal.updated_at,
+            "stock": stocks_map.get(signal.stock_id)
+        }
+        signal_responses.append(signal_dict)
+
+    # 통계 계산
+    total = len(signals)
+    stats = {
+        "total_signals": total,
+        "positive_returns": len([s for s in signals if s.return_percent and s.return_percent > 0]),
+        "negative_returns": len([s for s in signals if s.return_percent and s.return_percent < 0]),
+        "avg_return": sum([s.return_percent or 0 for s in signals]) / total if total > 0 else 0
+    }
+
+    # 마지막 분석 시간
+    latest_analyzed = db.query(StockSignal).order_by(
+        desc(StockSignal.analyzed_at)
+    ).first()
+
+    return {
+        "total": total,
+        "signals": signal_responses,
+        "analyzed_at": latest_analyzed.analyzed_at if latest_analyzed else None,
+        "stats": stats
+    }
+
+
+@app.post("/api/signals/refresh")
+def refresh_signals(
+    background_tasks: BackgroundTasks,
+    mode: str = Query("all", pattern="^(tagged|all|top)$"),
+    limit: int = Query(500, ge=10, le=2000),
+    days: int = Query(120, ge=60, le=365),
+    db: Session = Depends(get_db),
+    current_user: Optional[User] = Depends(get_optional_current_user)
+):
+    """
+    매매 신호 재분석 (백그라운드 작업)
+
+    Args:
+        mode: 분석 모드 (tagged, all, top)
+        limit: top 모드일 때 상위 몇 개
+        days: 분석할 일수
+
+    Returns:
+        작업 시작 메시지
+    """
+    def run_analysis():
+        try:
+            logger.info(f"🔍 Background signal analysis started (mode: {mode})...")
+            result = signal_analyzer.analyze_and_store_signals(
+                mode=mode,
+                limit=limit,
+                days=days
+            )
+            logger.info(f"✅ Background signal analysis completed: {result}")
+        except Exception as e:
+            logger.error(f"❌ Error in background signal analysis: {str(e)}")
+
+    background_tasks.add_task(run_analysis)
+
+    return {
+        "success": True,
+        "message": f"신호 분석 작업이 시작되었습니다 (mode: {mode})",
+        "mode": mode,
+        "days": days,
+        "note": "Check logs for progress. Use GET /api/signals to view results."
     }
 
 
