@@ -372,8 +372,8 @@ export default function SignalsPage() {
               <table className="w-full">
                 <thead className="bg-muted/50 border-b border-border sticky top-0">
                   <tr>
-                    <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">종목</th>
                     <th className="px-4 py-3 text-center text-xs font-semibold text-muted-foreground uppercase tracking-wider">신호일</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">종목</th>
                     <th className="px-4 py-3 text-right text-xs font-semibold text-muted-foreground uppercase tracking-wider">신호가</th>
                     <th className="px-4 py-3 text-right text-xs font-semibold text-muted-foreground uppercase tracking-wider">현재가</th>
                     <th className="px-4 py-3 text-right text-xs font-semibold text-muted-foreground uppercase tracking-wider">수익률</th>
@@ -398,6 +398,13 @@ export default function SignalsPage() {
                           }
                         }}
                       >
+                        {/* 신호일 */}
+                        <td className="px-4 py-3 whitespace-nowrap text-center">
+                          <span className="text-sm text-foreground">
+                            {formatDate(signal.signal_date)}
+                          </span>
+                        </td>
+
                         {/* 종목명 */}
                         <td className="px-4 py-3 whitespace-nowrap">
                           <div className="flex items-center gap-2">
@@ -425,13 +432,6 @@ export default function SignalsPage() {
                               </div>
                             </div>
                           </div>
-                        </td>
-
-                        {/* 신호일 */}
-                        <td className="px-4 py-3 whitespace-nowrap text-center">
-                          <span className="text-sm text-foreground">
-                            {formatDate(signal.signal_date)}
-                          </span>
                         </td>
 
                         {/* 신호가 */}
