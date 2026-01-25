@@ -130,5 +130,21 @@ class StockScheduler:
         logger.info("Manual stock crawling triggered")
         return self._crawl_all_stocks()
 
+    def trigger_manual_history_collection(self, days: int = None):
+        """수동으로 히스토리 수집 실행"""
+        logger.info(f"Manual history collection triggered (days: {days or settings.HISTORY_COLLECTION_DAYS})")
+
+        # 임시로 HISTORY_COLLECTION_DAYS 오버라이드
+        original_days = settings.HISTORY_COLLECTION_DAYS
+        if days is not None:
+            settings.HISTORY_COLLECTION_DAYS = days
+
+        try:
+            result = self._collect_tagged_stocks_history()
+            return result
+        finally:
+            # 원래 값 복구
+            settings.HISTORY_COLLECTION_DAYS = original_days
+
 # 전역 스케줄러 인스턴스
 stock_scheduler = StockScheduler()

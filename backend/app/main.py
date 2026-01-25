@@ -694,6 +694,30 @@ def trigger_manual_crawl():
         logger.error(f"Error in manual crawling: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.post("/api/scheduler/trigger-history")
+def trigger_manual_history_collection(
+    background_tasks: BackgroundTasks,
+    days: int = Query(100, ge=1, le=365, description="Number of days to collect")
+):
+    """수동으로 히스토리 수집 실행 (백그라운드 작업)"""
+    def run_collection():
+        try:
+            logger.info(f"🚀 Background history collection started ({days} days)...")
+            result = stock_scheduler.trigger_manual_history_collection(days=days)
+            logger.info(f"✅ Background history collection completed: {result}")
+        except Exception as e:
+            logger.error(f"❌ Error in background history collection: {str(e)}")
+
+    background_tasks.add_task(run_collection)
+
+    return {
+        "success": True,
+        "message": f"히스토리 수집 작업이 시작되었습니다 ({days}일치 데이터)",
+        "days": days,
+        "mode": settings.HISTORY_COLLECTION_MODE,
+        "note": "Check Railway logs for progress"
+    }
+
 @app.get("/api/stocks/{stock_id}/price-history", response_model=List[schemas.StockPriceHistory])
 def get_stock_price_history(
     stock_id: int,
