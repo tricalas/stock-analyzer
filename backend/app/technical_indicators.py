@@ -593,18 +593,18 @@ def generate_descending_trendline_breakout_signals(
         result['trendline_intercept'] = intercept
         return result
 
-    # 4. 돌파 감지 (순수 차트 패턴만 사용)
+    # 4. 돌파 감지 (고가 기준 - 추세선도 고가로 그렸으므로)
     last_lower_high_idx = lower_highs[-1][0]
 
     for i in range(last_lower_high_idx + 1, len(df)):
         trendline_value = slope * i + intercept
         prev_trendline = slope * (i - 1) + intercept
 
-        # 조건 1: 이전 봉은 추세선 아래
-        prev_below = df['close'].iloc[i - 1] <= prev_trendline
+        # 조건 1: 이전 봉의 고가가 추세선 아래
+        prev_below = df['high'].iloc[i - 1] <= prev_trendline
 
-        # 조건 2: 현재 봉이 추세선 돌파
-        current_above = df['close'].iloc[i] > trendline_value
+        # 조건 2: 현재 봉의 고가가 추세선 돌파
+        current_above = df['high'].iloc[i] > trendline_value
 
         if prev_below and current_above:
             buy_signals[i] = 1
@@ -694,16 +694,17 @@ def generate_approaching_breakout_signals(
 
     for i in range(last_lower_high_idx + 1, len(df)):
         trendline_value = slope * i + intercept
+        high_price = df['high'].iloc[i]
         close_price = df['close'].iloc[i]
         open_price = df['open'].iloc[i]
 
-        # 추세선까지 거리 계산 (%)
-        if close_price > 0:
-            distance = (trendline_value - close_price) / close_price * 100
+        # 추세선까지 거리 계산 (고가 기준 %)
+        if high_price > 0:
+            distance = (trendline_value - high_price) / high_price * 100
             distances[i] = distance
 
-            # 조건 1: 추세선 아래에 있음 (아직 돌파 안함)
-            below_trendline = close_price < trendline_value
+            # 조건 1: 고가가 추세선 아래에 있음 (아직 돌파 안함)
+            below_trendline = high_price < trendline_value
 
             # 조건 2: 추세선에 가까움 (threshold% 이내)
             close_to_trendline = 0 < distance <= approach_threshold

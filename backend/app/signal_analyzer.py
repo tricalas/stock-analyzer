@@ -27,7 +27,8 @@ class SignalAnalyzer:
         mode: str = "all",
         limit: Optional[int] = None,
         days: int = 120,
-        db: Optional[Session] = None
+        db: Optional[Session] = None,
+        force_full: bool = False
     ) -> Dict:
         """
         종목들의 신호를 분석하고 DB에 저장
@@ -37,6 +38,7 @@ class SignalAnalyzer:
             limit: top 모드일 때 상위 몇 개 종목
             days: 분석할 일수
             db: DB 세션 (없으면 자동 생성)
+            force_full: True면 델타 무시하고 전체 스캔
 
         Returns:
             분석 결과 통계
@@ -51,8 +53,9 @@ class SignalAnalyzer:
         task_progress = None
 
         try:
-            # 분석할 종목 선택
-            stock_ids = self._get_stock_ids_by_mode(mode, limit, db)
+            # 분석할 종목 선택 (delta_only: force_full이 아니면 델타만)
+            delta_only = not force_full
+            stock_ids = self._get_stock_ids_by_mode(mode, limit, db, delta_only=delta_only)
 
             logger.info(f"🔍 Starting signal analysis for {len(stock_ids)} stocks (mode: {mode})...")
 
@@ -152,11 +155,12 @@ class SignalAnalyzer:
         self,
         mode: str,
         limit: Optional[int],
-        db: Session
+        db: Session,
+        delta_only: bool = True
     ) -> List[int]:
         """모드에 따라 분석할 종목 ID 목록 가져오기 (최적화됨)"""
         from app.models import StockTagAssignment
-        from sqlalchemy import func
+        from sqlalchemy import func, or_
 
         if mode == "tagged":
             # 태그가 있는 종목만
@@ -185,8 +189,21 @@ class SignalAnalyzer:
 
         # 교집합: 선택된 종목 중 히스토리가 60일 이상인 종목
         filtered_ids = list(stock_ids & stocks_with_history)
+        total_with_history = len(filtered_ids)
 
-        logger.info(f"Mode: {mode}, Total stocks: {len(stock_ids)}, With 60+ history: {len(filtered_ids)}")
+        logger.info(f"Mode: {mode}, Total stocks: {len(stock_ids)}, With 60+ history: {total_with_history}")
+
+        # 델타 필터링: 히스토리가 업데이트된 종목만 분석
+        if delta_only and filtered_ids:
+            delta_stocks = db.query(Stock.id).filter(
+                Stock.id.in_(filtered_ids),
+                or_(
+                    Stock.signal_analyzed_at == None,
+                    Stock.history_updated_at > Stock.signal_analyzed_at
+                )
+            ).all()
+            filtered_ids = [s.id for s in delta_stocks]
+            logger.info(f"Delta filter: {len(filtered_ids)} stocks need re-analysis (skipped: {total_with_history - len(filtered_ids)})")
 
         return filtered_ids
 
@@ -207,6 +224,9 @@ class SignalAnalyzer:
         ).order_by(StockPriceHistory.date.asc()).all()
 
         if len(price_history) < 60:
+            # 분석 완료 처리 (데이터 부족이어도 분석 시도함)
+            stock.signal_analyzed_at = datetime.utcnow()
+            db.commit()
             return {"signals_count": 0, "saved_count": 0}
 
         # 1. 기존 "돌파 임박" 신호의 돌파 확인 업데이트
@@ -215,10 +235,14 @@ class SignalAnalyzer:
         # 2. 신호 분석 (돌파 + 돌파 임박)
         signals = self._run_signal_analysis(price_history, stock.current_price)
 
+        # 3. 분석 완료 타임스탬프 갱신
+        stock.signal_analyzed_at = datetime.utcnow()
+        db.commit()
+
         if not signals or len(signals) == 0:
             return {"signals_count": 0, "saved_count": 0}
 
-        # 3. 신호 저장
+        # 4. 신호 저장
         saved_count = self._save_signals(stock_id, signals, db)
 
         return {
@@ -284,8 +308,8 @@ class SignalAnalyzer:
                     # 해당 날짜의 추세선 값 계산
                     trendline_value = slope * i + intercept
 
-                    # 돌파 확인 (종가가 추세선 위)
-                    if ph.close_price > trendline_value:
+                    # 돌파 확인 (고가가 추세선 위)
+                    if ph.high_price > trendline_value:
                         breakout_confirmed = True
                         breakout_date = check_date
                         break
