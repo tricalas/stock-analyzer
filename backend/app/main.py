@@ -146,30 +146,6 @@ def seed_default_tags(db: Session):
             "icon": "Eye",
             "order": 3,
             "user_token": None  # 시스템 태그
-        },
-        {
-            "name": "near_ma90",
-            "display_name": "시작",
-            "color": "loss",
-            "icon": "TrendingUp",
-            "order": 4,
-            "user_token": None  # 시스템 태그
-        },
-        {
-            "name": "delete",
-            "display_name": "삭제",
-            "color": "loss",
-            "icon": "Trash2",
-            "order": 97,
-            "user_token": None  # 시스템 태그
-        },
-        {
-            "name": "error",
-            "display_name": "에러",
-            "color": "loss",
-            "icon": "AlertCircle",
-            "order": 98,
-            "user_token": None  # 시스템 태그
         }
     ]
 
