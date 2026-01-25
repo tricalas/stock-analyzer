@@ -1,5 +1,5 @@
 """
-관심 종목 매매 신호 분석 스크립트
+관심 종목 매매 시그널 분석 스크립트
 """
 
 import sys
@@ -13,7 +13,7 @@ from app.technical_indicators import generate_breakout_pullback_signals
 from datetime import datetime, timedelta
 
 def analyze_interest_stocks():
-    """관심 종목 매매 신호 분석"""
+    """관심 종목 매매 시그널 분석"""
     db = SessionLocal()
 
     try:
@@ -33,7 +33,7 @@ def analyze_interest_stocks():
         ).all()
 
         print('=' * 70)
-        print('관심 종목 매매 신호 분석')
+        print('관심 종목 매매 시그널 분석')
         print('=' * 70)
         print()
 
@@ -69,14 +69,14 @@ def analyze_interest_stocks():
                 # 전략 적용
                 result_df = generate_breakout_pullback_signals(df)
 
-                # 매수 신호 확인
+                # 매수 시그널 확인
                 buy_signals = result_df[result_df['buy_signal'] == 1]
 
-                print(f'매수 신호: {len(buy_signals)}개 발견')
+                print(f'매수 시그널: {len(buy_signals)}개 발견')
 
                 if len(buy_signals) > 0:
                     print()
-                    print('최근 매수 신호:')
+                    print('최근 매수 시그널:')
                     for idx, signal in buy_signals.tail(5).iterrows():
                         date_str = signal['date'].strftime('%Y-%m-%d')
                         price = signal['close']
@@ -98,7 +98,7 @@ def analyze_interest_stocks():
                     else:
                         print(f'현재가: ${latest["close"]:.2f} (최근 일자: {latest["date"].strftime("%Y-%m-%d")})')
                 else:
-                    print('현재 매수 신호가 없습니다.')
+                    print('현재 매수 시그널이 없습니다.')
 
                 # 돌파/되돌림 정보
                 breakouts = result_df[result_df['breakout'] == True]

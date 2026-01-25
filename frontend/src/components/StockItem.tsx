@@ -50,7 +50,7 @@ const StockItem = React.memo<StockItemProps>(({ stock, rank, onStockClick, onSho
   const [togglingTags, setTogglingTags] = useState<Set<number>>(new Set());
   const queryClient = useQueryClient();
 
-  // 신호 데이터 가져오기 (히스토리가 있는 종목만)
+  // 시그널 데이터 가져오기 (히스토리가 있는 종목만)
   const { data: signalData } = useQuery({
     queryKey: ['stock-signals', stock.id],
     queryFn: () => stockApi.getStockSignals(stock.id, 120),
@@ -206,7 +206,7 @@ const StockItem = React.memo<StockItemProps>(({ stock, rank, onStockClick, onSho
         });
       }
 
-      // 쿼리 무효화하여 신호 데이터 새로고침
+      // 쿼리 무효화하여 시그널 데이터 새로고침
       queryClient.invalidateQueries({ queryKey: ['stock-signals', stock.id] });
     } catch (error: any) {
       console.error(`Error syncing ${stock.symbol}:`, error);
@@ -348,7 +348,7 @@ const StockItem = React.memo<StockItemProps>(({ stock, rank, onStockClick, onSho
                     ? 'bg-green-500/10 text-green-600 dark:text-green-400 hover:bg-green-500/20'
                     : 'bg-red-500/10 text-red-600 dark:text-red-400 hover:bg-red-500/20'
                 }`}
-                title={`매수 신호 ${signalData.signals.length}개 발견 (최근: ${new Date(signalData.latest_signal_date).toLocaleDateString('ko-KR')})`}
+                title={`매수 시그널 ${signalData.signals.length}개 발견 (최근: ${new Date(signalData.latest_signal_date).toLocaleDateString('ko-KR')})`}
               >
                 {signalData.latest_return_pct >= 0 ? (
                   <TrendingUp className="h-3 w-3 mr-1" />

@@ -58,7 +58,7 @@ class Stock(Base):
 
     # 델타 추적용 (최적화)
     history_updated_at = Column(DateTime)    # 히스토리 마지막 업데이트 시간
-    signal_analyzed_at = Column(DateTime)    # 신호 마지막 분석 시간
+    signal_analyzed_at = Column(DateTime)    # 시그널 마지막 분석 시간
 
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.utcnow)
@@ -202,16 +202,16 @@ class StockTagAssignment(Base):
     )
 
 class StockSignal(Base):
-    """매매 신호 분석 결과 저장"""
+    """매매 시그널 분석 결과 저장"""
     __tablename__ = "stock_signals"
 
     id = Column(Integer, primary_key=True, index=True)
     stock_id = Column(Integer, ForeignKey("stocks.id"), nullable=False, index=True)
 
-    # 신호 정보
+    # 시그널 정보
     signal_type = Column(String(20), nullable=False)  # "buy", "sell", "hold"
-    signal_date = Column(Date, nullable=False, index=True)  # 신호 발생 날짜
-    signal_price = Column(Float, nullable=False)  # 신호 발생 시 가격
+    signal_date = Column(Date, nullable=False, index=True)  # 시그널 발생 날짜
+    signal_price = Column(Float, nullable=False)  # 시그널 발생 시 가격
 
     # 전략 정보
     strategy_name = Column(String(50), nullable=False)  # "breakout_pullback"
@@ -220,11 +220,11 @@ class StockSignal(Base):
     current_price = Column(Float)  # 현재 가격
     return_percent = Column(Float)  # 수익률 (%)
 
-    # 신호 세부 정보 (JSON)
+    # 시그널 세부 정보 (JSON)
     details = Column(Text)  # JSON 형태로 저장 (breakout_date, pullback_date 등)
 
     # 메타 정보
-    is_active = Column(Boolean, default=True, nullable=False)  # 활성 신호 여부
+    is_active = Column(Boolean, default=True, nullable=False)  # 활성 시그널 여부
     analyzed_at = Column(DateTime, default=datetime.utcnow, index=True)  # 분석 시간
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -232,11 +232,11 @@ class StockSignal(Base):
     stock = relationship("Stock")
 
     __table_args__ = (
-        # 같은 종목, 같은 날짜, 같은 전략에 대해서는 하나의 신호만 저장
+        # 같은 종목, 같은 날짜, 같은 전략에 대해서는 하나의 시그널만 저장
         UniqueConstraint('stock_id', 'signal_date', 'strategy_name', name='unique_stock_signal'),
         # 분석 시간과 활성 상태로 검색을 위한 복합 인덱스
         Index('idx_signal_analyzed_active', 'analyzed_at', 'is_active'),
-        # 신호 타입과 날짜로 검색을 위한 복합 인덱스
+        # 시그널 타입과 날짜로 검색을 위한 복합 인덱스
         Index('idx_signal_type_date', 'signal_type', 'signal_date'),
         {'extend_existing': True}
     )

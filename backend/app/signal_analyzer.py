@@ -1,5 +1,5 @@
 """
-매매 신호 분석 및 저장 모듈
+매매 시그널 분석 및 저장 모듈
 """
 import logging
 import json
@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 
 
 class SignalAnalyzer:
-    """매매 신호 분석 및 저장"""
+    """매매 시그널 분석 및 저장"""
 
     def __init__(self):
         self.strategy_name = "descending_trendline_breakout"
@@ -32,7 +32,7 @@ class SignalAnalyzer:
         task_id: Optional[str] = None
     ) -> Dict:
         """
-        종목들의 신호를 분석하고 DB에 저장
+        종목들의 시그널을 분석하고 DB에 저장
 
         Args:
             mode: 분석 모드 ("tagged", "all", "top")
@@ -69,7 +69,7 @@ class SignalAnalyzer:
                 status="running",
                 total_items=len(stock_ids),
                 current_item=0,
-                message=f"신호 분석 시작 ({mode} 모드, {len(stock_ids)}개 종목)"
+                message=f"시그널 분석 시작 ({mode} 모드, {len(stock_ids)}개 종목)"
             )
             db.add(task_progress)
             db.commit()
@@ -116,7 +116,7 @@ class SignalAnalyzer:
             # TaskProgress 완료 처리
             task_progress.status = "completed"
             task_progress.current_item = total_stocks
-            task_progress.message = f"분석 완료: {stocks_with_signals}/{total_stocks} 종목에서 {total_signals_saved}개 신호 발견"
+            task_progress.message = f"분석 완료: {stocks_with_signals}/{total_stocks} 종목에서 {total_signals_saved}개 시그널 발견"
             task_progress.completed_at = datetime.utcnow()
             db.commit()
 
@@ -211,7 +211,7 @@ class SignalAnalyzer:
         return filtered_ids
 
     def _analyze_stock(self, stock_id: int, days: int, db: Session) -> Dict:
-        """단일 종목 신호 분석 및 저장"""
+        """단일 종목 시그널 분석 및 저장"""
         # 종목 정보 조회
         stock = db.query(Stock).filter(Stock.id == stock_id).first()
         if not stock:
@@ -232,17 +232,17 @@ class SignalAnalyzer:
             db.commit()
             return {"signals_count": 0, "saved_count": 0}
 
-        # 1. 기존 신호 삭제 (새 알고리즘으로 재분석하므로)
+        # 1. 기존 시그널 삭제 (새 알고리즘으로 재분석하므로)
         db.query(StockSignal).filter(
             StockSignal.stock_id == stock_id,
             StockSignal.strategy_name.in_(['descending_trendline_breakout', 'approaching_breakout', 'pullback_buy'])
         ).delete(synchronize_session=False)
         db.commit()
 
-        # 2. 기존 "돌파 임박" 신호의 돌파 확인 업데이트 (삭제 후 남은 신호가 있다면)
+        # 2. 기존 "돌파 임박" 시그널의 돌파 확인 업데이트 (삭제 후 남은 시그널이 있다면)
         self._check_breakout_confirmation(stock_id, price_history, db)
 
-        # 3. 신호 분석 (돌파 + 돌파 임박)
+        # 3. 시그널 분석 (돌파 + 돌파 임박)
         signals = self._run_signal_analysis(price_history, stock.current_price)
 
         # 4. 분석 완료 타임스탬프 갱신
@@ -252,7 +252,7 @@ class SignalAnalyzer:
         if not signals or len(signals) == 0:
             return {"signals_count": 0, "saved_count": 0}
 
-        # 5. 신호 저장
+        # 5. 시그널 저장
         saved_count = self._save_signals(stock_id, signals, db)
 
         return {
@@ -266,10 +266,10 @@ class SignalAnalyzer:
         price_history: List[StockPriceHistory],
         db: Session
     ):
-        """기존 '돌파 임박' 신호의 실제 돌파 여부 확인 및 업데이트"""
+        """기존 '돌파 임박' 시그널의 실제 돌파 여부 확인 및 업데이트"""
         from datetime import timedelta
 
-        # 최근 10일 내 "돌파 임박" 신호 중 아직 확인되지 않은 것들
+        # 최근 10일 내 "돌파 임박" 시그널 중 아직 확인되지 않은 것들
         recent_approaching = db.query(StockSignal).filter(
             StockSignal.stock_id == stock_id,
             StockSignal.strategy_name == "approaching_breakout",
@@ -286,7 +286,7 @@ class SignalAnalyzer:
             try:
                 details = json.loads(signal.details) if signal.details else {}
 
-                # 이미 확인된 신호는 스킵
+                # 이미 확인된 시그널는 스킵
                 if details.get('breakout_confirmed') is not None:
                     continue
 
@@ -297,7 +297,7 @@ class SignalAnalyzer:
                 if slope >= 0:  # 하락 추세가 아니면 스킵
                     continue
 
-                # 신호 발생 후 3일 내 돌파 확인
+                # 시그널 발생 후 3일 내 돌파 확인
                 breakout_confirmed = False
                 breakout_date = None
 
@@ -308,7 +308,7 @@ class SignalAnalyzer:
                 except ValueError:
                     continue
 
-                # 신호 다음날부터 3일간 확인
+                # 시그널 다음날부터 3일간 확인
                 for i in range(signal_idx + 1, min(signal_idx + 4, len(all_dates))):
                     check_date = all_dates[i]
                     ph = price_by_date.get(check_date)
@@ -324,7 +324,7 @@ class SignalAnalyzer:
                         breakout_date = check_date
                         break
 
-                # 신호 업데이트
+                # 시그널 업데이트
                 details['breakout_confirmed'] = breakout_confirmed
                 if breakout_date:
                     details['breakout_date'] = breakout_date.isoformat()
@@ -342,7 +342,7 @@ class SignalAnalyzer:
         price_history: List[StockPriceHistory],
         current_price: Optional[float]
     ) -> List[Dict]:
-        """실제 신호 분석 로직 실행 (돌파 + 돌파 임박)"""
+        """실제 시그널 분석 로직 실행 (돌파 + 돌파 임박)"""
         try:
             import pandas as pd
 
@@ -367,7 +367,7 @@ class SignalAnalyzer:
             # 90일 이동평균선 계산
             sma_90_series = df['close'].rolling(window=90, min_periods=60).mean()
 
-            # 1. 실제 돌파 신호
+            # 1. 실제 돌파 시그널
             breakout_df = generate_descending_trendline_breakout_signals(
                 df,
                 swing_window=5,
@@ -375,7 +375,7 @@ class SignalAnalyzer:
             )
             breakout_df['sma_90'] = sma_90_series
 
-            # 돌파 인덱스 추출 (되돌림 신호에서 사용)
+            # 돌파 인덱스 추출 (되돌림 시그널에서 사용)
             breakout_indices = []
             slope = breakout_df['trendline_slope'].iloc[0] if len(breakout_df) > 0 else 0
             intercept = breakout_df['trendline_intercept'].iloc[0] if len(breakout_df) > 0 else 0
@@ -414,7 +414,7 @@ class SignalAnalyzer:
                 }
                 signals.append(signal_info)
 
-            # 1.5. 되돌림(Pullback) 신호 (돌파가 있는 경우에만)
+            # 1.5. 되돌림(Pullback) 시그널 (돌파가 있는 경우에만)
             if breakout_indices and slope < 0:
                 pullback_df = generate_pullback_signals(
                     df,
@@ -463,7 +463,7 @@ class SignalAnalyzer:
                     }
                     signals.append(signal_info)
 
-            # 2. 돌파 임박 신호 (최근 5일만)
+            # 2. 돌파 임박 시그널 (최근 5일만)
             approaching_df = generate_approaching_breakout_signals(
                 df,
                 swing_window=5,
@@ -519,16 +519,16 @@ class SignalAnalyzer:
             return []
 
     def _save_signals(self, stock_id: int, signals: List[Dict], db: Session) -> int:
-        """신호를 DB에 저장 (중복 방지)"""
+        """시그널을 DB에 저장 (중복 방지)"""
         saved_count = 0
 
         for signal_info in signals:
             try:
-                # 신호 정보에서 전략명과 타입 추출
+                # 시그널 정보에서 전략명과 타입 추출
                 strategy_name = signal_info.get('strategy_name', self.strategy_name)
                 signal_type = signal_info.get('signal_type', 'buy')
 
-                # 기존 신호 확인 (같은 종목, 같은 날짜, 같은 전략)
+                # 기존 시그널 확인 (같은 종목, 같은 날짜, 같은 전략)
                 existing = db.query(StockSignal).filter(
                     StockSignal.stock_id == stock_id,
                     StockSignal.signal_date == signal_info['signal_date'],
@@ -536,12 +536,12 @@ class SignalAnalyzer:
                 ).first()
 
                 if existing:
-                    # 기존 신호 업데이트 (현재 가격과 수익률만)
+                    # 기존 시그널 업데이트 (현재 가격과 수익률만)
                     existing.current_price = signal_info['current_price']
                     existing.return_percent = signal_info['return_percent']
                     existing.updated_at = datetime.utcnow()
                 else:
-                    # 새 신호 생성
+                    # 새 시그널 생성
                     new_signal = StockSignal(
                         stock_id=stock_id,
                         signal_type=signal_type,
@@ -569,13 +569,13 @@ class SignalAnalyzer:
         signal_type: Optional[str] = None,
         limit: int = 100
     ) -> List[StockSignal]:
-        """저장된 활성 신호 조회"""
+        """저장된 활성 시그널 조회"""
         query = db.query(StockSignal).filter(StockSignal.is_active == True)
 
         if signal_type:
             query = query.filter(StockSignal.signal_type == signal_type)
 
-        # 최신 신호부터
+        # 최신 시그널부터
         signals = query.order_by(
             desc(StockSignal.signal_date)
         ).limit(limit).all()

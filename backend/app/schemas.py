@@ -230,11 +230,11 @@ class StockSignal(StockSignalBase):
         from_attributes = True
 
 class StockSignalWithStock(StockSignal):
-    """종목 정보를 포함한 신호"""
+    """종목 정보를 포함한 시그널"""
     stock: Optional[Stock] = None
 
 class SignalListResponse(BaseModel):
-    """신호 목록 응답"""
+    """시그널 목록 응답"""
     total: int
     signals: List[StockSignalWithStock]
     analyzed_at: Optional[datetime] = None  # 마지막 분석 시간

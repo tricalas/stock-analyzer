@@ -1897,7 +1897,7 @@ def get_stock_price_history(
     }
 
 
-# ==================== 매매 신호 생성 ====================
+# ==================== 매매 시그널 생성 ====================
 
 @app.get("/api/stocks/{stock_id}/signals")
 def get_trading_signals(
@@ -1907,14 +1907,14 @@ def get_trading_signals(
     current_user: Optional[User] = Depends(get_optional_current_user)
 ):
     """
-    특정 종목의 추세선 돌파 + 되돌림 매매 신호 조회
+    특정 종목의 추세선 돌파 + 되돌림 매매 시그널 조회
 
     Args:
         stock_id: 종목 ID
         days: 분석할 일수 (60~365일, 기본 120일)
 
     Returns:
-        매매 신호 및 전략 결과
+        매매 시그널 및 전략 결과
     """
     import pandas as pd
     from app.technical_indicators import generate_breakout_pullback_signals
@@ -1966,7 +1966,7 @@ def get_trading_signals(
         logger.error(f"Error generating signals for stock_id {stock_id}: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Signal generation failed: {str(e)}")
 
-    # 최근 매수 신호 찾기
+    # 최근 매수 시그널 찾기
     buy_signals = result_df[result_df['buy_signal'] == 1].tail(10)  # 최근 10개
     latest_signal = None
     signal_count = len(buy_signals)
@@ -2018,17 +2018,17 @@ def get_stored_signals(
     current_user: Optional[User] = Depends(get_optional_current_user)
 ):
     """
-    저장된 매매 신호 조회 (DB에서 읽기만 함 - 빠름, 페이지네이션 지원)
+    저장된 매매 시그널 조회 (DB에서 읽기만 함 - 빠름, 페이지네이션 지원)
 
     Args:
-        signal_type: 신호 타입 필터
+        signal_type: 시그널 타입 필터
         skip: 건너뛸 레코드 수 (페이지네이션용)
         limit: 최대 조회 개수
 
     Returns:
-        저장된 신호 목록
+        저장된 시그널 목록
     """
-    # 활성 신호 조회
+    # 활성 시그널 조회
     query = db.query(StockSignal).filter(StockSignal.is_active == True)
 
     if signal_type:
@@ -2037,7 +2037,7 @@ def get_stored_signals(
     # 전체 카운트 (페이지네이션용)
     total = query.count()
 
-    # 최신 신호부터 (페이지네이션 적용)
+    # 최신 시그널부터 (페이지네이션 적용)
     signals = query.order_by(
         desc(StockSignal.signal_date)
     ).offset(skip).limit(limit).all()
@@ -2101,10 +2101,10 @@ def delete_all_signals(
     current_user: Optional[User] = Depends(get_optional_current_user)
 ):
     """
-    모든 신호 삭제
+    모든 시그널 삭제
 
     Returns:
-        삭제된 신호 수
+        삭제된 시그널 수
     """
     deleted_count = db.query(StockSignal).delete()
     db.commit()
@@ -2114,7 +2114,7 @@ def delete_all_signals(
     return {
         "success": True,
         "deleted_count": deleted_count,
-        "message": f"{deleted_count}개 신호가 삭제되었습니다"
+        "message": f"{deleted_count}개 시그널이 삭제되었습니다"
     }
 
 
@@ -2128,7 +2128,7 @@ def refresh_signals(
     current_user: Optional[User] = Depends(get_optional_current_user)
 ):
     """
-    매매 신호 재분석 (백그라운드 작업)
+    매매 시그널 재분석 (백그라운드 작업)
 
     브라우저를 닫아도 작업이 계속 실행됩니다.
 
@@ -2167,7 +2167,7 @@ def refresh_signals(
     delta_msg = "전체 스캔" if force_full else "델타 분석 (변경된 종목만)"
     return {
         "success": True,
-        "message": f"신호 분석 작업이 시작되었습니다 (mode: {mode}, {delta_msg})",
+        "message": f"시그널 분석 작업이 시작되었습니다 (mode: {mode}, {delta_msg})",
         "mode": mode,
         "days": days,
         "force_full": force_full,
@@ -2521,7 +2521,7 @@ def scan_all_tagged_stocks(
     current_user: Optional[User] = Depends(get_optional_current_user)
 ):
     """
-    종목 스캔하여 매수 신호가 있는 종목 찾기
+    종목 스캔하여 매수 시그널이 있는 종목 찾기
 
     Args:
         days: 분석할 일수 (60~365일, 기본 120일)
@@ -2529,7 +2529,7 @@ def scan_all_tagged_stocks(
         limit: top 모드일 때 스캔할 종목 수 (10~2000, 기본 500)
 
     Returns:
-        매수 신호가 있는 종목 리스트
+        매수 시그널이 있는 종목 리스트
     """
     import pandas as pd
     from app.technical_indicators import generate_breakout_pullback_signals
@@ -2630,7 +2630,7 @@ def scan_all_tagged_stocks(
                 pullback_threshold=0.02
             )
 
-            # 매수 신호 확인
+            # 매수 시그널 확인
             buy_signals = result_df[result_df['buy_signal'] == 1]
 
             if len(buy_signals) > 0:
@@ -2653,7 +2653,7 @@ def scan_all_tagged_stocks(
             logger.error(f"Error scanning stock_id {stock_id}: {str(e)}")
             continue
 
-    # 최근 신호 순으로 정렬
+    # 최근 시그널 순으로 정렬
     stocks_with_signals.sort(key=lambda x: x['latest_signal_date'], reverse=True)
 
     result = {
@@ -2775,7 +2775,7 @@ def debug_signal_analysis(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """신호 분석 대상 종목 확인 (디버깅용) - signal_analyzer와 동일한 로직 (최적화됨)"""
+    """시그널 분석 대상 종목 확인 (디버깅용) - signal_analyzer와 동일한 로직 (최적화됨)"""
     if not current_user.is_admin:
         raise HTTPException(status_code=403, detail="Admin access required")
 

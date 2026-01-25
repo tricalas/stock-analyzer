@@ -50,7 +50,7 @@ export default function Sidebar({ favoriteCount = 0, dislikeCount = 0 }: Sidebar
   const baseNavigation: NavItem[] = [
     { name: '미국', href: '/', icon: Globe },
     { name: '한국', href: '/korea', icon: Flag },
-    { name: '신호', href: '/signals', icon: TrendingUp },
+    { name: '시그널', href: '/signals', icon: TrendingUp },
   ];
 
   // 에러, 제외 태그는 사이드바에서 숨김 (설정 페이지에서만 표시)

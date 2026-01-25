@@ -64,7 +64,7 @@ def analyze_signals_task(
     force_full: bool = False
 ):
     """
-    신호 분석 Celery 태스크
+    시그널 분석 Celery 태스크
 
     Args:
         task_id: TaskProgress에 사용할 task_id

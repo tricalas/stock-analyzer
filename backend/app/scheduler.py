@@ -47,7 +47,7 @@ class StockScheduler:
             )
             logger.info("📅 Scheduled: US market history collection (Tue-Sat 06:10 KST)")
 
-            # 신호 분석 작업: 히스토리 수집 후 약 50분 뒤 실행
+            # 시그널 분석 작업: 히스토리 수집 후 약 50분 뒤 실행
             # 한국 장: 17:00 (히스토리 수집 16:10 + 50분)
             self.scheduler.add_job(
                 func=self._analyze_signals,
@@ -181,7 +181,7 @@ class StockScheduler:
             settings.HISTORY_COLLECTION_WORKERS = original_workers
 
     def _analyze_signals(self):
-        """신호 분석 실행 (스케줄러용)"""
+        """시그널 분석 실행 (스케줄러용)"""
         try:
             # 순환 참조 방지를 위해 여기서 import
             from app.signal_analyzer import signal_analyzer
@@ -192,7 +192,7 @@ class StockScheduler:
             result = signal_analyzer.analyze_and_store_signals(
                 mode=mode,
                 limit=settings.HISTORY_COLLECTION_LIMIT if mode == "top" else None,
-                days=120  # 신호 분석은 항상 120일
+                days=120  # 시그널 분석은 항상 120일
             )
 
             if result.get("stocks_with_signals", 0) > 0:

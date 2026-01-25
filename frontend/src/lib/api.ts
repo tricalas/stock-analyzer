@@ -302,7 +302,7 @@ export const stockApi = {
     return response.data;
   },
 
-  // 신호 관련 API
+  // 시그널 관련 API
   getStockSignals: async (stockId: number, days: number = 120) => {
     const response = await api.get(`/api/stocks/${stockId}/signals`, { params: { days } });
     return response.data;

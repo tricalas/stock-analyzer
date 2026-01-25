@@ -74,7 +74,7 @@ export default function SignalAnalysisPage() {
     checkRunningTask();
   }, [API_URL]);
 
-  // 신호 통계 조회
+  // 시그널 통계 조회
   const { data: signalData, refetch: refetchSignals } = useQuery<SignalListResponse>({
     queryKey: ['signal-stats'],
     queryFn: async () => {
@@ -111,7 +111,7 @@ export default function SignalAnalysisPage() {
         setShowProgress(false);
         setCurrentTaskId(null);
         setIsAnalyzing(false);
-        toast.success('신호 분석이 완료되었습니다');
+        toast.success('시그널 분석이 완료되었습니다');
       }, 1500);
     } else if (progressData?.status === 'failed') {
       setShowProgress(false);
@@ -147,14 +147,14 @@ export default function SignalAnalysisPage() {
     }
   };
 
-  // 신호 삭제
+  // 시그널 삭제
   const handleDeleteSignals = async () => {
-    if (!confirm('모든 신호를 삭제하시겠습니까?')) return;
+    if (!confirm('모든 시그널을 삭제하시겠습니까?')) return;
     try {
       setIsDeleting(true);
       const response = await fetch(`${API_URL}/api/signals`, { method: 'DELETE' });
       if (!response.ok) throw new Error('Failed to delete signals');
-      toast.success('모든 신호가 삭제되었습니다');
+      toast.success('모든 시그널이 삭제되었습니다');
       refetchSignals();
     } catch (error) {
       console.error('Error deleting signals:', error);
@@ -164,7 +164,7 @@ export default function SignalAnalysisPage() {
     }
   };
 
-  // 신호 분석 시작
+  // 시그널 분석 시작
   const handleStartAnalysis = async (mode: 'all' | 'tagged' = 'all') => {
     try {
       setIsAnalyzing(true);
@@ -204,9 +204,9 @@ export default function SignalAnalysisPage() {
       <div className="max-w-4xl mx-auto space-y-6">
         {/* Header */}
         <div>
-          <h1 className="text-2xl font-bold text-foreground">신호 분석</h1>
+          <h1 className="text-2xl font-bold text-foreground">시그널 분석</h1>
           <p className="text-sm text-muted-foreground mt-1">
-            하락 추세선 돌파 패턴을 분석하여 매수 신호를 생성합니다
+            하락 추세선 돌파 패턴을 분석하여 매수 시그널을 생성합니다
           </p>
         </div>
 
@@ -294,9 +294,9 @@ export default function SignalAnalysisPage() {
             <div className="flex items-center gap-3">
               <Zap className="w-5 h-5 text-primary" />
               <div>
-                <h2 className="font-semibold text-foreground">신호 분석 실행</h2>
+                <h2 className="font-semibold text-foreground">시그널 분석 실행</h2>
                 <p className="text-sm text-muted-foreground">
-                  120일간 가격 데이터를 분석하여 매수 신호 생성
+                  120일간 가격 데이터를 분석하여 매수 시그널 생성
                 </p>
               </div>
             </div>
@@ -335,7 +335,7 @@ export default function SignalAnalysisPage() {
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-3">
               <Activity className="w-5 h-5 text-muted-foreground" />
-              <h2 className="font-semibold text-foreground">현재 신호 현황</h2>
+              <h2 className="font-semibold text-foreground">현재 시그널 현황</h2>
             </div>
             {(signalData?.total ?? 0) > 0 && (
               <button
@@ -353,7 +353,7 @@ export default function SignalAnalysisPage() {
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
               <div className="bg-muted/50 rounded-lg p-3 text-center">
                 <p className="text-2xl font-bold text-foreground">{signalData.stats.total_signals}</p>
-                <p className="text-xs text-muted-foreground">총 신호</p>
+                <p className="text-xs text-muted-foreground">총 시그널</p>
               </div>
               <div className="bg-green-500/10 rounded-lg p-3 text-center">
                 <p className="text-2xl font-bold text-green-600 dark:text-green-400">{signalData.stats.positive_returns}</p>
@@ -376,7 +376,7 @@ export default function SignalAnalysisPage() {
           ) : (
             <div className="text-center py-8 text-muted-foreground">
               <Activity className="w-8 h-8 mx-auto mb-2 opacity-50" />
-              <p className="text-sm">분석된 신호가 없습니다</p>
+              <p className="text-sm">분석된 시그널이 없습니다</p>
               <p className="text-xs mt-1">위에서 분석을 실행해주세요</p>
             </div>
           )}

@@ -12,7 +12,7 @@
 - 추세선 그리기
 - 돌파 감지 (가격 + 거래량)
 - 되돌림 패턴 인식
-- 매수 신호 생성
+- 매수 시그널 생성
 """
 
 import pandas as pd
@@ -61,8 +61,8 @@ def calculate_rsi(prices: pd.Series, period: int = 14) -> pd.Series:
         RSI 값 (Series, 0-100)
 
     해석:
-        RSI > 70: 과매수 (매도 신호)
-        RSI < 30: 과매도 (매수 신호)
+        RSI > 70: 과매수 (매도 시그널)
+        RSI < 30: 과매도 (매수 시그널)
     """
     # 가격 변화 계산
     delta = prices.diff()
@@ -107,8 +107,8 @@ def calculate_macd(
         }
 
     해석:
-        MACD > Signal: 매수 신호
-        MACD < Signal: 매도 신호
+        MACD > Signal: 매수 시그널
+        MACD < Signal: 매도 시그널
         히스토그램이 커질수록 추세가 강함
     """
     # EMA 계산
@@ -152,8 +152,8 @@ def calculate_bollinger_bands(
         }
 
     해석:
-        가격이 하단 밴드에 근접: 매수 신호
-        가격이 상단 밴드에 근접: 매도 신호
+        가격이 하단 밴드에 근접: 매수 시그널
+        가격이 상단 밴드에 근접: 매도 시그널
         밴드 폭이 좁아짐: 변동성 축소 (큰 움직임 예고)
     """
     # 중간 밴드 (SMA)
@@ -428,7 +428,7 @@ def generate_breakout_pullback_signals(
     pullback_threshold: float = 0.02
 ) -> pd.DataFrame:
     """
-    추세선 돌파 + 되돌림 매수 신호 생성
+    추세선 돌파 + 되돌림 매수 시그널 생성
 
     Args:
         df: OHLCV 데이터프레임
@@ -438,12 +438,12 @@ def generate_breakout_pullback_signals(
         pullback_threshold: 되돌림 비율
 
     Returns:
-        신호가 추가된 데이터프레임
+        시그널이 추가된 데이터프레임
 
     추가 컬럼:
         - breakout: 돌파 발생 여부
         - pullback: 되돌림 발생 여부
-        - buy_signal: 매수 신호 (0 or 1)
+        - buy_signal: 매수 시그널 (0 or 1)
     """
     result = df.copy()
 
@@ -470,7 +470,7 @@ def generate_breakout_pullback_signals(
 
     result['breakout'] = breakouts
 
-    # 4. 되돌림 및 매수 신호 생성
+    # 4. 되돌림 및 매수 시그널 생성
     pullbacks = [False] * len(df)
     buy_signals = [0] * len(df)
 
@@ -485,7 +485,7 @@ def generate_breakout_pullback_signals(
 
             if pullback_idx is not None:
                 pullbacks[pullback_idx] = True
-                buy_signals[pullback_idx] = 1  # 매수 신호
+                buy_signals[pullback_idx] = 1  # 매수 시그널
 
     result['pullback'] = pullbacks
     result['buy_signal'] = buy_signals
@@ -588,14 +588,14 @@ def generate_descending_trendline_breakout_signals(
     min_touches: int = 3
 ) -> pd.DataFrame:
     """
-    하락 추세선 돌파 매수 신호 생성 (순수 차트 패턴)
+    하락 추세선 돌파 매수 시그널 생성 (순수 차트 패턴)
 
     전략:
     1. 스윙 고점(Swing High) 찾기
     2. Lower High 패턴 (점점 낮아지는 고점) 찾기
     3. Lower High들을 연결한 하락 추세선 계산
     4. 추세선을 터치/초과하는 후속 스윙 고점이 있으면 추세선 재계산
-    5. 마지막 터치 포인트 이후 추세선 상향 돌파 시 매수 신호 생성
+    5. 마지막 터치 포인트 이후 추세선 상향 돌파 시 매수 시그널 생성
 
     Args:
         df: OHLCV 데이터프레임
@@ -603,10 +603,10 @@ def generate_descending_trendline_breakout_signals(
         min_touches: 추세선에 필요한 최소 터치 포인트
 
     Returns:
-        신호가 추가된 데이터프레임
+        시그널이 추가된 데이터프레임
 
     추가 컬럼:
-        - buy_signal: 매수 신호 (0 or 1)
+        - buy_signal: 매수 시그널 (0 or 1)
         - trendline_slope: 추세선 기울기
         - trendline_intercept: 추세선 절편
     """
@@ -662,7 +662,7 @@ def generate_descending_trendline_breakout_signals(
         return result
 
     # 5. 돌파 감지 (고가 기준 - 추세선도 고가로 그렸으므로)
-    # 단순화: 고가가 추세선 돌파하면 바로 신호
+    # 단순화: 고가가 추세선 돌파하면 바로 시그널
     last_lower_high_idx = lower_highs[-1][0]
 
     for i in range(last_lower_high_idx + 1, len(df)):
@@ -692,12 +692,12 @@ def generate_approaching_breakout_signals(
     approach_threshold: float = 3.0
 ) -> pd.DataFrame:
     """
-    하락 추세선 돌파 임박 신호 생성
+    하락 추세선 돌파 임박 시그널 생성
 
     전략:
     1. 하락 추세선 계산 (Lower High 연결)
-    2. 가격이 추세선의 approach_threshold% 이내로 접근 시 신호 발생
-    3. 양봉일 때만 신호 발생 (상승 모멘텀 확인)
+    2. 가격이 추세선의 approach_threshold% 이내로 접근 시 시그널 발생
+    3. 양봉일 때만 시그널 발생 (상승 모멘텀 확인)
 
     Args:
         df: OHLCV 데이터프레임
@@ -706,10 +706,10 @@ def generate_approaching_breakout_signals(
         approach_threshold: 추세선 접근 임계값 (%, 기본 3%)
 
     Returns:
-        신호가 추가된 데이터프레임
+        시그널이 추가된 데이터프레임
 
     추가 컬럼:
-        - approaching_signal: 돌파 임박 신호 (0 or 1)
+        - approaching_signal: 돌파 임박 시그널 (0 or 1)
         - distance_to_trendline: 추세선까지 거리 (%)
         - trendline_slope: 추세선 기울기
         - trendline_intercept: 추세선 절편
@@ -813,12 +813,12 @@ def generate_pullback_signals(
     pullback_threshold: float = 3.0
 ) -> pd.DataFrame:
     """
-    돌파 후 되돌림 알림 신호 생성
+    돌파 후 되돌림 알림 시그널 생성
 
     전략:
     1. 돌파가 발생한 종목에서
     2. 돌파 이후 가격이 추세선 근처로 되돌아오면
-    3. 알림 신호 발생 (추세선의 3% 이내)
+    3. 알림 시그널 발생 (추세선의 3% 이내)
 
     Args:
         df: OHLCV 데이터프레임
@@ -828,10 +828,10 @@ def generate_pullback_signals(
         pullback_threshold: 추세선 근처 기준 (%, 기본 3%)
 
     Returns:
-        되돌림 신호가 추가된 데이터프레임
+        되돌림 시그널이 추가된 데이터프레임
 
     추가 컬럼:
-        - pullback_signal: 되돌림 신호 (0 or 1)
+        - pullback_signal: 되돌림 시그널 (0 or 1)
         - pullback_distance: 추세선까지 거리 (%)
     """
     result = df.copy()
@@ -847,7 +847,7 @@ def generate_pullback_signals(
     for breakout_idx in breakout_indices:
         # 돌파 이후부터 탐색
         for i in range(breakout_idx + 1, len(df)):
-            # 이미 되돌림 신호가 있으면 스킵
+            # 이미 되돌림 시그널이 있으면 스킵
             if pullback_signals[i] == 1:
                 continue
 
@@ -877,7 +877,7 @@ def generate_pullback_signals(
 
 def generate_trading_signals(df: pd.DataFrame) -> pd.DataFrame:
     """
-    [DEPRECATED] 기존 복합 지표 기반 신호 생성
+    [DEPRECATED] 기존 복합 지표 기반 시그널 생성
 
     추세선 돌파 전략을 사용하려면 generate_breakout_pullback_signals() 사용
     """
@@ -887,7 +887,7 @@ def generate_trading_signals(df: pd.DataFrame) -> pd.DataFrame:
     for idx in range(len(df)):
         signal = 0.0
 
-        # RSI 신호
+        # RSI 시그널
         if 'rsi_14' in df.columns:
             rsi = df['rsi_14'].iloc[idx]
             if pd.notna(rsi):
@@ -896,7 +896,7 @@ def generate_trading_signals(df: pd.DataFrame) -> pd.DataFrame:
                 elif rsi > 70:
                     signal -= 0.5
 
-        # MACD 신호
+        # MACD 시그널
         if 'macd' in df.columns and 'macd_signal' in df.columns:
             macd = df['macd'].iloc[idx]
             macd_signal = df['macd_signal'].iloc[idx]

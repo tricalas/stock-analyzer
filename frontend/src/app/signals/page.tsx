@@ -56,7 +56,7 @@ export default function SignalsPage() {
   const [signalFilter, setSignalFilter] = useState<SignalFilter>('all');
   const [returnFilter, setReturnFilter] = useState<ReturnFilter>('all');
 
-  // 무한 스크롤로 신호 조회
+  // 무한 스크롤로 시그널 조회
   const {
     data,
     isLoading,
@@ -102,7 +102,7 @@ export default function SignalsPage() {
     return () => observer.disconnect();
   }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
 
-  // 모든 페이지의 신호를 하나의 배열로 합치기
+  // 모든 페이지의 시그널을 하나의 배열로 합치기
   const allSignals = data?.pages.flatMap(page => page.signals) || [];
   const stats = data?.pages[0]?.stats;
   const analyzedAt = data?.pages[0]?.analyzed_at;
@@ -134,9 +134,9 @@ export default function SignalsPage() {
     });
   };
 
-  // 필터링된 신호
+  // 필터링된 시그널
   const filteredSignals = allSignals.filter(signal => {
-    // 신호 타입 필터
+    // 시그널 타입 필터
     if (signalFilter !== 'all') {
       if (signalFilter === 'breakout' && signal.strategy_name !== 'trendline_breakout') return false;
       if (signalFilter === 'approaching' && signal.strategy_name !== 'approaching_breakout') return false;
@@ -158,14 +158,14 @@ export default function SignalsPage() {
           <div className="flex items-center justify-between gap-4">
             {/* 필터 드롭다운 */}
             <div className="flex items-center gap-2">
-              {/* 신호 타입 필터 */}
+              {/* 시그널 타입 필터 */}
               <div className="relative">
                 <select
                   value={signalFilter}
                   onChange={(e) => setSignalFilter(e.target.value as SignalFilter)}
                   className="appearance-none bg-muted hover:bg-muted/80 border border-border rounded-lg px-3 py-2 pr-8 text-sm font-medium text-foreground cursor-pointer focus:outline-none focus:ring-2 focus:ring-primary/50"
                 >
-                  <option value="all">전체 신호</option>
+                  <option value="all">전체 시그널</option>
                   <option value="breakout">돌파</option>
                   <option value="approaching">임박</option>
                   <option value="pullback">되돌림</option>
@@ -252,9 +252,9 @@ export default function SignalsPage() {
               <table className="w-full">
                 <thead className="bg-muted/50 border-b border-border sticky top-0">
                   <tr>
-                    <th className="px-4 py-3 text-center text-xs font-semibold text-muted-foreground uppercase tracking-wider">신호일</th>
+                    <th className="px-4 py-3 text-center text-xs font-semibold text-muted-foreground uppercase tracking-wider">시그널일</th>
                     <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">종목</th>
-                    <th className="px-4 py-3 text-right text-xs font-semibold text-muted-foreground uppercase tracking-wider">신호가</th>
+                    <th className="px-4 py-3 text-right text-xs font-semibold text-muted-foreground uppercase tracking-wider">시그널이</th>
                     <th className="px-4 py-3 text-right text-xs font-semibold text-muted-foreground uppercase tracking-wider">90일선</th>
                     <th className="px-4 py-3 text-right text-xs font-semibold text-muted-foreground uppercase tracking-wider">현재가</th>
                     <th className="px-4 py-3 text-right text-xs font-semibold text-muted-foreground uppercase tracking-wider">수익률</th>
@@ -280,13 +280,13 @@ export default function SignalsPage() {
                           }
                         }}
                       >
-                        {/* 신호일 */}
+                        {/* 시그널일 */}
                         <td className="px-4 py-3 whitespace-nowrap text-center">
                           <div className="flex flex-col items-center gap-1">
                             <span className="text-sm text-foreground">
                               {formatDate(signal.signal_date)}
                             </span>
-                            {/* 신호 타입 배지 */}
+                            {/* 시그널 타입 배지 */}
                             {(() => {
                               if (signal.strategy_name === 'approaching_breakout') {
                                 return (
@@ -340,7 +340,7 @@ export default function SignalsPage() {
                           </div>
                         </td>
 
-                        {/* 신호가 */}
+                        {/* 시그널이 */}
                         <td className="px-4 py-3 whitespace-nowrap text-right">
                           <span className="text-sm font-mono text-foreground">
                             {formatPrice(signal.signal_price, signal.stock?.market || 'KR')}
@@ -473,13 +473,13 @@ export default function SignalsPage() {
                 </div>
                 <p className="text-foreground font-semibold text-lg">
                   {signalFilter !== 'all' || returnFilter !== 'all'
-                    ? '필터 조건에 맞는 신호가 없습니다'
-                    : '매수 신호가 없습니다'}
+                    ? '필터 조건에 맞는 시그널이 없습니다'
+                    : '매수 시그널이 없습니다'}
                 </p>
                 <p className="text-sm text-muted-foreground mt-2">
                   {signalFilter !== 'all' || returnFilter !== 'all'
                     ? '다른 필터 조건을 선택해보세요'
-                    : '설정 > 신호 분석에서 분석을 실행하세요'}
+                    : '설정 > 시그널 분석에서 분석을 실행하세요'}
                 </p>
               </div>
             </div>
