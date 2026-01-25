@@ -182,13 +182,6 @@ const StockItem = React.memo<StockItemProps>(({ stock, rank, onStockClick, onSho
 
   const handleSyncHistory = async (e: React.MouseEvent) => {
     e.stopPropagation();
-
-    // 한국 주식만 지원
-    if (stock.market !== 'KR') {
-      toast.error('한국 주식만 지원됩니다');
-      return;
-    }
-
     setIsSyncing(true);
 
     try {
@@ -368,8 +361,8 @@ const StockItem = React.memo<StockItemProps>(({ stock, rank, onStockClick, onSho
           </div>
           <div className="text-xs text-muted-foreground">
             {stock.symbol}
-            {/* 히스토리 데이터 상태 + 동기화 버튼 */}
-            {stock.market === 'KR' && (
+            {/* 히스토리 데이터 상태 + 동기화 버튼 (한국/미국 주식 모두 지원) */}
+            {(stock.market === 'KR' || stock.market === 'US') && (
               <button
                 onClick={handleSyncHistory}
                 disabled={isSyncing}
@@ -402,16 +395,6 @@ const StockItem = React.memo<StockItemProps>(({ stock, rank, onStockClick, onSho
                   <>분석</>
                 )}
               </button>
-            )}
-            {/* 미국 주식은 기존 표시 유지 */}
-            {stock.market !== 'KR' && recordsCount > 0 && (
-              <span className={`ml-2 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium ${
-                recordsCount >= 60
-                  ? 'bg-green-500/10 text-green-600 dark:text-green-400'
-                  : 'bg-yellow-500/10 text-yellow-600 dark:text-yellow-400'
-              }`}>
-                📊 {recordsCount}일
-              </span>
             )}
             {stock.latest_tag_date && (
               <span className="ml-2 text-primary/70 text-[10px]">

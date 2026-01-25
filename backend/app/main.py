@@ -883,44 +883,101 @@ def sync_stock_history(
     - 최신 데이터 있음: 스킵 (skip)
     - 며칠 빠짐: 증분 수집 (incremental)
     """
-    from app.crawlers.kis_history_crawler import kis_history_crawler
-
     try:
         stock = db.query(Stock).filter(Stock.id == stock_id).first()
         if not stock:
             raise HTTPException(status_code=404, detail="Stock not found")
 
-        # 한국 주식만 KIS API 지원
-        if stock.market != 'KR':
-            raise HTTPException(status_code=400, detail="한국 주식만 지원됩니다")
+        # 시장별 처리
+        if stock.market == 'KR':
+            # 한국 주식: KIS API 사용
+            from app.crawlers.kis_history_crawler import kis_history_crawler
 
-        # 수집 필요 여부 확인 (하이브리드 전략)
-        should_collect, mode, last_date = kis_history_crawler._should_collect_history(stock, db)
+            # 수집 필요 여부 확인 (하이브리드 전략)
+            should_collect, mode, last_date = kis_history_crawler._should_collect_history(stock, db)
 
-        if mode == "skip":
-            # 이미 최신 상태
-            return {
-                "success": True,
-                "mode": "skip",
-                "message": f"이미 최신 상태입니다 (마지막: {last_date})",
-                "stock_id": stock_id,
-                "symbol": stock.symbol,
-                "name": stock.name,
-                "records_count": stock.history_records_count,
-                "last_date": str(last_date) if last_date else None,
-                "records_added": 0
-            }
+            if mode == "skip":
+                return {
+                    "success": True,
+                    "mode": "skip",
+                    "message": f"이미 최신 상태입니다 (마지막: {last_date})",
+                    "stock_id": stock_id,
+                    "symbol": stock.symbol,
+                    "name": stock.name,
+                    "records_count": stock.history_records_count,
+                    "last_date": str(last_date) if last_date else None,
+                    "records_added": 0
+                }
 
-        # 수집 실행
-        if mode == "incremental":
-            # 증분 수집
-            incremental_start = last_date + timedelta(days=1)
-            result = kis_history_crawler.collect_history_for_stock(stock, start_date=incremental_start, db=db)
-            logger.info(f"Incremental sync for {stock.symbol} from {incremental_start}")
+            # 수집 실행
+            if mode == "incremental":
+                incremental_start = last_date + timedelta(days=1)
+                result = kis_history_crawler.collect_history_for_stock(stock, start_date=incremental_start, db=db)
+                logger.info(f"Incremental sync for {stock.symbol} from {incremental_start}")
+            else:
+                result = kis_history_crawler.collect_history_for_stock(stock, days=days, db=db)
+                logger.info(f"Full sync for {stock.symbol} ({days} days)")
+
+        elif stock.market == 'US':
+            # 미국 주식: 네이버 API 사용
+            from app.crawlers.naver_us_crawler import NaverUSStockCrawler
+
+            naver_crawler = NaverUSStockCrawler()
+
+            # 네이버 API용 심볼 (sector 필드에 로이터 코드 저장됨)
+            naver_symbol = stock.sector if stock.sector else f"{stock.symbol}.O"
+            logger.info(f"Fetching US stock history for {naver_symbol}")
+
+            analysis = naver_crawler.analyze_single_stock(naver_symbol)
+
+            if not analysis.get('success') or not analysis.get('price_history'):
+                return {
+                    "success": False,
+                    "mode": "full",
+                    "message": f"데이터를 가져올 수 없습니다: {analysis.get('message', 'Unknown error')}",
+                    "stock_id": stock_id,
+                    "symbol": stock.symbol,
+                    "name": stock.name,
+                    "records_count": stock.history_records_count or 0,
+                    "last_date": None,
+                    "records_added": 0
+                }
+
+            # 가격 데이터 저장
+            records_added = 0
+            for price_data in analysis['price_history']:
+                try:
+                    price_date = datetime.strptime(price_data['date'], '%Y%m%d').date()
+
+                    # 중복 체크
+                    existing = db.query(StockPriceHistory).filter(
+                        StockPriceHistory.stock_id == stock_id,
+                        StockPriceHistory.date == price_date
+                    ).first()
+
+                    if not existing:
+                        history_record = StockPriceHistory(
+                            stock_id=stock_id,
+                            date=price_date,
+                            open_price=price_data.get('open_price', 0),
+                            high_price=price_data.get('high_price', 0),
+                            low_price=price_data.get('low_price', 0),
+                            close_price=price_data.get('close_price', 0),
+                            volume=price_data.get('volume', 0)
+                        )
+                        db.add(history_record)
+                        records_added += 1
+                except Exception as e:
+                    logger.error(f"Error saving price data: {e}")
+                    continue
+
+            db.commit()
+            mode = "full"
+            result = {"success": True, "records_saved": records_added}
+            logger.info(f"US stock sync for {stock.symbol}: {records_added} records added")
+
         else:
-            # 전체 수집
-            result = kis_history_crawler.collect_history_for_stock(stock, days=days, db=db)
-            logger.info(f"Full sync for {stock.symbol} ({days} days)")
+            raise HTTPException(status_code=400, detail=f"지원하지 않는 시장입니다: {stock.market}")
 
         # 업데이트된 레코드 수 조회
         updated_count = db.query(StockPriceHistory).filter(
