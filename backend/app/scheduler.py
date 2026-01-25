@@ -2,6 +2,8 @@ import logging
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 from app.crawlers.crawler_manager import CrawlerManager
+from app.crawlers.kis_history_crawler import kis_history_crawler
+from app.config import settings
 from datetime import datetime
 import pytz
 
@@ -14,32 +16,38 @@ class StockScheduler:
         self._setup_jobs()
 
     def _setup_jobs(self):
-        """스케줄 작업 설정 (현재 비활성화 - 수동 업데이트만 사용)"""
-        # 자동 스케줄링 비활성화됨
-        # 필요시 아래 코드 주석 해제하여 자동 크롤링 활성화
+        """스케줄 작업 설정"""
+        # 한국 시간대 설정
+        kst = pytz.timezone('Asia/Seoul')
 
-        # # 한국 시간대 설정
-        # kst = pytz.timezone('Asia/Seoul')
+        if settings.ENABLE_AUTO_HISTORY_COLLECTION:
+            logger.info("✅ Auto history collection ENABLED")
 
-        # # 평일 오전 9시 1분에 주식 데이터 크롤링 (장 시작 후)
-        # self.scheduler.add_job(
-        #     func=self._crawl_all_stocks,
-        #     trigger=CronTrigger(hour=9, minute=1, day_of_week='mon-fri', timezone=kst),
-        #     id='daily_stock_crawl',
-        #     name='Daily Stock Data Crawling (Weekdays)',
-        #     replace_existing=True
-        # )
+            # 평일 오후 4시 10분: 한국 장 마감 후 히스토리 수집
+            self.scheduler.add_job(
+                func=self._collect_tagged_stocks_history,
+                trigger=CronTrigger(hour=16, minute=10, day_of_week='mon-fri', timezone=kst),
+                id='kr_market_history_collection',
+                name='Korean Market History Collection (After Close)',
+                replace_existing=True
+            )
+            logger.info("📅 Scheduled: Korean market history collection (Mon-Fri 16:10 KST)")
 
-        # # 평일 오후 4시에 추가 크롤링 (장 마감 후)
-        # self.scheduler.add_job(
-        #     func=self._crawl_all_stocks,
-        #     trigger=CronTrigger(hour=16, minute=0, day_of_week='mon-fri', timezone=kst),
-        #     id='afternoon_stock_crawl',
-        #     name='Afternoon Stock Data Crawling (Weekdays)',
-        #     replace_existing=True
-        # )
+            # 평일 오전 6시 10분 (KST): 미국 장 마감 후 히스토리 수집
+            # 미국 시간 기준 전날 오후 5시 마감 (EST: UTC-5) → KST 오전 7시
+            # 약간 여유를 둬서 오전 6시 10분에 수집
+            self.scheduler.add_job(
+                func=self._collect_tagged_stocks_history,
+                trigger=CronTrigger(hour=6, minute=10, day_of_week='tue-sat', timezone=kst),
+                id='us_market_history_collection',
+                name='US Market History Collection (After Close)',
+                replace_existing=True
+            )
+            logger.info("📅 Scheduled: US market history collection (Tue-Sat 06:10 KST)")
 
-        logger.info("Auto-scheduling disabled - using manual updates only")
+        else:
+            logger.info("⚠️ Auto history collection DISABLED - using manual updates only")
+            logger.info("💡 To enable: Set ENABLE_AUTO_HISTORY_COLLECTION=true in .env")
 
     def _crawl_all_stocks(self):
         """모든 주식 데이터 크롤링"""
@@ -51,6 +59,47 @@ class StockScheduler:
         except Exception as e:
             logger.error(f"Error in scheduled stock crawling: {str(e)}")
             return {"success": 0, "failed": 0, "total": 0, "error": str(e)}
+
+    def _collect_tagged_stocks_history(self):
+        """히스토리 수집 (KIS API 사용) - 모드에 따라 다르게 동작"""
+        try:
+            mode = settings.HISTORY_COLLECTION_MODE.lower()
+            logger.info(f"🚀 Starting scheduled history collection (mode: {mode})...")
+
+            if mode == "tagged":
+                # 태그가 있는 종목만
+                result = kis_history_crawler.collect_history_for_tagged_stocks(
+                    days=settings.HISTORY_COLLECTION_DAYS
+                )
+            elif mode == "top":
+                # 시총 상위 N개 종목
+                result = kis_history_crawler.collect_history_for_all_stocks(
+                    days=settings.HISTORY_COLLECTION_DAYS,
+                    limit=settings.HISTORY_COLLECTION_LIMIT
+                )
+            else:  # "all" 또는 기타
+                # 모든 활성 종목
+                result = kis_history_crawler.collect_history_for_all_stocks(
+                    days=settings.HISTORY_COLLECTION_DAYS,
+                    limit=None
+                )
+
+            if result.get("success_count", 0) > 0:
+                logger.info(
+                    f"✅ History collection completed ({mode} mode): "
+                    f"{result['success_count']}/{result['total_stocks']} stocks, "
+                    f"{result['total_records']} records saved"
+                )
+            else:
+                logger.warning(
+                    f"⚠️ History collection completed with errors ({mode} mode): "
+                    f"{result.get('success_count', 0)}/{result.get('total_stocks', 0)} stocks"
+                )
+
+            return result
+        except Exception as e:
+            logger.error(f"❌ Error in scheduled history collection: {str(e)}")
+            return {"success_count": 0, "total_stocks": 0, "total_records": 0, "error": str(e)}
 
     def start(self):
         """스케줄러 시작"""

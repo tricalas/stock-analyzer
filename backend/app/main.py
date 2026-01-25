@@ -1508,6 +1508,370 @@ def create_user_direct(
     logger.info(f"User created directly: {new_user.nickname}")
     return {"message": "User created successfully", "user_id": new_user.id}
 
+
+# ==================== 히스토리 데이터 수집 ====================
+
+def run_background_history_collection(days: int):
+    """백그라운드에서 실행될 히스토리 수집 작업"""
+    try:
+        from app.crawlers.kis_history_crawler import kis_history_crawler
+        logger.info(f"Starting background history collection ({days} days)")
+        result = kis_history_crawler.collect_history_for_tagged_stocks(days=days)
+        logger.info(f"History collection completed: {result}")
+    except Exception as e:
+        logger.error(f"Error during background history collection: {str(e)}")
+
+
+@app.post("/api/stocks/tagged/collect-history")
+def collect_history_for_tagged_stocks(
+    background_tasks: BackgroundTasks,
+    days: int = Query(120, ge=1, le=365),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    태그가 있는 종목들의 히스토리 데이터 수집
+
+    Args:
+        days: 수집할 일수 (1~365일, 기본 120일)
+
+    Returns:
+        수집 작업 시작 메시지
+    """
+    # 백그라운드 작업 추가
+    background_tasks.add_task(run_background_history_collection, days)
+
+    # 즉시 응답 반환
+    return {
+        "success": True,
+        "message": f"히스토리 수집 작업이 시작되었습니다. ({days}일치 데이터)",
+        "days": days
+    }
+
+
+@app.get("/api/stocks/{stock_id}/history")
+def get_stock_price_history(
+    stock_id: int,
+    days: int = Query(120, ge=1, le=365),
+    db: Session = Depends(get_db),
+    current_user: Optional[User] = Depends(get_optional_current_user)
+):
+    """
+    특정 종목의 가격 히스토리 조회
+
+    Args:
+        stock_id: 종목 ID
+        days: 조회할 일수 (기본 120일)
+
+    Returns:
+        OHLCV 히스토리 데이터
+    """
+    stock = db.query(Stock).filter(Stock.id == stock_id).first()
+    if not stock:
+        raise HTTPException(status_code=404, detail="Stock not found")
+
+    # 날짜 범위 계산
+    end_date = date.today()
+    start_date = end_date - timedelta(days=days)
+
+    # 히스토리 조회
+    history = db.query(StockPriceHistory).filter(
+        StockPriceHistory.stock_id == stock_id,
+        StockPriceHistory.date >= start_date,
+        StockPriceHistory.date <= end_date
+    ).order_by(StockPriceHistory.date.asc()).all()
+
+    return {
+        "stock_id": stock_id,
+        "symbol": stock.symbol,
+        "name": stock.name,
+        "data_count": len(history),
+        "history": [
+            {
+                "date": h.date.isoformat(),
+                "open": h.open_price,
+                "high": h.high_price,
+                "low": h.low_price,
+                "close": h.close_price,
+                "volume": h.volume
+            }
+            for h in history
+        ]
+    }
+
+
+# ==================== 매매 신호 생성 ====================
+
+@app.get("/api/stocks/{stock_id}/signals")
+def get_trading_signals(
+    stock_id: int,
+    days: int = Query(120, ge=60, le=365),
+    db: Session = Depends(get_db),
+    current_user: Optional[User] = Depends(get_optional_current_user)
+):
+    """
+    특정 종목의 추세선 돌파 + 되돌림 매매 신호 조회
+
+    Args:
+        stock_id: 종목 ID
+        days: 분석할 일수 (60~365일, 기본 120일)
+
+    Returns:
+        매매 신호 및 전략 결과
+    """
+    import pandas as pd
+    from app.technical_indicators import generate_breakout_pullback_signals
+
+    stock = db.query(Stock).filter(Stock.id == stock_id).first()
+    if not stock:
+        raise HTTPException(status_code=404, detail="Stock not found")
+
+    # 날짜 범위 계산
+    end_date = date.today()
+    start_date = end_date - timedelta(days=days)
+
+    # 히스토리 조회
+    history = db.query(StockPriceHistory).filter(
+        StockPriceHistory.stock_id == stock_id,
+        StockPriceHistory.date >= start_date,
+        StockPriceHistory.date <= end_date
+    ).order_by(StockPriceHistory.date.asc()).all()
+
+    if not history or len(history) < 60:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Not enough historical data. Found {len(history)} days, need at least 60 days."
+        )
+
+    # DataFrame으로 변환
+    df = pd.DataFrame([
+        {
+            'date': h.date,
+            'open': float(h.open_price) if h.open_price else 0.0,
+            'high': float(h.high_price) if h.high_price else 0.0,
+            'low': float(h.low_price) if h.low_price else 0.0,
+            'close': float(h.close_price) if h.close_price else 0.0,
+            'volume': float(h.volume) if h.volume else 0.0
+        }
+        for h in history
+    ])
+
+    # 전략 적용
+    try:
+        result_df = generate_breakout_pullback_signals(
+            df,
+            swing_window=5,
+            trendline_points=3,
+            volume_threshold=1.5,
+            pullback_threshold=0.02
+        )
+    except Exception as e:
+        logger.error(f"Error generating signals for stock_id {stock_id}: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Signal generation failed: {str(e)}")
+
+    # 최근 매수 신호 찾기
+    buy_signals = result_df[result_df['buy_signal'] == 1].tail(10)  # 최근 10개
+    latest_signal = None
+    signal_count = len(buy_signals)
+
+    if signal_count > 0:
+        last_signal_row = buy_signals.iloc[-1]
+        latest_signal = {
+            "date": last_signal_row['date'].strftime('%Y-%m-%d'),
+            "price": float(last_signal_row['close']),
+            "volume": int(last_signal_row['volume']),
+            "signal_type": "buy",
+            "reason": "추세선 돌파 후 되돌림 완료"
+        }
+
+    # 돌파 및 되돌림 정보
+    breakouts = result_df[result_df['breakout'] == True].tail(5)
+    pullbacks = result_df[result_df['pullback'] == True].tail(5)
+
+    return {
+        "stock_id": stock_id,
+        "symbol": stock.symbol,
+        "name": stock.name,
+        "analyzed_days": len(history),
+        "latest_signal": latest_signal,
+        "signal_count": signal_count,
+        "recent_breakouts": [
+            {
+                "date": row['date'].strftime('%Y-%m-%d'),
+                "price": float(row['close'])
+            }
+            for _, row in breakouts.iterrows()
+        ],
+        "recent_pullbacks": [
+            {
+                "date": row['date'].strftime('%Y-%m-%d'),
+                "price": float(row['close'])
+            }
+            for _, row in pullbacks.iterrows()
+        ]
+    }
+
+
+@app.get("/api/signals/scan")
+def scan_all_tagged_stocks(
+    days: int = Query(120, ge=60, le=365),
+    mode: str = Query("all", pattern="^(tagged|all|top)$"),
+    limit: int = Query(500, ge=10, le=2000),
+    db: Session = Depends(get_db),
+    current_user: Optional[User] = Depends(get_optional_current_user)
+):
+    """
+    종목 스캔하여 매수 신호가 있는 종목 찾기
+
+    Args:
+        days: 분석할 일수 (60~365일, 기본 120일)
+        mode: 스캔 모드 (tagged: 태그 종목만, all: 모든 활성 종목, top: 시총 상위)
+        limit: top 모드일 때 스캔할 종목 수 (10~2000, 기본 500)
+
+    Returns:
+        매수 신호가 있는 종목 리스트
+    """
+    import pandas as pd
+    from app.technical_indicators import generate_breakout_pullback_signals
+
+    # 캐시 키 생성
+    user_token = current_user.user_token if current_user else "anonymous"
+    cache_key_data = {
+        "endpoint": "signals_scan",
+        "user": user_token,
+        "days": days,
+        "mode": mode,
+        "limit": limit if mode == "top" else None
+    }
+    cache_key = hashlib.md5(orjson.dumps(cache_key_data, option=orjson.OPT_SORT_KEYS)).hexdigest()
+
+    # 캐시 확인 (5분 TTL)
+    cached_data = get_cache(cache_key)
+    if cached_data:
+        logger.info(f"✅ Signals scan cache HIT (mode: {mode})")
+        return cached_data
+
+    logger.info(f"⏳ Signals scan cache MISS - scanning stocks (mode: {mode})")
+
+    # 모드에 따라 종목 선택
+    if mode == "tagged":
+        # 태그가 있는 종목들
+        tagged_stock_ids = db.query(StockTagAssignment.stock_id).distinct().all()
+        stock_ids = [sid[0] for sid in tagged_stock_ids]
+
+        if not stock_ids:
+            result = {
+                "total_scanned": 0,
+                "total_with_signals": 0,
+                "stocks_with_signals": [],
+                "scanned_at": datetime.now().isoformat(),
+                "mode": mode,
+                "message": "No tagged stocks found"
+            }
+            set_cache(cache_key, result, ttl=300)
+            return result
+    elif mode == "top":
+        # 시총 상위 N개
+        top_stocks = db.query(Stock.id).filter(
+            Stock.is_active == True
+        ).order_by(Stock.market_cap.desc().nullslast()).limit(limit).all()
+        stock_ids = [s.id for s in top_stocks]
+    else:  # "all"
+        # 모든 활성 종목
+        all_stocks = db.query(Stock.id).filter(
+            Stock.is_active == True
+        ).all()
+        stock_ids = [s.id for s in all_stocks]
+
+    # 날짜 범위
+    end_date = date.today()
+    start_date = end_date - timedelta(days=days)
+
+    stocks_with_signals = []
+    total_scanned = 0
+
+    for stock_id in stock_ids:
+        try:
+            stock = db.query(Stock).filter(Stock.id == stock_id).first()
+            if not stock or not stock.is_active:
+                continue
+
+            # 히스토리 조회
+            history = db.query(StockPriceHistory).filter(
+                StockPriceHistory.stock_id == stock_id,
+                StockPriceHistory.date >= start_date,
+                StockPriceHistory.date <= end_date
+            ).order_by(StockPriceHistory.date.asc()).all()
+
+            if not history or len(history) < 60:
+                continue
+
+            total_scanned += 1
+
+            # DataFrame 변환
+            df = pd.DataFrame([
+                {
+                    'date': h.date,
+                    'open': float(h.open_price) if h.open_price else 0.0,
+                    'high': float(h.high_price) if h.high_price else 0.0,
+                    'low': float(h.low_price) if h.low_price else 0.0,
+                    'close': float(h.close_price) if h.close_price else 0.0,
+                    'volume': float(h.volume) if h.volume else 0.0
+                }
+                for h in history
+            ])
+
+            # 전략 적용
+            result_df = generate_breakout_pullback_signals(
+                df,
+                swing_window=5,
+                trendline_points=3,
+                volume_threshold=1.5,
+                pullback_threshold=0.02
+            )
+
+            # 매수 신호 확인
+            buy_signals = result_df[result_df['buy_signal'] == 1]
+
+            if len(buy_signals) > 0:
+                last_signal = buy_signals.iloc[-1]
+                latest_price = df.iloc[-1]['close']
+
+                stocks_with_signals.append({
+                    "stock_id": stock.id,
+                    "symbol": stock.symbol,
+                    "name": stock.name,
+                    "market": stock.market,
+                    "latest_signal_date": last_signal['date'].strftime('%Y-%m-%d'),
+                    "signal_price": float(last_signal['close']),
+                    "current_price": float(latest_price),
+                    "price_change_pct": ((latest_price - last_signal['close']) / last_signal['close']) * 100,
+                    "signal_count": len(buy_signals)
+                })
+
+        except Exception as e:
+            logger.error(f"Error scanning stock_id {stock_id}: {str(e)}")
+            continue
+
+    # 최근 신호 순으로 정렬
+    stocks_with_signals.sort(key=lambda x: x['latest_signal_date'], reverse=True)
+
+    result = {
+        "total_scanned": total_scanned,
+        "total_with_signals": len(stocks_with_signals),
+        "stocks_with_signals": stocks_with_signals,
+        "scanned_at": datetime.now().isoformat(),
+        "mode": mode,
+        "limit": limit if mode == "top" else None
+    }
+
+    # 캐시 저장 (5분)
+    set_cache(cache_key, result, ttl=300)
+
+    logger.info(f"✅ Scan completed ({mode} mode): {total_scanned} stocks scanned, {len(stocks_with_signals)} with signals")
+
+    return result
+
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
