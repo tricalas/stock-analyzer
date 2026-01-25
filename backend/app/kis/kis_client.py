@@ -71,7 +71,9 @@ class KISClient:
 
     def _issue_token(self) -> None:
         """접근 토큰 발급"""
-        url = f"{self.base_url}/oauth2/tokenP"
+        # 모의투자: tokenP, 실전투자: token
+        endpoint = "/oauth2/tokenP" if self.is_mock else "/oauth2/token"
+        url = f"{self.base_url}{endpoint}"
 
         headers = {
             "content-type": "application/json"
