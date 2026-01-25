@@ -2376,13 +2376,17 @@ def sync_history_counts(
 
         db.commit()
 
-        logger.info(f"✅ History counts synced: {updated} stocks updated")
+        # 캐시 무효화
+        invalidate_cache()
+
+        logger.info(f"✅ History counts synced: {updated} stocks updated, cache cleared")
         return {
             "success": True,
             "message": f"History counts synced successfully",
             "total_stocks": len(stocks),
             "stocks_with_history": len(count_map),
-            "updated": updated
+            "updated": updated,
+            "cache_cleared": True
         }
 
     except Exception as e:
