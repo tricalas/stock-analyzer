@@ -53,6 +53,9 @@ class Stock(Base):
     # 기술적 지표
     ma90_price = Column(Float)  # 90일 이동평균가
 
+    # 히스토리 데이터 캐시 (조인 없이 빠른 조회용)
+    history_records_count = Column(Integer, default=0)  # 수집된 히스토리 레코드 수
+
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

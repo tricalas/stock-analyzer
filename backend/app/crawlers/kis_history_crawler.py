@@ -71,7 +71,14 @@ class KISHistoryCrawler:
             # 데이터 저장
             saved_count = self._save_price_history(stock.id, ohlcv_data, db)
 
-            logger.info(f"Saved {saved_count} records for {stock.symbol}")
+            # Stock 테이블의 history_records_count 업데이트 (조인 없이 빠른 조회용)
+            total_records = db.query(StockPriceHistory).filter(
+                StockPriceHistory.stock_id == stock.id
+            ).count()
+            stock.history_records_count = total_records
+            db.commit()
+
+            logger.info(f"Saved {saved_count} records for {stock.symbol} (total: {total_records})")
 
             return {
                 "success": True,

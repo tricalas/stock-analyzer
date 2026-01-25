@@ -1259,7 +1259,6 @@ def get_stocks_by_tag(
 
     # 태그 정보를 한 번에 가져오기
     tags_map = {}
-    history_count_map = {}
     if stocks:
         stock_ids = [s.id for s in stocks]
         tag_assignments = db.query(StockTagAssignment).filter(
@@ -1279,17 +1278,6 @@ def get_stocks_by_tag(
             tags_by_id = {tag.id: tag for tag in db.query(StockTag).filter(StockTag.id.in_(tag_ids)).all()}
         else:
             tags_by_id = {}
-
-        # 히스토리 레코드 수를 한 번에 조회
-        from sqlalchemy import func
-        history_counts = db.query(
-            StockPriceHistory.stock_id,
-            func.count(StockPriceHistory.id).label('count')
-        ).filter(
-            StockPriceHistory.stock_id.in_(stock_ids)
-        ).group_by(StockPriceHistory.stock_id).all()
-
-        history_count_map = {row.stock_id: row.count for row in history_counts}
 
     # 빠른 응답을 위해 최소한의 데이터만 반환
     stock_list = []
@@ -1334,10 +1322,10 @@ def get_stocks_by_tag(
             "face_value": stock.face_value,
             "shares_outstanding": stock.shares_outstanding,
             "foreign_ratio": stock.foreign_ratio,
-            "history_records_count": history_count_map.get(stock.id, 0),
+            "history_records_count": stock.history_records_count or 0,
             "history_latest_date": None,
             "history_oldest_date": None,
-            "has_history_data": history_count_map.get(stock.id, 0) > 0,
+            "has_history_data": (stock.history_records_count or 0) > 0,
             "latest_price": stock.current_price,
             "latest_change": stock.change_amount,
             "latest_change_percent": stock.change_percent,
@@ -2336,6 +2324,56 @@ def create_missing_tables(current_user: User = Depends(get_current_user)):
     except Exception as e:
         logger.error(f"❌ Error creating tables: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to create tables: {str(e)}")
+
+
+@app.post("/api/admin/sync-history-counts")
+def sync_history_counts(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    기존 데이터의 history_records_count를 동기화 (관리자 전용, 일회성)
+
+    Stock 테이블에 새로 추가된 history_records_count 컬럼을 기존 데이터로 채웁니다.
+    """
+    if not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Admin access required")
+
+    try:
+        from sqlalchemy import func
+
+        # 모든 종목의 히스토리 카운트를 한 번에 조회
+        history_counts = db.query(
+            StockPriceHistory.stock_id,
+            func.count(StockPriceHistory.id).label('count')
+        ).group_by(StockPriceHistory.stock_id).all()
+
+        count_map = {row.stock_id: row.count for row in history_counts}
+
+        # Stock 테이블 업데이트
+        updated = 0
+        stocks = db.query(Stock).all()
+        for stock in stocks:
+            new_count = count_map.get(stock.id, 0)
+            if stock.history_records_count != new_count:
+                stock.history_records_count = new_count
+                updated += 1
+
+        db.commit()
+
+        logger.info(f"✅ History counts synced: {updated} stocks updated")
+        return {
+            "success": True,
+            "message": f"History counts synced successfully",
+            "total_stocks": len(stocks),
+            "stocks_with_history": len(count_map),
+            "updated": updated
+        }
+
+    except Exception as e:
+        logger.error(f"❌ Error syncing history counts: {str(e)}")
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Failed to sync: {str(e)}")
 
 
 if __name__ == "__main__":
