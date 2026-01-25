@@ -250,8 +250,8 @@ class SignalAnalyzer:
                 pullback_threshold=0.02
             )
 
-            # 매수 신호만 추출
-            buy_signals = signals_df[signals_df['signal'] == 1].copy()
+            # 매수 신호만 추출 (컬럼명: buy_signal)
+            buy_signals = signals_df[signals_df['buy_signal'] == 1].copy()
 
             if len(buy_signals) == 0:
                 return []
