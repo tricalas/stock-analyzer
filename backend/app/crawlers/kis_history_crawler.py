@@ -306,7 +306,8 @@ class KISHistoryCrawler:
     def collect_history_for_all_stocks(
         self,
         days: int = 120,
-        limit: int = None
+        limit: int = None,
+        task_id: Optional[str] = None
     ) -> Dict[str, any]:
         """
         모든 활성 종목의 히스토리 수집 (시총 상위부터)
@@ -314,6 +315,7 @@ class KISHistoryCrawler:
         Args:
             days: 수집할 일수
             limit: 수집할 종목 수 제한 (None이면 전체)
+            task_id: TaskProgress에 사용할 task_id (선택적)
 
         Returns:
             수집 결과 딕셔너리
@@ -333,7 +335,7 @@ class KISHistoryCrawler:
 
             logger.info(f"Found {len(stocks)} active stocks to process (limit: {limit or 'none'})")
 
-            return self._collect_history_for_stocks(stocks, days, db)
+            return self._collect_history_for_stocks(stocks, days, db, task_id=task_id)
 
         except Exception as e:
             logger.error(f"Error collecting history for all stocks: {str(e)}")

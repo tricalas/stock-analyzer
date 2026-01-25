@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import ORJSONResponse
 from starlette.middleware.gzip import GZipMiddleware
 from sqlalchemy.orm import Session
-from sqlalchemy import desc
+from sqlalchemy import desc, case
 from typing import List, Optional
 from datetime import datetime, date, timedelta
 import logging
@@ -1537,28 +1537,35 @@ def create_user_direct(
 
 # ==================== 히스토리 데이터 수집 ====================
 
-def run_background_history_collection(days: int, task_id: str):
+def run_background_history_collection(days: int, task_id: str, mode: str = "all"):
     """백그라운드에서 실행될 히스토리 수집 작업"""
     try:
         from app.crawlers.kis_history_crawler import kis_history_crawler
-        logger.info(f"Starting background history collection ({days} days) with task_id: {task_id}")
-        result = kis_history_crawler.collect_history_for_tagged_stocks(days=days, task_id=task_id)
+        logger.info(f"Starting background history collection ({days} days, mode: {mode}) with task_id: {task_id}")
+
+        if mode == "tagged":
+            result = kis_history_crawler.collect_history_for_tagged_stocks(days=days, task_id=task_id)
+        else:  # "all"
+            result = kis_history_crawler.collect_history_for_all_stocks(days=days, task_id=task_id)
+
         logger.info(f"History collection completed: {result}")
     except Exception as e:
         logger.error(f"Error during background history collection: {str(e)}")
 
 
-@app.post("/api/stocks/tagged/collect-history")
-def collect_history_for_tagged_stocks(
+@app.post("/api/stocks/collect-history")
+def collect_history_for_stocks(
     background_tasks: BackgroundTasks,
     days: int = Query(120, ge=1, le=365),
+    mode: str = Query("all", pattern="^(all|tagged)$"),
     current_user: User = Depends(get_current_user)
 ):
     """
-    태그가 있는 종목들의 히스토리 데이터 수집
+    종목들의 히스토리 데이터 수집
 
     Args:
         days: 수집할 일수 (1~365일, 기본 120일)
+        mode: 수집 모드 ("all": 전체 종목, "tagged": 태그된 종목만)
 
     Returns:
         수집 작업 시작 메시지 및 task_id
@@ -1569,13 +1576,35 @@ def collect_history_for_tagged_stocks(
     task_id = str(uuid.uuid4())
 
     # 백그라운드 작업 추가
-    background_tasks.add_task(run_background_history_collection, days, task_id)
+    background_tasks.add_task(run_background_history_collection, days, task_id, mode)
 
+    mode_text = "전체 종목" if mode == "all" else "태그된 종목"
     # task_id와 함께 즉시 응답 반환
     return {
         "success": True,
-        "message": f"히스토리 수집 작업이 시작되었습니다. ({days}일치 데이터)",
+        "message": f"히스토리 수집 작업이 시작되었습니다. ({mode_text}, {days}일치 데이터)",
         "days": days,
+        "mode": mode,
+        "task_id": task_id
+    }
+
+
+# 기존 API 호환성 유지
+@app.post("/api/stocks/tagged/collect-history")
+def collect_history_for_tagged_stocks(
+    background_tasks: BackgroundTasks,
+    days: int = Query(120, ge=1, le=365),
+    current_user: User = Depends(get_current_user)
+):
+    """태그된 종목 히스토리 수집 (기존 API 호환)"""
+    import uuid
+    task_id = str(uuid.uuid4())
+    background_tasks.add_task(run_background_history_collection, days, task_id, "tagged")
+    return {
+        "success": True,
+        "message": f"히스토리 수집 작업이 시작되었습니다. (태그된 종목, {days}일치 데이터)",
+        "days": days,
+        "mode": "tagged",
         "task_id": task_id
     }
 
@@ -1935,6 +1964,52 @@ def get_running_tasks(db: Session = Depends(get_db)):
 
 
 # ==================== 히스토리 수집 로그 ====================
+
+@app.get("/api/history-logs", response_model=List[schemas.HistoryCollectionSummary])
+def get_history_collection_summaries(
+    limit: int = Query(20, ge=1, le=100),
+    db: Session = Depends(get_db)
+):
+    """
+    수집 히스토리 요약 목록 조회 (task_id별 그룹화)
+
+    Args:
+        limit: 조회할 최대 개수 (기본 20, 최대 100)
+
+    Returns:
+        HistoryCollectionSummary 객체 리스트
+    """
+    from app.models import HistoryCollectionLog
+    from sqlalchemy import func
+
+    # task_id별 그룹화하여 요약 정보 조회
+    subquery = db.query(
+        HistoryCollectionLog.task_id,
+        func.min(HistoryCollectionLog.started_at).label('started_at'),
+        func.max(HistoryCollectionLog.completed_at).label('completed_at'),
+        func.count(HistoryCollectionLog.id).label('total_count'),
+        func.sum(case((HistoryCollectionLog.status == 'success', 1), else_=0)).label('success_count'),
+        func.sum(case((HistoryCollectionLog.status == 'failed', 1), else_=0)).label('failed_count'),
+        func.sum(HistoryCollectionLog.records_saved).label('total_records_saved')
+    ).group_by(
+        HistoryCollectionLog.task_id
+    ).order_by(
+        func.min(HistoryCollectionLog.started_at).desc()
+    ).limit(limit).all()
+
+    return [
+        schemas.HistoryCollectionSummary(
+            task_id=row.task_id,
+            started_at=row.started_at,
+            completed_at=row.completed_at,
+            total_count=row.total_count,
+            success_count=row.success_count or 0,
+            failed_count=row.failed_count or 0,
+            total_records_saved=row.total_records_saved or 0
+        )
+        for row in subquery
+    ]
+
 
 @app.get("/api/tasks/{task_id}/logs", response_model=List[schemas.HistoryCollectionLog])
 def get_task_logs(

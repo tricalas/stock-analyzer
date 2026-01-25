@@ -282,3 +282,14 @@ class HistoryCollectionLog(HistoryCollectionLogBase):
 
     class Config:
         from_attributes = True
+
+
+class HistoryCollectionSummary(BaseModel):
+    """수집 작업별 요약 정보"""
+    task_id: str
+    started_at: datetime
+    completed_at: Optional[datetime] = None
+    total_count: int
+    success_count: int
+    failed_count: int
+    total_records_saved: int

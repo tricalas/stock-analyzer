@@ -76,6 +76,20 @@ export default function Settings() {
     completed_at?: string;
   }
 
+  // HistoryCollectionSummary 인터페이스
+  interface HistoryCollectionSummary {
+    task_id: string;
+    started_at: string;
+    completed_at?: string;
+    total_count: number;
+    success_count: number;
+    failed_count: number;
+    total_records_saved: number;
+  }
+
+  // 선택된 히스토리의 task_id
+  const [selectedHistoryTaskId, setSelectedHistoryTaskId] = useState<string | null>(null);
+
   // 히스토리 수집 진행 상황 조회
   const { data: historyProgress } = useQuery<TaskProgress>({
     queryKey: ['history-progress', historyTaskId],
@@ -121,7 +135,7 @@ export default function Settings() {
         return;
       }
 
-      const response = await fetch(`${API_URL}/api/stocks/tagged/collect-history?days=120`, {
+      const response = await fetch(`${API_URL}/api/stocks/collect-history?mode=all&days=120`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -168,6 +182,50 @@ export default function Settings() {
     },
     enabled: !!historyTaskId && historyProgress?.status === 'completed',
   });
+
+  // 이전 수집 히스토리 목록 조회
+  const { data: historySummaries, refetch: refetchHistorySummaries } = useQuery<HistoryCollectionSummary[]>({
+    queryKey: ['history-summaries'],
+    queryFn: async () => {
+      const token = localStorage.getItem('auth_token');
+      if (!token) return [];
+
+      const response = await fetch(`${API_URL}/api/history-logs?limit=20`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
+      });
+      if (!response.ok) return [];
+      return response.json();
+    },
+    enabled: !!user?.is_admin,
+  });
+
+  // 선택한 히스토리의 상세 로그 조회
+  const { data: selectedHistoryLogs } = useQuery<HistoryCollectionLog[]>({
+    queryKey: ['selected-history-logs', selectedHistoryTaskId],
+    queryFn: async () => {
+      if (!selectedHistoryTaskId) return [];
+      const token = localStorage.getItem('auth_token');
+      if (!token) return [];
+
+      const response = await fetch(`${API_URL}/api/tasks/${selectedHistoryTaskId}/logs`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
+      });
+      if (!response.ok) return [];
+      return response.json();
+    },
+    enabled: !!selectedHistoryTaskId,
+  });
+
+  // 수집 완료 시 히스토리 목록 새로고침
+  useEffect(() => {
+    if (historyProgress?.status === 'completed') {
+      refetchHistorySummaries();
+    }
+  }, [historyProgress?.status, refetchHistorySummaries]);
 
   // 실패한 종목 재시도 함수
   const handleRetryFailed = async () => {
@@ -533,6 +591,100 @@ export default function Settings() {
               <p className="text-xs text-muted-foreground">
                 종목 리스트에서 히스토리 데이터를 수집하면 진행 상황이 여기에 표시됩니다.
               </p>
+
+              {/* 이전 수집 히스토리 목록 */}
+              <div className="mt-4 pt-4 border-t border-border">
+                <h4 className="text-sm font-semibold text-foreground mb-3">이전 수집 기록</h4>
+                {(!historySummaries || historySummaries.length === 0) ? (
+                  <p className="text-xs text-muted-foreground py-2">수집 기록이 없습니다.</p>
+                ) : (
+                  <div className="space-y-2 max-h-60 overflow-y-auto">
+                    {historySummaries.map((summary) => (
+                      <button
+                        key={summary.task_id}
+                        onClick={() => setSelectedHistoryTaskId(
+                          selectedHistoryTaskId === summary.task_id ? null : summary.task_id
+                        )}
+                        className={`w-full text-left px-3 py-2 rounded-lg border transition-colors ${
+                          selectedHistoryTaskId === summary.task_id
+                            ? 'bg-primary/10 border-primary/50'
+                            : 'bg-muted/30 border-border hover:bg-muted/50'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs text-muted-foreground">
+                            {new Date(summary.started_at).toLocaleString('ko-KR', {
+                              year: 'numeric',
+                              month: '2-digit',
+                              day: '2-digit',
+                              hour: '2-digit',
+                              minute: '2-digit'
+                            })}
+                          </span>
+                          <div className="flex items-center gap-2 text-xs">
+                            <span className="text-green-600 dark:text-green-400">
+                              ✓ {summary.success_count}
+                            </span>
+                            {summary.failed_count > 0 && (
+                              <span className="text-red-600 dark:text-red-400">
+                                ✗ {summary.failed_count}
+                              </span>
+                            )}
+                            <span className="text-muted-foreground">
+                              ({summary.total_records_saved.toLocaleString()}건)
+                            </span>
+                          </div>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+
+                  {/* 선택한 히스토리의 상세 로그 */}
+                  {selectedHistoryTaskId && selectedHistoryLogs && selectedHistoryLogs.length > 0 && (
+                    <div className="mt-3 border border-border rounded-lg p-3">
+                      <div className="flex items-center justify-between mb-2">
+                        <h5 className="text-xs font-semibold text-foreground">상세 로그</h5>
+                        <button
+                          onClick={() => setSelectedHistoryTaskId(null)}
+                          className="text-muted-foreground hover:text-foreground"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                      <div className="max-h-40 overflow-y-auto space-y-1">
+                        {selectedHistoryLogs.slice(0, 50).map((log) => (
+                          <div
+                            key={log.id}
+                            className={`flex items-center justify-between px-2 py-1 rounded text-xs ${
+                              log.status === 'success'
+                                ? 'bg-green-500/5'
+                                : 'bg-red-500/5'
+                            }`}
+                          >
+                            <div className="flex items-center gap-1.5 flex-1 min-w-0">
+                              <span className={log.status === 'success' ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}>
+                                {log.status === 'success' ? '✓' : '✗'}
+                              </span>
+                              <span className="font-medium text-foreground truncate">
+                                {log.stock_name}
+                              </span>
+                            </div>
+                            <span className={`text-[10px] ${log.status === 'success' ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
+                              {log.status === 'success' ? `${log.records_saved}건` : (log.error_message || '실패')}
+                            </span>
+                          </div>
+                        ))}
+                        {selectedHistoryLogs.length > 50 && (
+                          <p className="text-[10px] text-muted-foreground text-center pt-1">
+                            외 {selectedHistoryLogs.length - 50}개 항목
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </>
+                )}
+              </div>
             </div>
           </div>
         )}
