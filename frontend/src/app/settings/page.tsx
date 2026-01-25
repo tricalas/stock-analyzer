@@ -81,9 +81,12 @@ export default function Settings() {
     queryKey: ['history-progress', historyTaskId],
     queryFn: async () => {
       if (!historyTaskId) return null;
+      const token = localStorage.getItem('auth_token');
+      if (!token) return null;
+
       const response = await fetch(`${API_URL}/api/tasks/${historyTaskId}`, {
         headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`,
+          'Authorization': `Bearer ${token}`,
         },
       });
       if (!response.ok) throw new Error('Failed to fetch task progress');
@@ -112,15 +115,25 @@ export default function Settings() {
   // 히스토리 수집 시작 함수
   const handleStartHistoryCollection = async () => {
     try {
+      const token = localStorage.getItem('auth_token');
+      if (!token) {
+        toast.error('로그인이 필요합니다.');
+        return;
+      }
+
       const response = await fetch(`${API_URL}/api/stocks/tagged/collect-history?days=120`, {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`,
+          'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json',
         },
       });
 
       if (!response.ok) {
+        if (response.status === 401) {
+          toast.error('인증이 만료되었습니다. 다시 로그인해주세요.');
+          return;
+        }
         throw new Error('Failed to start history collection');
       }
 
@@ -142,9 +155,12 @@ export default function Settings() {
     queryKey: ['collection-logs', historyTaskId],
     queryFn: async () => {
       if (!historyTaskId) return [];
+      const token = localStorage.getItem('auth_token');
+      if (!token) return [];
+
       const response = await fetch(`${API_URL}/api/tasks/${historyTaskId}/logs`, {
         headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`,
+          'Authorization': `Bearer ${token}`,
         },
       });
       if (!response.ok) return [];
@@ -158,15 +174,25 @@ export default function Settings() {
     if (!historyTaskId) return;
 
     try {
+      const token = localStorage.getItem('auth_token');
+      if (!token) {
+        toast.error('로그인이 필요합니다.');
+        return;
+      }
+
       const response = await fetch(`${API_URL}/api/tasks/${historyTaskId}/retry-failed?days=120`, {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`,
+          'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json',
         },
       });
 
       if (!response.ok) {
+        if (response.status === 401) {
+          toast.error('인증이 만료되었습니다. 다시 로그인해주세요.');
+          return;
+        }
         throw new Error('Failed to retry');
       }
 
