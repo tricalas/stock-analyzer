@@ -336,27 +336,30 @@ class KISHistoryCrawler:
         db = SessionLocal()
 
         try:
-            # 태그가 있는 종목들 조회
+            # 태그가 있는 US 종목들 조회
             from app.models import StockTagAssignment
 
-            tagged_stock_ids = db.query(StockTagAssignment.stock_id).distinct().all()
+            tagged_stock_ids = db.query(StockTagAssignment.stock_id).join(
+                Stock, Stock.id == StockTagAssignment.stock_id
+            ).filter(Stock.market == 'US').distinct().all()
             tagged_stock_ids = [sid[0] for sid in tagged_stock_ids]
 
             if not tagged_stock_ids:
-                logger.info("No tagged stocks found")
+                logger.info("No tagged US stocks found")
                 return {
                     "success": True,
                     "total_stocks": 0,
                     "success_count": 0,
                     "failed_count": 0,
                     "total_records": 0,
-                    "message": "No tagged stocks to process",
+                    "message": "No tagged US stocks to process",
                     "task_id": task_id
                 }
 
             stocks = db.query(Stock).filter(
                 Stock.id.in_(tagged_stock_ids),
-                Stock.is_active == True
+                Stock.is_active == True,
+                Stock.market == 'US'
             ).all()
 
             logger.info(f"Found {len(stocks)} tagged stocks to process (workers: {max_workers})")
@@ -399,9 +402,10 @@ class KISHistoryCrawler:
         db = SessionLocal()
 
         try:
-            # 모든 활성 종목 조회 (시총 기준 내림차순)
+            # 모든 활성 US 종목 조회 (시총 기준 내림차순)
             query = db.query(Stock).filter(
-                Stock.is_active == True
+                Stock.is_active == True,
+                Stock.market == 'US'
             ).order_by(Stock.market_cap.desc().nullslast())
 
             if limit:
