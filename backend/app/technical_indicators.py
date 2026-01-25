@@ -527,6 +527,53 @@ def find_lower_highs(
     return best_sequence if len(best_sequence) >= min_count else []
 
 
+def _extend_trendline_with_touches(
+    swing_highs: List[Tuple[int, float]],
+    lower_highs: List[Tuple[int, float]],
+    slope: float,
+    intercept: float,
+    tolerance: float = 0.02
+) -> Tuple[List[Tuple[int, float]], float, float]:
+    """
+    추세선에 터치하거나 초과하는 후속 스윙 고점들을 포함하여 추세선 재계산
+
+    Args:
+        swing_highs: 모든 스윙 고점
+        lower_highs: 현재 Lower High 리스트
+        slope: 현재 추세선 기울기
+        intercept: 현재 추세선 절편
+        tolerance: 추세선 터치 허용 오차 (2%)
+
+    Returns:
+        (확장된 lower_highs, 새 slope, 새 intercept)
+    """
+    if not lower_highs:
+        return lower_highs, slope, intercept
+
+    last_lower_high_idx = lower_highs[-1][0]
+    extended_highs = list(lower_highs)
+
+    # 마지막 lower high 이후의 스윙 고점들 검사
+    for idx, price in swing_highs:
+        if idx <= last_lower_high_idx:
+            continue
+
+        # 해당 위치의 추세선 값
+        trendline_value = slope * idx + intercept
+
+        # 추세선 위에 있거나 터치하는 경우 (허용 오차 내)
+        if price >= trendline_value * (1 - tolerance):
+            extended_highs.append((idx, price))
+
+    # 새로운 점이 추가되었으면 추세선 재계산
+    if len(extended_highs) > len(lower_highs):
+        new_trendline = calculate_trendline(extended_highs)
+        if new_trendline:
+            return extended_highs, new_trendline[0], new_trendline[1]
+
+    return lower_highs, slope, intercept
+
+
 def generate_descending_trendline_breakout_signals(
     df: pd.DataFrame,
     swing_window: int = 5,
@@ -539,7 +586,8 @@ def generate_descending_trendline_breakout_signals(
     1. 스윙 고점(Swing High) 찾기
     2. Lower High 패턴 (점점 낮아지는 고점) 찾기
     3. Lower High들을 연결한 하락 추세선 계산
-    4. 추세선 상향 돌파 시 매수 신호 생성
+    4. 추세선을 터치/초과하는 후속 스윙 고점이 있으면 추세선 재계산
+    5. 마지막 터치 포인트 이후 추세선 상향 돌파 시 매수 신호 생성
 
     Args:
         df: OHLCV 데이터프레임
@@ -593,7 +641,19 @@ def generate_descending_trendline_breakout_signals(
         result['trendline_intercept'] = intercept
         return result
 
-    # 4. 돌파 감지 (고가 기준 - 추세선도 고가로 그렸으므로)
+    # 4. 추세선 터치/초과하는 후속 스윙 고점이 있으면 추세선 재계산
+    lower_highs, slope, intercept = _extend_trendline_with_touches(
+        swing_highs, lower_highs, slope, intercept
+    )
+
+    # 재계산 후 기울기가 양수가 되면 (하락 추세 아님) 종료
+    if slope >= 0:
+        result['buy_signal'] = buy_signals
+        result['trendline_slope'] = slope
+        result['trendline_intercept'] = intercept
+        return result
+
+    # 5. 돌파 감지 (고가 기준 - 추세선도 고가로 그렸으므로)
     last_lower_high_idx = lower_highs[-1][0]
 
     for i in range(last_lower_high_idx + 1, len(df)):
@@ -689,7 +749,20 @@ def generate_approaching_breakout_signals(
         result['trendline_intercept'] = intercept
         return result
 
-    # 4. 돌파 임박 감지
+    # 4. 추세선 터치/초과하는 후속 스윙 고점이 있으면 추세선 재계산
+    lower_highs, slope, intercept = _extend_trendline_with_touches(
+        swing_highs, lower_highs, slope, intercept
+    )
+
+    # 재계산 후 기울기가 양수가 되면 (하락 추세 아님) 종료
+    if slope >= 0:
+        result['approaching_signal'] = approaching_signals
+        result['distance_to_trendline'] = distances
+        result['trendline_slope'] = slope
+        result['trendline_intercept'] = intercept
+        return result
+
+    # 5. 돌파 임박 감지
     last_lower_high_idx = lower_highs[-1][0]
 
     for i in range(last_lower_high_idx + 1, len(df)):
