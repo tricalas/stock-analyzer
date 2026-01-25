@@ -85,6 +85,7 @@ Thumbs.db
 # Project specific
 backend/logs/
 backend/*.db
+backend/.kis_token_cache.json
 frontend/.next/
 auto_crawl_history.py
 

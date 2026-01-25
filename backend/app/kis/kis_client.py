@@ -11,8 +11,12 @@ from datetime import datetime, date, timedelta
 import hashlib
 import json
 from pathlib import Path
+import os
 
 logger = logging.getLogger(__name__)
+
+# 토큰 캐시 파일 경로
+TOKEN_CACHE_FILE = Path(__file__).parent.parent.parent / ".kis_token_cache.json"
 
 
 class KISClient:
@@ -51,11 +55,79 @@ class KISClient:
         # HTTP 클라이언트
         self.client = httpx.Client(timeout=30.0)
 
+        # 캐시된 토큰 로드 시도
+        self._load_cached_token()
+
     def __del__(self):
         """클라이언트 종료 시 리소스 정리"""
         self.client.close()
 
     # ==================== 인증 ====================
+
+    def _get_cache_key(self) -> str:
+        """앱키 기반 캐시 키 생성 (여러 계정 구분용)"""
+        return hashlib.md5(f"{self.app_key}:{self.is_mock}".encode()).hexdigest()[:8]
+
+    def _load_cached_token(self) -> bool:
+        """파일에서 캐시된 토큰 로드"""
+        try:
+            if not TOKEN_CACHE_FILE.exists():
+                logger.debug("Token cache file not found")
+                return False
+
+            with open(TOKEN_CACHE_FILE, 'r') as f:
+                cache_data = json.load(f)
+
+            cache_key = self._get_cache_key()
+            if cache_key not in cache_data:
+                logger.debug(f"No cached token for key {cache_key}")
+                return False
+
+            token_data = cache_data[cache_key]
+            expired_at = datetime.fromisoformat(token_data['expired_at'])
+
+            # 만료 5분 전까지만 유효하게 처리
+            if datetime.now() >= (expired_at - timedelta(minutes=5)):
+                logger.info("Cached token is expired, will issue new one")
+                return False
+
+            self.access_token = token_data['access_token']
+            self.token_expired_at = expired_at
+
+            logger.info(f"Loaded cached KIS token (expires at {self.token_expired_at})")
+            return True
+
+        except Exception as e:
+            logger.warning(f"Failed to load cached token: {str(e)}")
+            return False
+
+    def _save_token_cache(self) -> None:
+        """토큰을 파일에 캐시"""
+        try:
+            cache_data = {}
+
+            # 기존 캐시 파일이 있으면 로드
+            if TOKEN_CACHE_FILE.exists():
+                try:
+                    with open(TOKEN_CACHE_FILE, 'r') as f:
+                        cache_data = json.load(f)
+                except:
+                    pass
+
+            # 현재 토큰 저장
+            cache_key = self._get_cache_key()
+            cache_data[cache_key] = {
+                'access_token': self.access_token,
+                'expired_at': self.token_expired_at.isoformat() if self.token_expired_at else None
+            }
+
+            with open(TOKEN_CACHE_FILE, 'w') as f:
+                json.dump(cache_data, f)
+
+            logger.info(f"Saved KIS token to cache (expires at {self.token_expired_at})")
+
+        except Exception as e:
+            logger.warning(f"Failed to save token cache: {str(e)}")
 
     def _ensure_token(self) -> None:
         """토큰이 유효한지 확인하고, 필요 시 갱신"""
@@ -97,6 +169,9 @@ class KISClient:
             self.token_expired_at = datetime.now() + timedelta(seconds=expires_in)
 
             logger.info(f"KIS API token issued successfully (expires at {self.token_expired_at})")
+
+            # 토큰 캐시 저장
+            self._save_token_cache()
 
         except Exception as e:
             logger.error(f"Failed to issue KIS API token: {str(e)}")
