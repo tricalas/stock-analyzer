@@ -48,6 +48,7 @@ interface SignalListResponse {
 
 export default function SignalAnalysisPage() {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [analyzingMode, setAnalyzingMode] = useState<'all' | 'tagged' | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [currentTaskId, setCurrentTaskId] = useState<string | null>(null);
   const [showProgress, setShowProgress] = useState(false);
@@ -111,17 +112,20 @@ export default function SignalAnalysisPage() {
         setShowProgress(false);
         setCurrentTaskId(null);
         setIsAnalyzing(false);
+        setAnalyzingMode(null);
         toast.success('시그널 분석이 완료되었습니다');
       }, 1500);
     } else if (progressData?.status === 'failed') {
       setShowProgress(false);
       setCurrentTaskId(null);
       setIsAnalyzing(false);
+      setAnalyzingMode(null);
       toast.error('분석 실패', { description: progressData.error_message });
     } else if (progressData?.status === 'cancelled') {
       setShowProgress(false);
       setCurrentTaskId(null);
       setIsAnalyzing(false);
+      setAnalyzingMode(null);
       toast.info('분석이 취소되었습니다');
     }
   }, [progressData?.status, progressData?.error_message, refetchSignals]);
@@ -168,6 +172,7 @@ export default function SignalAnalysisPage() {
   const handleStartAnalysis = async (mode: 'all' | 'tagged' = 'all') => {
     try {
       setIsAnalyzing(true);
+      setAnalyzingMode(mode);
       const response = await fetch(
         `${API_URL}/api/signals/refresh?mode=${mode}&days=120&force_full=true`,
         { method: 'POST' }
@@ -182,6 +187,7 @@ export default function SignalAnalysisPage() {
       console.error('Error starting analysis:', error);
       toast.error('분석 시작에 실패했습니다');
       setIsAnalyzing(false);
+      setAnalyzingMode(null);
     }
   };
 
@@ -313,7 +319,7 @@ export default function SignalAnalysisPage() {
                 <p className="font-medium">관심 종목 분석</p>
                 <p className="text-xs opacity-80">태그된 종목만 빠르게</p>
               </div>
-              {isAnalyzing && <RefreshCw className="w-4 h-4 ml-auto animate-spin" />}
+              {analyzingMode === 'tagged' && <RefreshCw className="w-4 h-4 ml-auto animate-spin" />}
             </button>
 
             <button
@@ -326,6 +332,7 @@ export default function SignalAnalysisPage() {
                 <p className="font-medium text-foreground">전체 종목 분석</p>
                 <p className="text-xs text-muted-foreground">모든 종목 대상</p>
               </div>
+              {analyzingMode === 'all' && <RefreshCw className="w-4 h-4 ml-auto animate-spin text-foreground" />}
             </button>
           </div>
         </div>
