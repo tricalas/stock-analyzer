@@ -19,7 +19,7 @@ import { useAuth } from '@/contexts/AuthContext';
 export default function Home() {
   const queryClient = useQueryClient();
   const { user } = useAuth();
-  const [activeTab, setActiveTab] = useState<'ALL' | 'US' | 'KR' | 'FAVORITES' | 'DISLIKES'>('US');
+  const [activeTab, setActiveTab] = useState<'US' | 'FAVORITES' | 'DISLIKES'>('US');
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [selectedStock, setSelectedStock] = useState<Stock | null>(null);
   const [isChartModalOpen, setIsChartModalOpen] = useState(false);
@@ -65,7 +65,7 @@ export default function Home() {
         return stockApi.getDislikes();
       }
       return stockApi.getStocks({
-        market: activeTab === 'ALL' ? undefined : activeTab,
+        market: 'US',
         skip: pageParam,
         limit: 20,
         order_by: sortField,
@@ -104,8 +104,8 @@ export default function Home() {
     setIsRefreshing(true);
     toast.info('데이터를 가져오는 중입니다... (약 20초 소요)');
     try {
-      console.log('Starting crawl with market:', activeTab);
-      const result = await stockApi.crawlStocks(activeTab);
+      console.log('Starting crawl with market: US');
+      const result = await stockApi.crawlStocks('US');
       console.log('Crawl result:', result);
 
       // 백그라운드 작업이므로 즉시 응답받음

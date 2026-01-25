@@ -108,10 +108,7 @@ export default function SignalsPage() {
   const analyzedAt = data?.pages[0]?.analyzed_at;
   const total = data?.pages[0]?.total || 0;
 
-  const formatPrice = (price: number, market: string) => {
-    if (market === 'KR') {
-      return `${price.toLocaleString()}원`;
-    }
+  const formatPrice = (price: number) => {
     return `$${price.toFixed(2)}`;
   };
 
@@ -343,7 +340,7 @@ export default function SignalsPage() {
                         {/* 시그널이 */}
                         <td className="px-4 py-3 whitespace-nowrap text-right">
                           <span className="text-sm font-mono text-foreground">
-                            {formatPrice(signal.signal_price, signal.stock?.market || 'KR')}
+                            {formatPrice(signal.signal_price)}
                           </span>
                         </td>
 
@@ -373,7 +370,7 @@ export default function SignalsPage() {
                         {/* 현재가 */}
                         <td className="px-4 py-3 whitespace-nowrap text-right">
                           <span className="text-sm font-mono text-foreground">
-                            {signal.current_price ? formatPrice(signal.current_price, signal.stock?.market || 'KR') : '-'}
+                            {signal.current_price ? formatPrice(signal.current_price) : '-'}
                           </span>
                         </td>
 

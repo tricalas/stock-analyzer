@@ -387,13 +387,7 @@ const SearchBar: React.FC<SearchBarProps> = ({ onStockSelect }) => {
 
                     {/* 거래소 & 시가총액 */}
                     <div className="flex items-center gap-2 text-xs text-muted-foreground mb-2">
-                      <span className={`px-2 py-0.5 rounded text-xs font-medium ${
-                        stock.exchange === 'KOSPI'
-                          ? 'bg-primary/10 text-primary'
-                          : stock.exchange === 'KOSDAQ'
-                          ? 'bg-gain/10 text-gain'
-                          : 'bg-secondary/10 text-secondary-foreground'
-                      }`}>
+                      <span className="px-2 py-0.5 rounded text-xs font-medium bg-secondary/10 text-secondary-foreground">
                         {stock.exchange || stock.market}
                       </span>
                       {stock.market_cap && (
@@ -439,8 +433,7 @@ const SearchBar: React.FC<SearchBarProps> = ({ onStockSelect }) => {
                   <div className="flex flex-col items-end ml-4 flex-shrink-0">
                     {stock.current_price && (
                       <span className="font-mono font-semibold text-foreground">
-                        {stock.current_price.toLocaleString()}
-                        {stock.market === 'KR' ? '원' : '$'}
+                        ${stock.current_price.toLocaleString()}
                       </span>
                     )}
                     {stock.change_percent !== undefined && (

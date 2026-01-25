@@ -101,7 +101,7 @@ const StockChartModal: React.FC<StockChartModalProps> = ({ stock, isOpen, onClos
   };
 
   const formatPrice = (price: number) => {
-    return price.toLocaleString() + '원';
+    return '$' + price.toLocaleString();
   };
 
   const formatVolume = (volume: number) => {

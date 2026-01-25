@@ -361,9 +361,8 @@ const StockItem = React.memo<StockItemProps>(({ stock, rank, onStockClick, onSho
           </div>
           <div className="text-xs text-muted-foreground">
             {stock.symbol}
-            {/* 히스토리 데이터 상태 + 동기화 버튼 (한국/미국 주식 모두 지원) */}
-            {(stock.market === 'KR' || stock.market === 'US') && (
-              <button
+            {/* 히스토리 데이터 상태 + 동기화 버튼 */}
+            <button
                 onClick={handleSyncHistory}
                 disabled={isSyncing}
                 className={`ml-2 inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium transition-all cursor-pointer disabled:cursor-wait ${
@@ -395,7 +394,6 @@ const StockItem = React.memo<StockItemProps>(({ stock, rank, onStockClick, onSho
                   <>분석</>
                 )}
               </button>
-            )}
             {stock.latest_tag_date && (
               <span className="ml-2 text-primary/70 text-[10px]">
                 | 📌 {new Date(stock.latest_tag_date).toLocaleDateString('ko-KR', {
@@ -442,15 +440,7 @@ const StockItem = React.memo<StockItemProps>(({ stock, rank, onStockClick, onSho
 
       {/* 거래소 */}
       <td className="px-3 py-4 whitespace-nowrap text-center">
-        <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-          stock.exchange === 'KOSPI'
-            ? 'bg-primary/10 text-primary'
-            : stock.exchange === 'KOSDAQ'
-            ? 'bg-gain/10 text-gain'
-            : stock.market === 'US'
-            ? 'bg-secondary text-secondary-foreground'
-            : 'bg-muted text-muted-foreground'
-        }`}>
+        <span className="px-2 py-1 rounded-full text-xs font-medium bg-secondary text-secondary-foreground">
           {stock.exchange || stock.market}
         </span>
       </td>

@@ -25,16 +25,6 @@ class StockScheduler:
         if settings.ENABLE_AUTO_HISTORY_COLLECTION:
             logger.info("✅ Auto history collection ENABLED")
 
-            # 평일 오후 4시 10분: 한국 장 마감 후 히스토리 수집
-            self.scheduler.add_job(
-                func=self._collect_tagged_stocks_history,
-                trigger=CronTrigger(hour=16, minute=10, day_of_week='mon-fri', timezone=kst),
-                id='kr_market_history_collection',
-                name='Korean Market History Collection (After Close)',
-                replace_existing=True
-            )
-            logger.info("📅 Scheduled: Korean market history collection (Mon-Fri 16:10 KST)")
-
             # 평일 오전 6시 10분 (KST): 미국 장 마감 후 히스토리 수집
             # 미국 시간 기준 전날 오후 5시 마감 (EST: UTC-5) → KST 오전 7시
             # 약간 여유를 둬서 오전 6시 10분에 수집
@@ -46,17 +36,6 @@ class StockScheduler:
                 replace_existing=True
             )
             logger.info("📅 Scheduled: US market history collection (Tue-Sat 06:10 KST)")
-
-            # 시그널 분석 작업: 히스토리 수집 후 약 50분 뒤 실행
-            # 한국 장: 17:00 (히스토리 수집 16:10 + 50분)
-            self.scheduler.add_job(
-                func=self._analyze_signals,
-                trigger=CronTrigger(hour=17, minute=0, day_of_week='mon-fri', timezone=kst),
-                id='kr_market_signal_analysis',
-                name='Korean Market Signal Analysis',
-                replace_existing=True
-            )
-            logger.info("📊 Scheduled: Korean market signal analysis (Mon-Fri 17:00 KST)")
 
             # 미국 장: 07:00 (히스토리 수집 06:10 + 50분)
             self.scheduler.add_job(
