@@ -20,9 +20,13 @@ const SearchBar: React.FC<SearchBarProps> = ({ onStockSelect }) => {
   const searchRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const lastSearchQueryRef = useRef<string>(''); // 마지막 검색어 추적
   const { tags: availableTags } = useTags();
   const queryClient = useQueryClient();
   const [togglingTags, setTogglingTags] = useState<Map<number, Set<number>>>(new Map()); // Map<stockId, Set<tagId>>
+
+  const MIN_SEARCH_LENGTH = 1; // 최소 검색 글자 수
+  const DEBOUNCE_DELAY = 500; // 디바운싱 시간 (ms)
 
   // 외부 클릭 감지
   useEffect(() => {
@@ -38,25 +42,36 @@ const SearchBar: React.FC<SearchBarProps> = ({ onStockSelect }) => {
 
   // 검색 실행
   const performSearch = async (query: string) => {
-    if (!query || query.trim().length === 0) {
+    const trimmedQuery = query.trim();
+
+    // 검색어가 비어있거나 최소 길이보다 짧으면 취소
+    if (!trimmedQuery || trimmedQuery.length < MIN_SEARCH_LENGTH) {
       setSearchResults([]);
       setShowResults(false);
+      lastSearchQueryRef.current = '';
+      return;
+    }
+
+    // 이전 검색어와 동일하면 API 호출 생략
+    if (trimmedQuery === lastSearchQueryRef.current) {
       return;
     }
 
     setIsSearching(true);
     try {
       const response = await stockApi.searchStocks({
-        q: query.trim(),
+        q: trimmedQuery,
         limit: 10,
       });
       setSearchResults(response.stocks);
       setShowResults(true);
       setSelectedIndex(-1);
+      lastSearchQueryRef.current = trimmedQuery;
     } catch (error) {
       console.error('Search error:', error);
       toast.error('검색 중 오류가 발생했습니다.');
       setSearchResults([]);
+      lastSearchQueryRef.current = '';
     } finally {
       setIsSearching(false);
     }
@@ -68,7 +83,18 @@ const SearchBar: React.FC<SearchBarProps> = ({ onStockSelect }) => {
       clearTimeout(debounceTimerRef.current);
     }
 
-    if (searchQuery.trim().length === 0) {
+    const trimmedQuery = searchQuery.trim();
+
+    // 검색어가 비어있으면 결과 초기화
+    if (trimmedQuery.length === 0) {
+      setSearchResults([]);
+      setShowResults(false);
+      lastSearchQueryRef.current = '';
+      return;
+    }
+
+    // 최소 길이 미만이면 검색 안 함
+    if (trimmedQuery.length < MIN_SEARCH_LENGTH) {
       setSearchResults([]);
       setShowResults(false);
       return;
@@ -76,7 +102,7 @@ const SearchBar: React.FC<SearchBarProps> = ({ onStockSelect }) => {
 
     debounceTimerRef.current = setTimeout(() => {
       performSearch(searchQuery);
-    }, 300); // 300ms 디바운싱
+    }, DEBOUNCE_DELAY);
 
     return () => {
       if (debounceTimerRef.current) {
@@ -133,6 +159,7 @@ const SearchBar: React.FC<SearchBarProps> = ({ onStockSelect }) => {
     setSearchResults([]);
     setShowResults(false);
     setSelectedIndex(-1);
+    lastSearchQueryRef.current = '';
     inputRef.current?.focus();
   };
 
