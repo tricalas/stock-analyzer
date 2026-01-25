@@ -21,6 +21,7 @@ class Settings(BaseSettings):
     HISTORY_COLLECTION_DAYS: int = 100  # 수집할 히스토리 일수 (기본: 100일)
     HISTORY_COLLECTION_MODE: str = "all"  # "tagged": 태그 종목만, "all": 모든 활성 종목, "top": 시총 상위
     HISTORY_COLLECTION_LIMIT: int = 500  # "top" 모드일 때 상위 몇 개 종목만 수집할지 (시총 기준)
+    HISTORY_COLLECTION_WORKERS: int = 5  # 병렬 수집 워커 수 (1~20, 기본 5)
 
     @field_validator('CORS_ORIGINS', mode='before')
     @classmethod

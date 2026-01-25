@@ -4,6 +4,8 @@
 
 import logging
 import uuid
+import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import List, Dict, Optional
 from datetime import datetime, date, timedelta
 from sqlalchemy.orm import Session
@@ -21,10 +23,58 @@ class KISHistoryCrawler:
     def __init__(self):
         self.kis_client = get_kis_client()
 
+    def _should_collect_history(
+        self,
+        stock: Stock,
+        db: Session,
+        min_records: int = 60
+    ) -> tuple:
+        """
+        수집 필요 여부 판단 (하이브리드 전략)
+
+        Args:
+            stock: 종목 객체
+            db: 데이터베이스 세션
+            min_records: 최소 레코드 수 기준 (기본 60일)
+
+        Returns:
+            (should_collect, mode, last_date)
+            - should_collect: 수집 필요 여부
+            - mode: "full" | "incremental" | "skip"
+            - last_date: 마지막 수집 날짜 (증분 수집용)
+        """
+        count = stock.history_records_count or 0
+
+        # 데이터 없음 → 전체 수집
+        if count == 0:
+            return (True, "full", None)
+
+        # 데이터 부족 → 전체 수집
+        if count < min_records:
+            return (True, "full", None)
+
+        # 데이터 충분 → 마지막 날짜 확인
+        last_record = db.query(StockPriceHistory.date).filter(
+            StockPriceHistory.stock_id == stock.id
+        ).order_by(StockPriceHistory.date.desc()).first()
+
+        if last_record:
+            last_date = last_record[0]
+            days_since = (date.today() - last_date).days
+
+            if days_since <= 1:  # 오늘 또는 어제 데이터 있음
+                return (False, "skip", last_date)
+            else:
+                return (True, "incremental", last_date)
+
+        # 레코드 카운트는 있지만 실제 데이터 없음 → 전체 수집
+        return (True, "full", None)
+
     def collect_history_for_stock(
         self,
         stock: Stock,
         days: int = 120,
+        start_date: date = None,
         db: Optional[Session] = None
     ) -> Dict[str, any]:
         """
@@ -32,7 +82,8 @@ class KISHistoryCrawler:
 
         Args:
             stock: 종목 객체
-            days: 수집할 일수 (기본 120일)
+            days: 수집할 일수 (기본 120일, start_date가 없을 때 사용)
+            start_date: 시작 날짜 (증분 수집용, 지정하면 days 무시)
             db: 데이터베이스 세션
 
         Returns:
@@ -48,15 +99,21 @@ class KISHistoryCrawler:
             should_close_db = True
 
         try:
-            logger.info(f"Collecting history for {stock.symbol} ({stock.name})")
-
             # 날짜 계산
-            end_date = datetime.now().strftime("%Y%m%d")
-            start_date = (datetime.now() - timedelta(days=days)).strftime("%Y%m%d")
+            end_date_str = datetime.now().strftime("%Y%m%d")
+
+            if start_date:
+                # 증분 수집: 지정된 start_date부터
+                start_date_str = start_date.strftime("%Y%m%d")
+                logger.info(f"Collecting history for {stock.symbol} ({stock.name}) [incremental: {start_date_str} ~ {end_date_str}]")
+            else:
+                # 전체 수집: days일 전부터
+                start_date_str = (datetime.now() - timedelta(days=days)).strftime("%Y%m%d")
+                logger.info(f"Collecting history for {stock.symbol} ({stock.name}) [full: {days} days]")
 
             # 시장별로 API 호출
             if stock.market == "KR":
-                ohlcv_data = self._collect_kr_stock_history(stock.symbol, start_date, end_date)
+                ohlcv_data = self._collect_kr_stock_history(stock.symbol, start_date_str, end_date_str)
             elif stock.market == "US":
                 exchange = self._get_us_exchange_code(stock.exchange)
                 ohlcv_data = self._collect_us_stock_history(stock.symbol, exchange)
@@ -259,14 +316,16 @@ class KISHistoryCrawler:
     def collect_history_for_tagged_stocks(
         self,
         days: int = 120,
-        task_id: Optional[str] = None
+        task_id: Optional[str] = None,
+        max_workers: int = 5
     ) -> Dict[str, any]:
         """
-        태그가 있는 모든 종목의 히스토리 수집
+        태그가 있는 모든 종목의 히스토리 수집 (병렬 처리)
 
         Args:
             days: 수집할 일수
             task_id: TaskProgress에 사용할 task_id (선택적, 없으면 자동 생성)
+            max_workers: 병렬 워커 수 (기본 5)
 
         Returns:
             수집 결과 딕셔너리
@@ -297,9 +356,9 @@ class KISHistoryCrawler:
                 Stock.is_active == True
             ).all()
 
-            logger.info(f"Found {len(stocks)} tagged stocks to process")
+            logger.info(f"Found {len(stocks)} tagged stocks to process (workers: {max_workers})")
 
-            return self._collect_history_for_stocks(stocks, days, db, task_id=task_id)
+            return self._collect_history_for_stocks(stocks, days, db, task_id=task_id, max_workers=max_workers)
 
         except Exception as e:
             logger.error(f"Error collecting history for tagged stocks: {str(e)}")
@@ -319,15 +378,17 @@ class KISHistoryCrawler:
         self,
         days: int = 120,
         limit: int = None,
-        task_id: Optional[str] = None
+        task_id: Optional[str] = None,
+        max_workers: int = 5
     ) -> Dict[str, any]:
         """
-        모든 활성 종목의 히스토리 수집 (시총 상위부터)
+        모든 활성 종목의 히스토리 수집 (시총 상위부터, 병렬 처리)
 
         Args:
             days: 수집할 일수
             limit: 수집할 종목 수 제한 (None이면 전체)
             task_id: TaskProgress에 사용할 task_id (선택적)
+            max_workers: 병렬 워커 수 (기본 5)
 
         Returns:
             수집 결과 딕셔너리
@@ -345,9 +406,9 @@ class KISHistoryCrawler:
 
             stocks = query.all()
 
-            logger.info(f"Found {len(stocks)} active stocks to process (limit: {limit or 'none'})")
+            logger.info(f"Found {len(stocks)} active stocks to process (limit: {limit or 'none'}, workers: {max_workers})")
 
-            return self._collect_history_for_stocks(stocks, days, db, task_id=task_id)
+            return self._collect_history_for_stocks(stocks, days, db, task_id=task_id, max_workers=max_workers)
 
         except Exception as e:
             logger.error(f"Error collecting history for all stocks: {str(e)}")
@@ -363,31 +424,133 @@ class KISHistoryCrawler:
         finally:
             db.close()
 
+    def _process_single_stock(
+        self,
+        stock_data: Dict,
+        days: int,
+        task_id: str,
+        counters: Dict,
+        lock: threading.Lock
+    ) -> Dict:
+        """
+        단일 종목 처리 (워커 스레드에서 실행)
+
+        Args:
+            stock_data: 종목 정보 딕셔너리 (id, symbol, name, market, exchange, history_records_count)
+            days: 수집할 일수
+            task_id: 태스크 ID
+            counters: 공유 카운터 딕셔너리
+            lock: 스레드 동기화용 Lock
+
+        Returns:
+            처리 결과 딕셔너리
+        """
+        from app.models import HistoryCollectionLog
+
+        # 워커 전용 DB 세션 생성
+        db = SessionLocal()
+
+        try:
+            # Stock 객체 다시 조회 (세션 분리)
+            stock = db.query(Stock).filter(Stock.id == stock_data["id"]).first()
+            if not stock:
+                return {"success": False, "mode": "error", "error": "Stock not found"}
+
+            # 스마트 체크: 수집 필요 여부 판단
+            should_collect, mode, last_date = self._should_collect_history(stock, db)
+
+            if mode == "skip":
+                logger.debug(f"Skip {stock.symbol}: already up to date (last: {last_date})")
+                with lock:
+                    counters["skipped"] += 1
+                    counters["success"] += 1
+                    counters["processed"] += 1
+                return {"success": True, "mode": "skip", "records_saved": 0}
+
+            # 종목별 로그 시작
+            log_entry = HistoryCollectionLog(
+                task_id=task_id,
+                stock_id=stock.id,
+                stock_symbol=stock.symbol,
+                stock_name=stock.name,
+                status="running",
+                records_saved=0
+            )
+            db.add(log_entry)
+            db.commit()
+
+            # 모드에 따라 수집 실행
+            if mode == "incremental":
+                with lock:
+                    counters["incremental"] += 1
+                incremental_start = last_date + timedelta(days=1)
+                result = self.collect_history_for_stock(
+                    stock, start_date=incremental_start, db=db
+                )
+            else:
+                with lock:
+                    counters["full"] += 1
+                result = self.collect_history_for_stock(stock, days=days, db=db)
+
+            # 종목별 로그 업데이트
+            log_entry.completed_at = datetime.utcnow()
+            if result["success"]:
+                with lock:
+                    counters["success"] += 1
+                    counters["records"] += result.get("records_saved", 0)
+                    counters["processed"] += 1
+                log_entry.status = "success"
+                log_entry.records_saved = result.get("records_saved", 0)
+            else:
+                with lock:
+                    counters["failed"] += 1
+                    counters["processed"] += 1
+                log_entry.status = "failed"
+                log_entry.error_message = result.get("error", "Unknown error")
+
+            db.commit()
+
+            return {
+                "success": result["success"],
+                "mode": mode,
+                "records_saved": result.get("records_saved", 0),
+                "error": result.get("error")
+            }
+
+        except Exception as e:
+            logger.error(f"Worker error for stock {stock_data['symbol']}: {str(e)}")
+            with lock:
+                counters["failed"] += 1
+                counters["processed"] += 1
+            return {"success": False, "mode": "error", "error": str(e)}
+
+        finally:
+            db.close()
+
     def _collect_history_for_stocks(
         self,
         stocks: List[Stock],
         days: int,
         db: Session,
-        task_id: Optional[str] = None
+        task_id: Optional[str] = None,
+        max_workers: int = 5
     ) -> Dict[str, any]:
         """
-        주어진 종목 리스트의 히스토리 수집 (공통 로직)
+        주어진 종목 리스트의 히스토리 수집 (병렬 처리, 하이브리드 전략)
 
         Args:
             stocks: 종목 리스트
             days: 수집할 일수
-            db: DB 세션
+            db: DB 세션 (TaskProgress 업데이트용)
             task_id: TaskProgress에 사용할 task_id (선택적, 없으면 자동 생성)
+            max_workers: 최대 워커 수 (기본 5, API rate limit 고려)
 
         Returns:
-            수집 결과 딕셔너리
+            수집 결과 딕셔너리 (skipped, incremental, full 카운트 포함)
         """
         total = len(stocks)
-        success_count = 0
-        failed_count = 0
-        total_records = 0
 
-        # TaskProgress 생성 (task_id가 제공되지 않으면 자동 생성)
+        # TaskProgress 생성
         if task_id is None:
             task_id = str(uuid.uuid4())
 
@@ -397,76 +560,116 @@ class KISHistoryCrawler:
             status="running",
             total_items=total,
             current_item=0,
-            message=f"히스토리 수집 시작 ({total}개 종목, {days}일)"
+            message=f"히스토리 수집 시작 ({total}개 종목, {days}일, 워커 {max_workers}개)"
         )
         db.add(task_progress)
         db.commit()
 
+        # 공유 카운터 (Lock으로 동기화)
+        counters = {
+            "processed": 0,
+            "success": 0,
+            "failed": 0,
+            "skipped": 0,
+            "incremental": 0,
+            "full": 0,
+            "records": 0
+        }
+        lock = threading.Lock()
+
+        # 종목 데이터를 딕셔너리로 변환 (세션 분리를 위해)
+        stock_data_list = [
+            {
+                "id": s.id,
+                "symbol": s.symbol,
+                "name": s.name,
+                "market": s.market,
+                "exchange": s.exchange,
+                "history_records_count": s.history_records_count
+            }
+            for s in stocks
+        ]
+
         try:
-            from app.models import HistoryCollectionLog
+            logger.info(f"Starting parallel collection with {max_workers} workers for {total} stocks")
 
-            for i, stock in enumerate(stocks, 1):
-                # 종목별 로그 시작
-                log_entry = HistoryCollectionLog(
-                    task_id=task_id,
-                    stock_id=stock.id,
-                    stock_symbol=stock.symbol,
-                    stock_name=stock.name,
-                    status="running",
-                    records_saved=0
-                )
-                db.add(log_entry)
-                db.commit()
+            with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                # 모든 작업 제출
+                futures = {
+                    executor.submit(
+                        self._process_single_stock,
+                        stock_data,
+                        days,
+                        task_id,
+                        counters,
+                        lock
+                    ): stock_data
+                    for stock_data in stock_data_list
+                }
 
-                # TaskProgress 업데이트
-                task_progress.current_item = i
-                task_progress.current_stock_name = stock.name
-                task_progress.message = f"{i}/{total} 종목 수집 중: {stock.name} ({stock.symbol})"
-                db.commit()
+                # 완료되는 대로 처리
+                for future in as_completed(futures):
+                    stock_data = futures[future]
 
-                # 히스토리 수집 실행
-                result = self.collect_history_for_stock(stock, days=days, db=db)
+                    try:
+                        result = future.result()
+                    except Exception as e:
+                        logger.error(f"Future error for {stock_data['symbol']}: {str(e)}")
 
-                # 종목별 로그 업데이트
-                log_entry.completed_at = datetime.utcnow()
-                if result["success"]:
-                    success_count += 1
-                    total_records += result.get("records_saved", 0)
-                    task_progress.success_count += 1
+                    # 진행상황 업데이트 (10개마다)
+                    with lock:
+                        processed = counters["processed"]
 
-                    # 로그에 성공 기록
-                    log_entry.status = "success"
-                    log_entry.records_saved = result.get("records_saved", 0)
-                else:
-                    failed_count += 1
-                    task_progress.failed_count += 1
+                    if processed % 10 == 0 or processed == total:
+                        # TaskProgress 업데이트
+                        task_progress.current_item = processed
+                        task_progress.success_count = counters["success"]
+                        task_progress.failed_count = counters["failed"]
+                        task_progress.message = (
+                            f"{processed}/{total} 종목 처리 완료 "
+                            f"(스킵: {counters['skipped']}, 증분: {counters['incremental']}, "
+                            f"전체: {counters['full']})"
+                        )
+                        db.commit()
 
-                    # 로그에 실패 기록
-                    log_entry.status = "failed"
-                    log_entry.error_message = result.get("error", "Unknown error")
-
-                db.commit()
-
-                # 진행상황 로그 (50개마다)
-                if i % 50 == 0:
-                    logger.info(f"Progress: {i}/{total} stocks processed ({success_count} success, {failed_count} failed)")
+                    # 콘솔 로그 (50개마다)
+                    if processed % 50 == 0:
+                        logger.info(
+                            f"Progress: {processed}/{total} stocks "
+                            f"(skip: {counters['skipped']}, inc: {counters['incremental']}, "
+                            f"full: {counters['full']}, fail: {counters['failed']})"
+                        )
 
             # TaskProgress 완료 처리
             task_progress.status = "completed"
             task_progress.current_item = total
-            task_progress.message = f"수집 완료: {success_count}/{total} 종목, {total_records}개 레코드 저장"
+            task_progress.success_count = counters["success"]
+            task_progress.failed_count = counters["failed"]
+            task_progress.message = (
+                f"수집 완료: {counters['success']}/{total} 종목 "
+                f"(스킵: {counters['skipped']}, 증분: {counters['incremental']}, 전체: {counters['full']}), "
+                f"{counters['records']}개 레코드 저장"
+            )
             task_progress.completed_at = datetime.utcnow()
             db.commit()
 
-            logger.info(f"Collection complete: {success_count}/{total} stocks, {total_records} records saved")
+            logger.info(
+                f"Collection complete: {counters['success']}/{total} stocks, "
+                f"skipped: {counters['skipped']}, incremental: {counters['incremental']}, "
+                f"full: {counters['full']}, {counters['records']} records saved"
+            )
 
             return {
                 "success": True,
                 "total_stocks": total,
-                "success_count": success_count,
-                "failed_count": failed_count,
-                "total_records": total_records,
-                "task_id": task_id
+                "success_count": counters["success"],
+                "failed_count": counters["failed"],
+                "skipped": counters["skipped"],
+                "incremental": counters["incremental"],
+                "full_collected": counters["full"],
+                "total_records": counters["records"],
+                "task_id": task_id,
+                "workers": max_workers
             }
 
         except Exception as e:
@@ -475,6 +678,7 @@ class KISHistoryCrawler:
             task_progress.error_message = str(e)
             task_progress.completed_at = datetime.utcnow()
             db.commit()
+            logger.error(f"Collection failed: {str(e)}")
             raise
 
 

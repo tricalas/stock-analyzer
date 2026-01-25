@@ -84,33 +84,38 @@ class StockScheduler:
             return {"success": 0, "failed": 0, "total": 0, "error": str(e)}
 
     def _collect_tagged_stocks_history(self):
-        """히스토리 수집 (KIS API 사용) - 모드에 따라 다르게 동작"""
+        """히스토리 수집 (KIS API 사용, 병렬 처리) - 모드에 따라 다르게 동작"""
         try:
             mode = settings.HISTORY_COLLECTION_MODE.lower()
-            logger.info(f"🚀 Starting scheduled history collection (mode: {mode})...")
+            workers = settings.HISTORY_COLLECTION_WORKERS
+            logger.info(f"🚀 Starting scheduled history collection (mode: {mode}, workers: {workers})...")
 
             if mode == "tagged":
                 # 태그가 있는 종목만
                 result = kis_history_crawler.collect_history_for_tagged_stocks(
-                    days=settings.HISTORY_COLLECTION_DAYS
+                    days=settings.HISTORY_COLLECTION_DAYS,
+                    max_workers=workers
                 )
             elif mode == "top":
                 # 시총 상위 N개 종목
                 result = kis_history_crawler.collect_history_for_all_stocks(
                     days=settings.HISTORY_COLLECTION_DAYS,
-                    limit=settings.HISTORY_COLLECTION_LIMIT
+                    limit=settings.HISTORY_COLLECTION_LIMIT,
+                    max_workers=workers
                 )
             else:  # "all" 또는 기타
                 # 모든 활성 종목
                 result = kis_history_crawler.collect_history_for_all_stocks(
                     days=settings.HISTORY_COLLECTION_DAYS,
-                    limit=None
+                    limit=None,
+                    max_workers=workers
                 )
 
             if result.get("success_count", 0) > 0:
                 logger.info(
-                    f"✅ History collection completed ({mode} mode): "
+                    f"✅ History collection completed ({mode} mode, {workers} workers): "
                     f"{result['success_count']}/{result['total_stocks']} stocks, "
+                    f"skipped: {result.get('skipped', 0)}, "
                     f"{result['total_records']} records saved"
                 )
             else:
@@ -153,14 +158,19 @@ class StockScheduler:
         logger.info("Manual stock crawling triggered")
         return self._crawl_all_stocks()
 
-    def trigger_manual_history_collection(self, days: int = None):
-        """수동으로 히스토리 수집 실행"""
-        logger.info(f"Manual history collection triggered (days: {days or settings.HISTORY_COLLECTION_DAYS})")
+    def trigger_manual_history_collection(self, days: int = None, max_workers: int = None):
+        """수동으로 히스토리 수집 실행 (병렬 처리)"""
+        effective_days = days or settings.HISTORY_COLLECTION_DAYS
+        effective_workers = max_workers or settings.HISTORY_COLLECTION_WORKERS
+        logger.info(f"Manual history collection triggered (days: {effective_days}, workers: {effective_workers})")
 
-        # 임시로 HISTORY_COLLECTION_DAYS 오버라이드
+        # 임시로 설정 오버라이드
         original_days = settings.HISTORY_COLLECTION_DAYS
+        original_workers = settings.HISTORY_COLLECTION_WORKERS
         if days is not None:
             settings.HISTORY_COLLECTION_DAYS = days
+        if max_workers is not None:
+            settings.HISTORY_COLLECTION_WORKERS = max_workers
 
         try:
             result = self._collect_tagged_stocks_history()
@@ -168,6 +178,7 @@ class StockScheduler:
         finally:
             # 원래 값 복구
             settings.HISTORY_COLLECTION_DAYS = original_days
+            settings.HISTORY_COLLECTION_WORKERS = original_workers
 
     def _analyze_signals(self):
         """신호 분석 실행 (스케줄러용)"""

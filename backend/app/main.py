@@ -1545,16 +1545,16 @@ def create_user_direct(
 
 # ==================== 히스토리 데이터 수집 ====================
 
-def run_background_history_collection(days: int, task_id: str, mode: str = "all"):
-    """백그라운드에서 실행될 히스토리 수집 작업"""
+def run_background_history_collection(days: int, task_id: str, mode: str = "all", max_workers: int = 5):
+    """백그라운드에서 실행될 히스토리 수집 작업 (병렬 처리)"""
     try:
         from app.crawlers.kis_history_crawler import kis_history_crawler
-        logger.info(f"Starting background history collection ({days} days, mode: {mode}) with task_id: {task_id}")
+        logger.info(f"Starting background history collection ({days} days, mode: {mode}, workers: {max_workers}) with task_id: {task_id}")
 
         if mode == "tagged":
-            result = kis_history_crawler.collect_history_for_tagged_stocks(days=days, task_id=task_id)
+            result = kis_history_crawler.collect_history_for_tagged_stocks(days=days, task_id=task_id, max_workers=max_workers)
         else:  # "all"
-            result = kis_history_crawler.collect_history_for_all_stocks(days=days, task_id=task_id)
+            result = kis_history_crawler.collect_history_for_all_stocks(days=days, task_id=task_id, max_workers=max_workers)
 
         logger.info(f"History collection completed: {result}")
     except Exception as e:
@@ -1566,14 +1566,16 @@ def collect_history_for_stocks(
     background_tasks: BackgroundTasks,
     days: int = Query(120, ge=1, le=365),
     mode: str = Query("all", pattern="^(all|tagged)$"),
+    workers: int = Query(5, ge=1, le=20, description="병렬 워커 수 (1~20, 기본 5)"),
     current_user: User = Depends(get_current_user)
 ):
     """
-    종목들의 히스토리 데이터 수집
+    종목들의 히스토리 데이터 수집 (병렬 처리)
 
     Args:
         days: 수집할 일수 (1~365일, 기본 120일)
         mode: 수집 모드 ("all": 전체 종목, "tagged": 태그된 종목만)
+        workers: 병렬 워커 수 (1~20, 기본 5)
 
     Returns:
         수집 작업 시작 메시지 및 task_id
@@ -1584,35 +1586,38 @@ def collect_history_for_stocks(
     task_id = str(uuid.uuid4())
 
     # 백그라운드 작업 추가
-    background_tasks.add_task(run_background_history_collection, days, task_id, mode)
+    background_tasks.add_task(run_background_history_collection, days, task_id, mode, workers)
 
     mode_text = "전체 종목" if mode == "all" else "태그된 종목"
     # task_id와 함께 즉시 응답 반환
     return {
         "success": True,
-        "message": f"히스토리 수집 작업이 시작되었습니다. ({mode_text}, {days}일치 데이터)",
+        "message": f"히스토리 수집 작업이 시작되었습니다. ({mode_text}, {days}일치 데이터, 워커 {workers}개)",
         "days": days,
         "mode": mode,
+        "workers": workers,
         "task_id": task_id
     }
 
 
 # 기존 API 호환성 유지
 @app.post("/api/stocks/tagged/collect-history")
-def collect_history_for_tagged_stocks(
+def collect_history_for_tagged_stocks_api(
     background_tasks: BackgroundTasks,
     days: int = Query(120, ge=1, le=365),
+    workers: int = Query(5, ge=1, le=20),
     current_user: User = Depends(get_current_user)
 ):
-    """태그된 종목 히스토리 수집 (기존 API 호환)"""
+    """태그된 종목 히스토리 수집 (기존 API 호환, 병렬 처리)"""
     import uuid
     task_id = str(uuid.uuid4())
-    background_tasks.add_task(run_background_history_collection, days, task_id, "tagged")
+    background_tasks.add_task(run_background_history_collection, days, task_id, "tagged", workers)
     return {
         "success": True,
-        "message": f"히스토리 수집 작업이 시작되었습니다. (태그된 종목, {days}일치 데이터)",
+        "message": f"히스토리 수집 작업이 시작되었습니다. (태그된 종목, {days}일치 데이터, 워커 {workers}개)",
         "days": days,
         "mode": "tagged",
+        "workers": workers,
         "task_id": task_id
     }
 
