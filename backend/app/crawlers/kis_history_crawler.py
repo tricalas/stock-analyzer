@@ -23,6 +23,30 @@ class KISHistoryCrawler:
     def __init__(self):
         self.kis_client = get_kis_client()
 
+    def _get_last_trading_day(self) -> date:
+        """
+        가장 최근 거래일 반환 (미국 주식 기준)
+        - 주말(토/일)이면 금요일 반환
+        - 평일이면 오늘 반환 (장 마감 전이면 어제)
+        """
+        today = date.today()
+        weekday = today.weekday()  # 0=월, 1=화, ..., 5=토, 6=일
+
+        if weekday == 5:  # 토요일 → 금요일
+            return today - timedelta(days=1)
+        elif weekday == 6:  # 일요일 → 금요일
+            return today - timedelta(days=2)
+        else:
+            # 평일: 미국 장 마감 전(한국 시간 오전 6시 이전)이면 전날
+            from datetime import datetime
+            now = datetime.now()
+            if now.hour < 6:  # 한국 시간 오전 6시 이전 = 미국 장 마감 전
+                if weekday == 0:  # 월요일 새벽 → 금요일
+                    return today - timedelta(days=3)
+                else:
+                    return today - timedelta(days=1)
+            return today
+
     def _should_collect_history(
         self,
         stock: Stock,
@@ -60,9 +84,10 @@ class KISHistoryCrawler:
 
         if last_record:
             last_date = last_record[0]
-            days_since = (date.today() - last_date).days
+            last_trading_day = self._get_last_trading_day()
 
-            if days_since <= 1:  # 오늘 또는 어제 데이터 있음
+            # 마지막 데이터가 최근 거래일 이후면 skip
+            if last_date >= last_trading_day:
                 return (False, "skip", last_date)
             else:
                 return (True, "incremental", last_date)
