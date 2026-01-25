@@ -2079,10 +2079,11 @@ def refresh_signals(
     limit: int = Query(500, ge=10, le=2000),
     days: int = Query(120, ge=60, le=365),
     force_full: bool = Query(False, description="True면 델타 무시하고 전체 스캔"),
+    background_tasks: BackgroundTasks = None,
     current_user: Optional[User] = Depends(get_optional_current_user)
 ):
     """
-    매매 신호 재분석 (Celery 백그라운드 작업)
+    매매 신호 재분석 (백그라운드 작업)
 
     브라우저를 닫아도 작업이 계속 실행됩니다.
 
@@ -2095,22 +2096,28 @@ def refresh_signals(
     Returns:
         작업 시작 메시지
     """
+    import threading
+
     # task_id 생성
     task_id = str(uuid.uuid4())
 
-    # Celery 태스크 비동기 실행
-    analyze_signals_task.apply_async(
-        kwargs={
-            "task_id": task_id,
-            "mode": mode,
-            "limit": limit,
-            "days": days,
-            "force_full": force_full
-        },
-        task_id=task_id
-    )
+    def run_analysis():
+        try:
+            signal_analyzer.analyze_and_store_signals(
+                mode=mode,
+                limit=limit,
+                days=days,
+                force_full=force_full,
+                task_id=task_id
+            )
+        except Exception as e:
+            logger.error(f"Signal analysis failed: {e}")
 
-    logger.info(f"🚀 Signal analysis Celery task launched (task_id: {task_id})")
+    # 백그라운드 스레드에서 실행
+    thread = threading.Thread(target=run_analysis, daemon=True)
+    thread.start()
+
+    logger.info(f"🚀 Signal analysis background task launched (task_id: {task_id})")
 
     delta_msg = "전체 스캔" if force_full else "델타 분석 (변경된 종목만)"
     return {
