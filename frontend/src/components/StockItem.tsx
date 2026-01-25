@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { Stock, stockApi, Tag } from '@/lib/api';
 import { ArrowUpIcon, ArrowDownIcon, BarChart3, TrendingUp, LineChart, Trash2, Star, ThumbsDown, ShoppingCart, ThumbsUp, Eye, AlertCircle, TrendingDown } from 'lucide-react';
+import { getNaverChartUrl, getNaverInfoUrl } from '@/lib/naverStock';
 import { toast } from 'sonner';
 import { useTags } from '@/contexts/TagContext';
 import { useQueryClient, useQuery } from '@tanstack/react-query';
@@ -274,10 +275,7 @@ const StockItem = React.memo<StockItemProps>(({ stock, rank, onStockClick, onSho
         <div>
           <div className="text-sm font-medium flex items-center space-x-2">
             <a
-              href={stock.market === 'US'
-                ? `https://m.stock.naver.com/worldstock/stock/${stock.exchange === 'NASDAQ' ? stock.symbol + '.O' : stock.symbol}/total`
-                : `https://m.stock.naver.com/domestic/stock/${stock.symbol}/total`
-              }
+              href={getNaverInfoUrl(stock)}
               target="_blank"
               rel="noopener noreferrer"
               className="text-foreground font-bold hover:text-primary hover:underline cursor-pointer transition-colors"
@@ -286,10 +284,7 @@ const StockItem = React.memo<StockItemProps>(({ stock, rank, onStockClick, onSho
               {stock.name}
             </a>
             <a
-              href={stock.market === 'US'
-                ? `https://m.stock.naver.com/fchart/foreign/stock/${stock.exchange === 'NASDAQ' ? stock.symbol + '.O' : stock.symbol}`
-                : `https://m.stock.naver.com/fchart/domestic/stock/${stock.symbol}`
-              }
+              href={getNaverChartUrl(stock)}
               target="_blank"
               rel="noopener noreferrer"
               className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-primary/10 text-primary hover:bg-primary/20 cursor-pointer transition-colors"

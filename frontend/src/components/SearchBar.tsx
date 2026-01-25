@@ -5,6 +5,7 @@ import { stockApi, Stock, Tag } from '@/lib/api';
 import { Search, X, TrendingUp, TrendingDown, Star, ThumbsDown, ShoppingCart, ThumbsUp, Eye, AlertCircle, Trash2, BarChart3 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useTags } from '@/contexts/TagContext';
+import { getNaverChartUrl } from '@/lib/naverStock';
 import { useQueryClient } from '@tanstack/react-query';
 
 interface SearchBarProps {
@@ -269,22 +270,7 @@ const SearchBar: React.FC<SearchBarProps> = ({ onStockSelect }) => {
   // 네이버 차트 열기
   const handleOpenChart = (e: React.MouseEvent, stock: Stock) => {
     e.stopPropagation();
-
-    const width = Math.floor(window.screen.width * 0.7);
-    const height = window.screen.height;
-    const left = Math.floor(window.screen.width * 0.3);
-    const top = 0;
-
-    const naverSymbol = stock.exchange === 'NASDAQ' ? `${stock.symbol}.O` : stock.symbol;
-    const url = stock.market === 'US'
-      ? `https://m.stock.naver.com/fchart/foreign/stock/${naverSymbol}`
-      : `https://m.stock.naver.com/fchart/domestic/stock/${stock.symbol}`;
-
-    window.open(
-      url,
-      '_blank',
-      `width=${width},height=${height},left=${left},top=${top},resizable=yes,scrollbars=yes`
-    );
+    window.open(getNaverChartUrl(stock), '_blank');
   };
 
   // 가격 변동 포맷

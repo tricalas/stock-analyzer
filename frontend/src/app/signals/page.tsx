@@ -5,6 +5,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import AppLayout from '@/components/AppLayout';
 import { TrendingUp, TrendingDown, Activity, RefreshCw, Calendar } from 'lucide-react';
 import { Toaster, toast } from 'sonner';
+import { getNaverChartUrl, getNaverInfoUrl } from '@/lib/naverStock';
 
 interface Stock {
   id: number;
@@ -343,13 +344,11 @@ export default function SignalsPage() {
                 </thead>
                 <tbody className="divide-y divide-border">
                   {data.signals.map((signal) => {
-                    const chartUrl = signal.stock?.market === 'US'
-                      ? `https://m.stock.naver.com/fchart/foreign/stock/${signal.stock?.exchange === 'NASDAQ' ? signal.stock.symbol + '.O' : signal.stock?.symbol}`
-                      : `https://m.stock.naver.com/fchart/domestic/stock/${signal.stock?.symbol}`;
-
-                    const infoUrl = signal.stock?.market === 'US'
-                      ? `https://m.stock.naver.com/worldstock/stock/${signal.stock?.exchange === 'NASDAQ' ? signal.stock.symbol + '.O' : signal.stock?.symbol}/total`
-                      : `https://m.stock.naver.com/domestic/stock/${signal.stock?.symbol}/total`;
+                    const stockInfo = signal.stock ? {
+                      symbol: signal.stock.symbol,
+                      market: signal.stock.market,
+                      exchange: signal.stock.exchange
+                    } : null;
 
                     return (
                       <tr
@@ -361,7 +360,7 @@ export default function SignalsPage() {
                           <div className="flex items-center gap-2">
                             <div>
                               <a
-                                href={infoUrl}
+                                href={stockInfo ? getNaverInfoUrl(stockInfo) : '#'}
                                 target="_blank"
                                 rel="noopener noreferrer"
                                 className="text-sm font-bold text-foreground hover:text-primary hover:underline"
@@ -372,7 +371,7 @@ export default function SignalsPage() {
                               <div className="text-xs text-muted-foreground flex items-center gap-1">
                                 {signal.stock?.symbol || 'N/A'}
                                 <a
-                                  href={chartUrl}
+                                  href={stockInfo ? getNaverChartUrl(stockInfo) : '#'}
                                   target="_blank"
                                   rel="noopener noreferrer"
                                   className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-primary/10 text-primary hover:bg-primary/20"

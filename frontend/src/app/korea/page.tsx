@@ -8,6 +8,7 @@ import StockChartModal from '@/components/StockChartModal';
 import AppLayout from '@/components/AppLayout';
 import SearchBar from '@/components/SearchBar';
 import { RefreshCw, TrendingUp } from 'lucide-react';
+import { getNaverChartUrl } from '@/lib/naverStock';
 import SimpleButton from '@/components/atoms/SimpleButton';
 import ScrollToTopButton from '@/components/atoms/ScrollToTopButton';
 import SortDropdown, { SortField, SortDirection } from '@/components/SortDropdown';
@@ -172,19 +173,7 @@ export default function KoreaPage() {
   };
 
   const handleStockClick = (stock: Stock) => {
-    // 화면 오른쪽 70%에 전체 높이로 새 창 열기
-    const width = Math.floor(window.screen.width * 0.7);
-    const height = window.screen.height;
-    const left = Math.floor(window.screen.width * 0.3);
-    const top = 0;
-
-    const url = `https://m.stock.naver.com/fchart/domestic/stock/${stock.symbol}`;
-
-    window.open(
-      url,
-      '_blank',
-      `width=${width},height=${height},left=${left},top=${top},resizable=yes,scrollbars=yes`
-    );
+    window.open(getNaverChartUrl(stock), '_blank');
   };
 
   return (

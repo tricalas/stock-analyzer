@@ -2507,7 +2507,7 @@ def sync_history_counts(
         raise HTTPException(status_code=403, detail="Admin access required")
 
     try:
-        from sqlalchemy import func
+        from sqlalchemy import func, text
 
         # 모든 종목의 히스토리 카운트를 한 번에 조회
         history_counts = db.query(
@@ -2517,14 +2517,27 @@ def sync_history_counts(
 
         count_map = {row.stock_id: row.count for row in history_counts}
 
-        # Stock 테이블 업데이트
+        # Stock 테이블 업데이트 - 직접 UPDATE 쿼리 사용
+        total_stocks = db.query(Stock).count()
         updated = 0
-        stocks = db.query(Stock).all()
-        for stock in stocks:
-            new_count = count_map.get(stock.id, 0)
-            if stock.history_records_count != new_count:
-                stock.history_records_count = new_count
-                updated += 1
+
+        # 히스토리가 있는 종목들 업데이트
+        for stock_id, count in count_map.items():
+            result = db.query(Stock).filter(Stock.id == stock_id).update(
+                {"history_records_count": count},
+                synchronize_session=False
+            )
+            if result > 0:
+                updated += result
+
+        # 히스토리가 없는 종목들은 0으로 설정
+        zero_updated = db.query(Stock).filter(
+            ~Stock.id.in_(count_map.keys())
+        ).update(
+            {"history_records_count": 0},
+            synchronize_session=False
+        )
+        updated += zero_updated
 
         db.commit()
 
@@ -2535,7 +2548,7 @@ def sync_history_counts(
         return {
             "success": True,
             "message": f"History counts synced successfully",
-            "total_stocks": len(stocks),
+            "total_stocks": total_stocks,
             "stocks_with_history": len(count_map),
             "updated": updated,
             "cache_cleared": True
