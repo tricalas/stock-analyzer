@@ -1836,19 +1836,45 @@ def collect_history_for_stocks(
     Returns:
         수집 작업 시작 메시지 및 task_id
     """
+    import threading
+    from app.crawlers.kis_history_crawler import kis_history_crawler
+
     # task_id 생성
     task_id = str(uuid.uuid4())
 
-    # Celery 태스크 비동기 실행 (task_id를 Celery task ID로도 사용)
-    collect_history_task.apply_async(
-        kwargs={
-            "days": days,
-            "task_id": task_id,
-            "mode": mode,
-            "max_workers": workers
-        },
-        task_id=task_id
-    )
+    # Celery 태스크 시도, 실패 시 스레드로 폴백
+    try:
+        collect_history_task.apply_async(
+            kwargs={
+                "days": days,
+                "task_id": task_id,
+                "mode": mode,
+                "max_workers": workers
+            },
+            task_id=task_id
+        )
+        execution_mode = "celery"
+        logger.info(f"✅ History collection queued via Celery (task_id: {task_id})")
+    except Exception as e:
+        logger.warning(f"⚠️ Celery unavailable ({e}), falling back to thread")
+
+        # 스레드로 폴백 실행
+        def run_collection():
+            try:
+                if mode == "tagged":
+                    kis_history_crawler.collect_history_for_tagged_stocks(
+                        days=days, task_id=task_id, max_workers=workers
+                    )
+                else:
+                    kis_history_crawler.collect_history_for_all_stocks(
+                        days=days, task_id=task_id, max_workers=workers
+                    )
+            except Exception as ex:
+                logger.error(f"History collection failed: {ex}")
+
+        thread = threading.Thread(target=run_collection, daemon=True)
+        thread.start()
+        execution_mode = "thread"
 
     mode_text = "전체 종목" if mode == "all" else "태그된 종목"
     return {
@@ -1858,6 +1884,7 @@ def collect_history_for_stocks(
         "mode": mode,
         "workers": workers,
         "task_id": task_id,
+        "execution_mode": execution_mode,
         "note": "브라우저를 닫아도 작업이 계속 실행됩니다."
     }
 
@@ -2194,22 +2221,44 @@ def refresh_signals(
     Returns:
         작업 시작 메시지와 task_id
     """
+    import threading
+
     # task_id 생성
     task_id = str(uuid.uuid4())
 
-    # Celery 태스크 비동기 실행
-    analyze_signals_task.apply_async(
-        kwargs={
-            "task_id": task_id,
-            "mode": mode,
-            "limit": limit,
-            "days": days,
-            "force_full": force_full
-        },
-        task_id=task_id  # Celery task ID와 동기화
-    )
+    # Celery 태스크 시도, 실패 시 스레드로 폴백
+    try:
+        analyze_signals_task.apply_async(
+            kwargs={
+                "task_id": task_id,
+                "mode": mode,
+                "limit": limit,
+                "days": days,
+                "force_full": force_full
+            },
+            task_id=task_id
+        )
+        execution_mode = "celery"
+        logger.info(f"✅ Signal analysis queued via Celery (task_id: {task_id})")
+    except Exception as e:
+        logger.warning(f"⚠️ Celery unavailable ({e}), falling back to thread")
 
-    logger.info(f"🚀 Signal analysis Celery task launched (task_id: {task_id})")
+        # 스레드로 폴백 실행
+        def run_analysis():
+            try:
+                signal_analyzer.analyze_and_store_signals(
+                    mode=mode,
+                    limit=limit,
+                    days=days,
+                    force_full=force_full,
+                    task_id=task_id
+                )
+            except Exception as ex:
+                logger.error(f"Signal analysis failed: {ex}")
+
+        thread = threading.Thread(target=run_analysis, daemon=True)
+        thread.start()
+        execution_mode = "thread"
 
     delta_msg = "전체 스캔" if force_full else "델타 분석 (변경된 종목만)"
     return {
@@ -2219,6 +2268,7 @@ def refresh_signals(
         "days": days,
         "force_full": force_full,
         "task_id": task_id,
+        "execution_mode": execution_mode,
         "note": "브라우저를 닫아도 작업이 계속 실행됩니다. GET /api/tasks/{task_id}로 진행 상황을 확인하세요."
     }
 
