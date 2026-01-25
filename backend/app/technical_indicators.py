@@ -499,6 +499,7 @@ def find_lower_highs(
 ) -> List[Tuple[int, float]]:
     """
     Lower High 패턴 찾기 (점점 낮아지는 고점들)
+    가장 긴 Lower High 시퀀스를 반환
 
     Args:
         swing_highs: [(index, price), ...] 형태의 스윙 고점 리스트
@@ -510,39 +511,40 @@ def find_lower_highs(
     if len(swing_highs) < min_count:
         return []
 
-    lower_highs = []
-    for i, (idx, price) in enumerate(swing_highs):
-        if i == 0:
-            lower_highs.append((idx, price))
-        elif price < lower_highs[-1][1]:  # 이전 고점보다 낮음
-            lower_highs.append((idx, price))
-        else:
-            # 더 높은 고점 발견 시 리셋
-            lower_highs = [(idx, price)]
+    # 가장 긴 Lower High 시퀀스 찾기
+    best_sequence = []
 
-    return lower_highs
+    for start in range(len(swing_highs)):
+        current_sequence = [swing_highs[start]]
+
+        for j in range(start + 1, len(swing_highs)):
+            if swing_highs[j][1] < current_sequence[-1][1]:
+                current_sequence.append(swing_highs[j])
+
+        if len(current_sequence) > len(best_sequence):
+            best_sequence = current_sequence
+
+    return best_sequence if len(best_sequence) >= min_count else []
 
 
 def generate_descending_trendline_breakout_signals(
     df: pd.DataFrame,
     swing_window: int = 5,
-    min_touches: int = 3,
-    volume_threshold: float = 1.5
+    min_touches: int = 3
 ) -> pd.DataFrame:
     """
-    하락 추세선 돌파 매수 신호 생성
+    하락 추세선 돌파 매수 신호 생성 (순수 차트 패턴)
 
     전략:
     1. 스윙 고점(Swing High) 찾기
     2. Lower High 패턴 (점점 낮아지는 고점) 찾기
     3. Lower High들을 연결한 하락 추세선 계산
-    4. 추세선 상향 돌파 + 거래량 급증 시 매수 신호 생성
+    4. 추세선 상향 돌파 시 매수 신호 생성
 
     Args:
         df: OHLCV 데이터프레임
         swing_window: 스윙 고저점 인식 윈도우
         min_touches: 추세선에 필요한 최소 터치 포인트
-        volume_threshold: 거래량 급증 기준 (평균 대비 배수)
 
     Returns:
         신호가 추가된 데이터프레임
@@ -591,10 +593,7 @@ def generate_descending_trendline_breakout_signals(
         result['trendline_intercept'] = intercept
         return result
 
-    # 4. 평균 거래량 계산
-    avg_volume = df['volume'].rolling(window=20, min_periods=10).mean()
-
-    # 5. 돌파 감지
+    # 4. 돌파 감지 (순수 차트 패턴만 사용)
     last_lower_high_idx = lower_highs[-1][0]
 
     for i in range(last_lower_high_idx + 1, len(df)):
@@ -607,12 +606,7 @@ def generate_descending_trendline_breakout_signals(
         # 조건 2: 현재 봉이 추세선 돌파
         current_above = df['close'].iloc[i] > trendline_value
 
-        # 조건 3: 거래량 급증
-        volume_surge = False
-        if pd.notna(avg_volume.iloc[i]):
-            volume_surge = df['volume'].iloc[i] > avg_volume.iloc[i] * volume_threshold
-
-        if prev_below and current_above and volume_surge:
+        if prev_below and current_above:
             buy_signals[i] = 1
 
     result['buy_signal'] = buy_signals

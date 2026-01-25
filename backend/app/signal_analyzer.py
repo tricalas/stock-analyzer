@@ -241,12 +241,11 @@ class SignalAnalyzer:
             df.set_index('date', inplace=True)
             df.sort_index(inplace=True)
 
-            # 신호 생성 (technical_indicators.py 사용)
+            # 신호 생성 (technical_indicators.py 사용 - 순수 차트 패턴)
             signals_df = generate_descending_trendline_breakout_signals(
                 df,
                 swing_window=5,
-                min_touches=3,
-                volume_threshold=1.5
+                min_touches=3
             )
 
             # 매수 신호만 추출 (컬럼명: buy_signal)
