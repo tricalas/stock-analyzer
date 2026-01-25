@@ -101,6 +101,12 @@ app.add_middleware(
 
 crawler_manager = CrawlerManager()
 
+# 서버 시작 시 캐시 클리어 (배포 후 새 데이터 반영)
+@app.on_event("startup")
+async def startup_event():
+    invalidate_cache()
+    logger.info("🚀 Server started, cache cleared")
+
 # 크롤링 쿨타임 관리 (10분)
 last_crawl_time = None
 CRAWL_COOLDOWN_MINUTES = 10
