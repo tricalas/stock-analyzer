@@ -919,22 +919,33 @@ def sync_stock_history(
                 logger.info(f"Full sync for {stock.symbol} ({days} days)")
 
         elif stock.market == 'US':
-            # 미국 주식: 네이버 API 사용
-            from app.crawlers.naver_us_crawler import NaverUSStockCrawler
+            # 미국 주식: KIS API 사용
+            from app.kis.kis_client import get_kis_client
 
-            naver_crawler = NaverUSStockCrawler()
+            kis_client = get_kis_client()
+            if not kis_client:
+                raise HTTPException(status_code=500, detail="KIS API가 설정되지 않았습니다")
 
-            # 네이버 API용 심볼 (sector 필드에 로이터 코드 저장됨)
-            naver_symbol = stock.sector if stock.sector else f"{stock.symbol}.O"
-            logger.info(f"Fetching US stock history for {naver_symbol}")
+            # 거래소 코드 변환 (NASDAQ -> NAS, NYSE -> NYS)
+            exchange_map = {
+                'NASDAQ': 'NAS',
+                'NYSE': 'NYS',
+                'AMEX': 'AMS',
+                'NAS': 'NAS',
+                'NYS': 'NYS',
+            }
+            kis_exchange = exchange_map.get(stock.exchange, 'NAS')
 
-            analysis = naver_crawler.analyze_single_stock(naver_symbol)
+            logger.info(f"Fetching US stock history for {stock.symbol} ({kis_exchange}) via KIS API")
 
-            if not analysis.get('success') or not analysis.get('price_history'):
+            # KIS API로 OHLCV 데이터 가져오기
+            ohlcv_data = kis_client.get_us_stock_ohlcv(stock.symbol, exchange=kis_exchange)
+
+            if not ohlcv_data:
                 return {
                     "success": False,
                     "mode": "full",
-                    "message": f"데이터를 가져올 수 없습니다: {analysis.get('message', 'Unknown error')}",
+                    "message": "KIS API에서 데이터를 가져올 수 없습니다",
                     "stock_id": stock_id,
                     "symbol": stock.symbol,
                     "name": stock.name,
@@ -945,9 +956,14 @@ def sync_stock_history(
 
             # 가격 데이터 저장
             records_added = 0
-            for price_data in analysis['price_history']:
+            for item in ohlcv_data:
                 try:
-                    price_date = datetime.strptime(price_data['date'], '%Y%m%d').date()
+                    # KIS API 응답 필드: xymd(날짜), open, high, low, clos, tvol
+                    date_str = item.get('xymd', '')
+                    if not date_str:
+                        continue
+
+                    price_date = datetime.strptime(date_str, '%Y%m%d').date()
 
                     # 중복 체크
                     existing = db.query(StockPriceHistory).filter(
@@ -959,16 +975,16 @@ def sync_stock_history(
                         history_record = StockPriceHistory(
                             stock_id=stock_id,
                             date=price_date,
-                            open_price=price_data.get('open_price', 0),
-                            high_price=price_data.get('high_price', 0),
-                            low_price=price_data.get('low_price', 0),
-                            close_price=price_data.get('close_price', 0),
-                            volume=price_data.get('volume', 0)
+                            open_price=float(item.get('open', 0)),
+                            high_price=float(item.get('high', 0)),
+                            low_price=float(item.get('low', 0)),
+                            close_price=float(item.get('clos', 0)),
+                            volume=int(item.get('tvol', 0))
                         )
                         db.add(history_record)
                         records_added += 1
                 except Exception as e:
-                    logger.error(f"Error saving price data: {e}")
+                    logger.error(f"Error saving US price data: {e}")
                     continue
 
             db.commit()
