@@ -2283,31 +2283,45 @@ def scan_all_tagged_stocks(
 # ==================== Admin: 테이블 생성 (일회성) ====================
 
 @app.post("/api/admin/create-tables")
-def create_missing_tables(current_user: User = Depends(get_current_user)):
+def create_missing_tables(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
     """
-    누락된 테이블 생성 (관리자 전용, 일회성)
+    누락된 테이블/컬럼 생성 (관리자 전용, 일회성)
 
-    HistoryCollectionLog 등 새로 추가된 테이블을 생성합니다.
+    HistoryCollectionLog 등 새로 추가된 테이블과 컬럼을 생성합니다.
     """
     if not current_user.is_admin:
         raise HTTPException(status_code=403, detail="Admin access required")
 
     try:
-        from sqlalchemy import inspect
+        from sqlalchemy import inspect, text
+
+        inspector = inspect(engine)
 
         # 테이블 생성
         Base.metadata.create_all(bind=engine, tables=[HistoryCollectionLog.__table__])
 
+        # Stock 테이블에 history_records_count 컬럼 추가 (없으면)
+        stock_columns = [col['name'] for col in inspector.get_columns('stocks')]
+        columns_added = []
+
+        if 'history_records_count' not in stock_columns:
+            db.execute(text("ALTER TABLE stocks ADD COLUMN history_records_count INTEGER DEFAULT 0"))
+            db.commit()
+            columns_added.append('history_records_count')
+
         # 확인
-        inspector = inspect(engine)
         tables = inspector.get_table_names()
 
         result = {
             "success": True,
-            "message": "Tables created successfully",
+            "message": "Tables and columns created successfully",
             "tables_exist": {
                 "history_collection_logs": "history_collection_logs" in tables
-            }
+            },
+            "columns_added": columns_added
         }
 
         if "history_collection_logs" in tables:
@@ -2318,12 +2332,13 @@ def create_missing_tables(current_user: User = Depends(get_current_user)):
                 "indexes": [idx['name'] for idx in indexes]
             }
 
-        logger.info(f"✅ Tables created: {result}")
+        logger.info(f"✅ Tables/columns created: {result}")
         return result
 
     except Exception as e:
-        logger.error(f"❌ Error creating tables: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Failed to create tables: {str(e)}")
+        logger.error(f"❌ Error creating tables/columns: {str(e)}")
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Failed to create tables/columns: {str(e)}")
 
 
 @app.post("/api/admin/sync-history-counts")
