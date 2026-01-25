@@ -2349,7 +2349,31 @@ def clear_all_cache(current_user: User = Depends(get_current_user)):
 
     invalidate_cache()
     logger.info("✅ All cache cleared by admin")
-    return {"success": True, "message": "Cache cleared successfully"}
+    return {"success": True, "message": "Cache cleared successfully", "use_redis": USE_REDIS}
+
+
+@app.get("/api/admin/check-history-counts")
+def check_history_counts(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """DB에서 직접 history_records_count 확인 (디버깅용)"""
+    if not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Admin access required")
+
+    # 히스토리가 있는 종목 샘플
+    with_history = db.query(Stock).filter(Stock.history_records_count > 0).limit(5).all()
+    # NULL인 종목 수
+    null_count = db.query(Stock).filter(Stock.history_records_count == None).count()
+    # 0인 종목 수
+    zero_count = db.query(Stock).filter(Stock.history_records_count == 0).count()
+
+    return {
+        "with_history_sample": [{"name": s.name, "count": s.history_records_count} for s in with_history],
+        "null_count": null_count,
+        "zero_count": zero_count,
+        "use_redis": USE_REDIS
+    }
 
 
 @app.post("/api/admin/sync-history-counts")
