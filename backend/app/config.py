@@ -1,10 +1,12 @@
 from pydantic_settings import BaseSettings
-from typing import List, Union
+from typing import List, Union, Optional
 from pydantic import field_validator
+import os
 
 class Settings(BaseSettings):
     DATABASE_URL: str = "sqlite:///./stock_analyzer.db"
-    REDIS_URL: str = "redis://localhost:6379"
+    # Railway uses REDIS_PRIVATE_URL or REDIS_URL
+    REDIS_URL: str = os.environ.get("REDIS_PRIVATE_URL") or os.environ.get("REDIS_URL") or "redis://localhost:6379"
     SECRET_KEY: str = "your-secret-key-here"
     SUPER_PIN: str = "999999"  # 슈퍼 관리자 PIN
     CORS_ORIGINS: Union[List[str], str] = "http://localhost:3000"
