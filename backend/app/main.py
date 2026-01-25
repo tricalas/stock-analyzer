@@ -1814,7 +1814,7 @@ def create_user_direct(
     return {"message": "User created successfully", "user_id": new_user.id}
 
 
-# ==================== 히스토리 데이터 수집 (Celery 기반) ====================
+# ==================== 히스토리 데이터 수집 ====================
 
 @app.post("/api/stocks/collect-history")
 def collect_history_for_stocks(
@@ -1824,22 +1824,13 @@ def collect_history_for_stocks(
     current_user: User = Depends(get_current_user)
 ):
     """
-    종목들의 히스토리 데이터 수집 (Celery 백그라운드 작업)
+    종목들의 히스토리 데이터 수집 (백그라운드 작업)
 
     브라우저를 닫아도 작업이 계속 실행됩니다.
-
-    Args:
-        days: 수집할 일수 (1~365일, 기본 120일)
-        mode: 수집 모드 ("all": 전체 종목, "tagged": 태그된 종목만)
-        workers: 병렬 워커 수 (1~20, 기본 5)
-
-    Returns:
-        수집 작업 시작 메시지 및 task_id
     """
     import threading
     from app.crawlers.kis_history_crawler import kis_history_crawler
 
-    # task_id 생성
     task_id = str(uuid.uuid4())
 
     # Celery 태스크 시도, 실패 시 스레드로 폴백
