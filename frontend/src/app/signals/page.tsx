@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import AppLayout from '@/components/AppLayout';
-import { TrendingUp, TrendingDown, Calendar, DollarSign, Activity, RefreshCw } from 'lucide-react';
+import { TrendingUp, TrendingDown, Activity, RefreshCw, Calendar } from 'lucide-react';
 import { Toaster, toast } from 'sonner';
 
 interface Stock {
@@ -326,96 +326,126 @@ export default function SignalsPage() {
           </div>
         )}
 
-        {/* Signal Cards */}
+        {/* Signal Table */}
         {data && data.signals.length > 0 ? (
-          <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-4">
-            {data.signals.map((signal) => (
-              <div
-                key={signal.id}
-                className="bg-card border border-border rounded-xl p-6 hover:shadow-lg hover:border-primary/50 transition-all cursor-pointer"
-                onClick={() => {
-                  if (!signal.stock) return;
+          <div className="bg-card border border-border rounded-xl overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead className="bg-muted/50 border-b border-border">
+                  <tr>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">종목</th>
+                    <th className="px-4 py-3 text-center text-xs font-semibold text-muted-foreground uppercase tracking-wider">신호일</th>
+                    <th className="px-4 py-3 text-right text-xs font-semibold text-muted-foreground uppercase tracking-wider">신호가</th>
+                    <th className="px-4 py-3 text-right text-xs font-semibold text-muted-foreground uppercase tracking-wider">현재가</th>
+                    <th className="px-4 py-3 text-right text-xs font-semibold text-muted-foreground uppercase tracking-wider">수익률</th>
+                    <th className="px-4 py-3 text-center text-xs font-semibold text-muted-foreground uppercase tracking-wider">거래소</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border">
+                  {data.signals.map((signal) => {
+                    const chartUrl = signal.stock?.market === 'US'
+                      ? `https://m.stock.naver.com/fchart/foreign/stock/${signal.stock?.exchange === 'NASDAQ' ? signal.stock.symbol + '.O' : signal.stock?.symbol}`
+                      : `https://m.stock.naver.com/fchart/domestic/stock/${signal.stock?.symbol}`;
 
-                  // 네이버 차트 URL 생성 (StockItem.tsx와 동일한 로직)
-                  const url = signal.stock.market === 'US'
-                    ? `https://m.stock.naver.com/fchart/foreign/stock/${signal.stock.exchange === 'NASDAQ' ? signal.stock.symbol + '.O' : signal.stock.symbol}`
-                    : `https://m.stock.naver.com/fchart/domestic/stock/${signal.stock.symbol}`;
+                    const infoUrl = signal.stock?.market === 'US'
+                      ? `https://m.stock.naver.com/worldstock/stock/${signal.stock?.exchange === 'NASDAQ' ? signal.stock.symbol + '.O' : signal.stock?.symbol}/total`
+                      : `https://m.stock.naver.com/domestic/stock/${signal.stock?.symbol}/total`;
 
-                  window.open(url, '_blank');
-                }}
-              >
-                {/* Header */}
-                <div className="flex items-start justify-between mb-4">
-                  <div>
-                    <h3 className="text-lg font-bold text-foreground">{signal.stock?.name || '종목명 없음'}</h3>
-                    <p className="text-sm text-muted-foreground">
-                      {signal.stock?.symbol || 'N/A'} • {signal.stock?.market || 'N/A'}
-                    </p>
-                  </div>
-                  <div className="px-2 py-1 rounded-md bg-primary/10 text-primary text-xs font-medium">
-                    {signal.signal_type.toUpperCase()}
-                  </div>
-                </div>
+                    return (
+                      <tr
+                        key={signal.id}
+                        className="hover:bg-muted/50 transition-colors"
+                      >
+                        {/* 종목명 */}
+                        <td className="px-4 py-3 whitespace-nowrap">
+                          <div className="flex items-center gap-2">
+                            <div>
+                              <a
+                                href={infoUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-sm font-bold text-foreground hover:text-primary hover:underline"
+                                onClick={(e) => e.stopPropagation()}
+                              >
+                                {signal.stock?.name || '종목명 없음'}
+                              </a>
+                              <div className="text-xs text-muted-foreground flex items-center gap-1">
+                                {signal.stock?.symbol || 'N/A'}
+                                <a
+                                  href={chartUrl}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-primary/10 text-primary hover:bg-primary/20"
+                                  onClick={(e) => e.stopPropagation()}
+                                >
+                                  차트
+                                </a>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
 
-                {/* Signal Info */}
-                <div className="space-y-3">
-                  {/* 신호 날짜 */}
-                  <div className="flex items-center gap-2 text-sm">
-                    <Calendar className="h-4 w-4 text-muted-foreground" />
-                    <span className="text-muted-foreground">신호 날짜:</span>
-                    <span className="font-medium text-foreground">
-                      {formatDate(signal.signal_date)}
-                    </span>
-                  </div>
+                        {/* 신호일 */}
+                        <td className="px-4 py-3 whitespace-nowrap text-center">
+                          <span className="text-sm text-foreground">
+                            {formatDate(signal.signal_date)}
+                          </span>
+                        </td>
 
-                  {/* 신호 가격 */}
-                  <div className="flex items-center gap-2 text-sm">
-                    <DollarSign className="h-4 w-4 text-muted-foreground" />
-                    <span className="text-muted-foreground">신호 가격:</span>
-                    <span className="font-medium text-foreground">
-                      {formatPrice(signal.signal_price, signal.stock?.market || 'KR')}
-                    </span>
-                  </div>
+                        {/* 신호가 */}
+                        <td className="px-4 py-3 whitespace-nowrap text-right">
+                          <span className="text-sm font-mono text-foreground">
+                            {formatPrice(signal.signal_price, signal.stock?.market || 'KR')}
+                          </span>
+                        </td>
 
-                  {/* 현재가 */}
-                  {signal.current_price && (
-                    <div className="flex items-center gap-2 text-sm">
-                      <Activity className="h-4 w-4 text-muted-foreground" />
-                      <span className="text-muted-foreground">현재가:</span>
-                      <span className="font-medium text-foreground">
-                        {formatPrice(signal.current_price, signal.stock?.market || 'KR')}
-                      </span>
-                    </div>
-                  )}
+                        {/* 현재가 */}
+                        <td className="px-4 py-3 whitespace-nowrap text-right">
+                          <span className="text-sm font-mono text-foreground">
+                            {signal.current_price ? formatPrice(signal.current_price, signal.stock?.market || 'KR') : '-'}
+                          </span>
+                        </td>
 
-                  {/* 수익률 */}
-                  {signal.return_percent !== undefined && signal.return_percent !== null && (
-                    <div className="pt-3 border-t border-border">
-                      <div className="flex items-center justify-between">
-                        <span className="text-sm text-muted-foreground">신호 대비 수익률</span>
-                        <div className="flex items-center gap-1">
-                          {signal.return_percent >= 0 ? (
-                            <>
-                              <TrendingUp className="h-4 w-4 text-green-500" />
-                              <span className="text-lg font-bold text-green-600 dark:text-green-400">
-                                +{signal.return_percent.toFixed(2)}%
-                              </span>
-                            </>
+                        {/* 수익률 */}
+                        <td className="px-4 py-3 whitespace-nowrap text-right">
+                          {signal.return_percent !== undefined && signal.return_percent !== null ? (
+                            <span className={`inline-flex items-center gap-1 text-sm font-bold ${
+                              signal.return_percent >= 0
+                                ? 'text-green-600 dark:text-green-400'
+                                : 'text-red-600 dark:text-red-400'
+                            }`}>
+                              {signal.return_percent >= 0 ? (
+                                <TrendingUp className="h-3.5 w-3.5" />
+                              ) : (
+                                <TrendingDown className="h-3.5 w-3.5" />
+                              )}
+                              {signal.return_percent >= 0 ? '+' : ''}{signal.return_percent.toFixed(2)}%
+                            </span>
                           ) : (
-                            <>
-                              <TrendingDown className="h-4 w-4 text-red-500" />
-                              <span className="text-lg font-bold text-red-600 dark:text-red-400">
-                                {signal.return_percent.toFixed(2)}%
-                              </span>
-                            </>
+                            <span className="text-sm text-muted-foreground">-</span>
                           )}
-                        </div>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </div>
-            ))}
+                        </td>
+
+                        {/* 거래소 */}
+                        <td className="px-4 py-3 whitespace-nowrap text-center">
+                          <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                            signal.stock?.exchange === 'KOSPI'
+                              ? 'bg-primary/10 text-primary'
+                              : signal.stock?.exchange === 'KOSDAQ'
+                              ? 'bg-green-500/10 text-green-600 dark:text-green-400'
+                              : signal.stock?.market === 'US'
+                              ? 'bg-blue-500/10 text-blue-600 dark:text-blue-400'
+                              : 'bg-muted text-muted-foreground'
+                          }`}>
+                            {signal.stock?.exchange || signal.stock?.market || 'N/A'}
+                          </span>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
           </div>
         ) : (
           !isLoading && !error && (
