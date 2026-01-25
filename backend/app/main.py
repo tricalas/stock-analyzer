@@ -212,6 +212,7 @@ def get_stocks(
     limit: int = Query(20, ge=1, le=100),
     order_by: Optional[str] = Query("market_cap", description="Sort field (market_cap, change_percent)"),
     order_dir: Optional[str] = Query("desc", description="Sort direction (asc, desc)"),
+    nocache: bool = Query(False, description="Skip cache and fetch fresh data"),
     db: Session = Depends(get_db),
     current_user: Optional[User] = Depends(get_optional_current_user)
 ):
@@ -230,11 +231,12 @@ def get_stocks(
     }
     cache_key = hashlib.md5(orjson.dumps(cache_key_data, option=orjson.OPT_SORT_KEYS)).hexdigest()
 
-    # 캐시 확인
-    cached_data = get_cache(cache_key)
-    if cached_data:
-        logger.info(f"✅ Cache HIT for {user_token[:8]}... {market=} {skip=}")
-        return cached_data
+    # 캐시 확인 (nocache=true면 스킵)
+    if not nocache:
+        cached_data = get_cache(cache_key)
+        if cached_data:
+            logger.info(f"✅ Cache HIT for {user_token[:8]}... {market=} {skip=}")
+            return cached_data
 
     logger.info(f"⏳ Cache MISS for {user_token[:8]}... {market=} {skip=}")
 
