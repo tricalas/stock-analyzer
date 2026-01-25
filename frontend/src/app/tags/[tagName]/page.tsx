@@ -9,7 +9,7 @@ import StockChartModal from '@/components/StockChartModal';
 import AppLayout from '@/components/AppLayout';
 import { TrendingUp } from 'lucide-react';
 import ScrollToTopButton from '@/components/atoms/ScrollToTopButton';
-import { getNaverChartUrl } from '@/lib/naverStock';
+import { openNaverChartPopup } from '@/lib/naverStock';
 import { Toaster } from '@/components/ui/sonner';
 import { useTags } from '@/contexts/TagContext';
 
@@ -67,7 +67,7 @@ export default function TagPage() {
   const allStocks = data?.pages.flatMap((page) => page.stocks) ?? [];
 
   const handleStockClick = (stock: Stock) => {
-    window.open(getNaverChartUrl(stock), '_blank');
+    openNaverChartPopup(stock);
   };
 
   const handleShowChart = (stock: Stock) => {
