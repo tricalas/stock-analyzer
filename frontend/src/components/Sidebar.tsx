@@ -94,7 +94,7 @@ export default function Sidebar({ favoriteCount = 0, dislikeCount = 0 }: Sidebar
 
           return (
             <Link
-              key={item.name}
+              key={item.href}
               href={item.href}
               className={`
                 group flex items-center px-2 lg:px-3 py-2 text-xs lg:text-sm font-medium rounded-lg
