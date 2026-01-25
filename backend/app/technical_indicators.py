@@ -680,9 +680,9 @@ def generate_descending_trendline_breakout_signals(
             prev_close = df['close'].iloc[i - 1]
             breakout_confirmed = True
 
-            # 돌파 후 3일간 저가 확인
+            # 돌파 후 3일간 종가 확인
             for j in range(i, min(i + 3, len(df))):
-                if df['low'].iloc[j] < prev_close:
+                if df['close'].iloc[j] < prev_close:
                     breakout_confirmed = False
                     break
 
