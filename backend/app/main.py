@@ -157,18 +157,19 @@ def seed_default_tags(db: Session):
         }
     ]
 
+    # 태그가 하나도 없을 때만 기본 태그 생성 (최초 1회)
+    existing_tags_count = db.query(StockTag).count()
+    if existing_tags_count > 0:
+        logger.info(f"Tags already exist ({existing_tags_count}), skipping seed")
+        return
+
     for tag_data in default_tags:
-        # user_token=None인 시스템 태그 확인
-        existing_tag = db.query(StockTag).filter(
-            StockTag.name == tag_data["name"],
-            StockTag.user_token == None
-        ).first()
-        if not existing_tag:
-            tag = StockTag(**tag_data)
-            db.add(tag)
-            logger.info(f"Created default tag: {tag_data['display_name']}")
+        tag = StockTag(**tag_data)
+        db.add(tag)
+        logger.info(f"Created default tag: {tag_data['display_name']}")
 
     db.commit()
+    logger.info("Default tags seeded successfully")
 
 
 # 스케줄러 시작
