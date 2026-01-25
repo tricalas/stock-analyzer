@@ -5,7 +5,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import AppLayout from '@/components/AppLayout';
 import { TrendingUp, TrendingDown, Activity, RefreshCw, Calendar } from 'lucide-react';
 import { Toaster, toast } from 'sonner';
-import { getNaverChartUrl, getNaverInfoUrl } from '@/lib/naverStock';
+import { getNaverChartUrl, getNaverInfoUrl, openNaverChartPopup } from '@/lib/naverStock';
 
 interface Stock {
   id: number;
@@ -356,7 +356,7 @@ export default function SignalsPage() {
                         className="hover:bg-muted/50 transition-colors cursor-pointer"
                         onClick={() => {
                           if (stockInfo) {
-                            window.open(getNaverChartUrl(stockInfo), '_blank');
+                            openNaverChartPopup(stockInfo);
                           }
                         }}
                       >
