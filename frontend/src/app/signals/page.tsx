@@ -1,9 +1,9 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useState, useEffect, useRef } from 'react';
+import { useInfiniteQuery, useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import AppLayout from '@/components/AppLayout';
-import { TrendingUp, TrendingDown, Activity, RefreshCw, Calendar } from 'lucide-react';
+import { TrendingUp, TrendingDown, Activity, RefreshCw, Calendar, Loader2 } from 'lucide-react';
 import { Toaster, toast } from 'sonner';
 import { getNaverChartUrl, getNaverInfoUrl, openNaverChartPopup } from '@/lib/naverStock';
 
@@ -60,25 +60,45 @@ interface TaskProgress {
   completed_at?: string;
 }
 
+const PAGE_SIZE = 30;
+
 export default function SignalsPage() {
   const queryClient = useQueryClient();
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [currentTaskId, setCurrentTaskId] = useState<string | null>(null);
   const [showProgress, setShowProgress] = useState(false);
+  const loadMoreRef = useRef<HTMLDivElement>(null);
 
-  // 저장된 신호 조회 (빠름)
-  const { data, isLoading, error } = useQuery<SignalListResponse>({
-    queryKey: ['stored-signals'],
-    queryFn: async () => {
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/signals?limit=100`);
+  // 무한 스크롤로 신호 조회
+  const {
+    data,
+    isLoading,
+    error,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+  } = useInfiniteQuery({
+    queryKey: ['stored-signals-infinite'],
+    queryFn: async ({ pageParam = 0 }) => {
+      const response = await fetch(
+        `${process.env.NEXT_PUBLIC_API_URL}/api/signals?skip=${pageParam}&limit=${PAGE_SIZE}`
+      );
       if (!response.ok) throw new Error('Failed to fetch signals');
-      return response.json();
+      return response.json() as Promise<SignalListResponse>;
     },
-    refetchInterval: 30000, // 30초마다 자동 갱신
+    getNextPageParam: (lastPage, allPages) => {
+      const loadedCount = allPages.reduce((sum, page) => sum + page.signals.length, 0);
+      if (loadedCount < lastPage.total) {
+        return loadedCount;
+      }
+      return undefined;
+    },
+    initialPageParam: 0,
+    refetchInterval: 60000, // 1분마다 자동 갱신
   });
 
   // 작업 진행 상황 조회
-  const { data: progressData } = useQuery<TaskProgress>({
+  const { data: taskProgress } = useQuery<TaskProgress | null>({
     queryKey: ['task-progress', currentTaskId],
     queryFn: async () => {
       if (!currentTaskId) return null;
@@ -88,36 +108,53 @@ export default function SignalsPage() {
     },
     enabled: !!currentTaskId && showProgress,
     refetchInterval: (query) => {
-      // 작업이 완료되면 폴링 중지
       const data = query.state.data;
       if (data?.status === 'completed' || data?.status === 'failed') {
         return false;
       }
-      return 2000; // 2초마다 갱신
+      return 2000;
     },
   });
 
+  // Infinite scroll with IntersectionObserver
+  useEffect(() => {
+    if (!loadMoreRef.current) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting && hasNextPage && !isFetchingNextPage) {
+          fetchNextPage();
+        }
+      },
+      { threshold: 0.1 }
+    );
+
+    observer.observe(loadMoreRef.current);
+
+    return () => observer.disconnect();
+  }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
+
   // 진행 상황이 완료되면 신호 목록 갱신
   useEffect(() => {
-    if (progressData?.status === 'completed') {
+    if (taskProgress?.status === 'completed') {
       setTimeout(() => {
-        queryClient.invalidateQueries({ queryKey: ['stored-signals'] });
+        queryClient.invalidateQueries({ queryKey: ['stored-signals-infinite'] });
         setShowProgress(false);
         setCurrentTaskId(null);
         setIsRefreshing(false);
         toast.success('신호 분석 완료', {
-          description: progressData.message || '최신 매매 신호를 확인하세요',
+          description: taskProgress.message || '최신 매매 신호를 확인하세요',
         });
       }, 1000);
-    } else if (progressData?.status === 'failed') {
+    } else if (taskProgress?.status === 'failed') {
       setShowProgress(false);
       setCurrentTaskId(null);
       setIsRefreshing(false);
       toast.error('분석 실패', {
-        description: progressData.error_message || '잠시 후 다시 시도해주세요',
+        description: taskProgress.error_message || '잠시 후 다시 시도해주세요',
       });
     }
-  }, [progressData?.status, progressData?.message, queryClient]);
+  }, [taskProgress?.status, taskProgress?.message, taskProgress?.error_message, queryClient]);
 
   // 재분석 뮤테이션
   const refreshMutation = useMutation({
@@ -134,7 +171,6 @@ export default function SignalsPage() {
         description: '실시간으로 진행 상황을 확인할 수 있습니다',
       });
 
-      // task_id로 진행 상황 추적 시작
       if (data.task_id) {
         setCurrentTaskId(data.task_id);
         setShowProgress(true);
@@ -148,6 +184,12 @@ export default function SignalsPage() {
       setIsRefreshing(false);
     },
   });
+
+  // 모든 페이지의 신호를 하나의 배열로 합치기
+  const allSignals = data?.pages.flatMap(page => page.signals) || [];
+  const stats = data?.pages[0]?.stats;
+  const analyzedAt = data?.pages[0]?.analyzed_at;
+  const total = data?.pages[0]?.total || 0;
 
   const formatPrice = (price: number, market: string) => {
     if (market === 'KR') {
@@ -186,7 +228,7 @@ export default function SignalsPage() {
               매매 신호
             </h1>
             <p className="text-muted-foreground mt-2">
-              분석을 통해 발견된 매수 신호
+              분석을 통해 발견된 매수 신호 {total > 0 && <span className="text-foreground font-medium">({total}개)</span>}
             </p>
           </div>
           <button
@@ -200,53 +242,49 @@ export default function SignalsPage() {
         </div>
 
         {/* Progress Display */}
-        {showProgress && progressData && (
+        {showProgress && taskProgress && (
           <div className="bg-primary/10 border border-primary/30 rounded-xl p-6">
             <div className="space-y-4">
-              {/* Progress Header */}
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
                   <RefreshCw className="h-5 w-5 text-primary animate-spin" />
                   <div>
                     <h3 className="font-semibold text-foreground">신호 분석 진행 중</h3>
-                    <p className="text-sm text-muted-foreground">{progressData.message}</p>
+                    <p className="text-sm text-muted-foreground">{taskProgress.message}</p>
                   </div>
                 </div>
                 <div className="text-right">
                   <p className="text-sm font-medium text-foreground">
-                    {progressData.current_item} / {progressData.total_items}
+                    {taskProgress.current_item} / {taskProgress.total_items}
                   </p>
                   <p className="text-xs text-muted-foreground">
-                    {Math.round((progressData.current_item / progressData.total_items) * 100)}% 완료
+                    {Math.round((taskProgress.current_item / taskProgress.total_items) * 100)}% 완료
                   </p>
                 </div>
               </div>
 
-              {/* Progress Bar */}
               <div className="w-full bg-muted rounded-full h-3">
                 <div
                   className="bg-primary rounded-full h-3 transition-all duration-300 ease-out"
                   style={{
-                    width: `${(progressData.current_item / progressData.total_items) * 100}%`,
+                    width: `${(taskProgress.current_item / taskProgress.total_items) * 100}%`,
                   }}
                 />
               </div>
 
-              {/* Current Stock */}
-              {progressData.current_stock_name && (
+              {taskProgress.current_stock_name && (
                 <p className="text-sm text-muted-foreground">
-                  현재 분석 중: <span className="font-medium text-foreground">{progressData.current_stock_name}</span>
+                  현재 분석 중: <span className="font-medium text-foreground">{taskProgress.current_stock_name}</span>
                 </p>
               )}
 
-              {/* Stats */}
               <div className="flex gap-4 text-sm">
                 <span className="text-green-600 dark:text-green-400">
-                  성공: {progressData.success_count}
+                  성공: {taskProgress.success_count}
                 </span>
-                {progressData.failed_count > 0 && (
+                {taskProgress.failed_count > 0 && (
                   <span className="text-red-600 dark:text-red-400">
-                    실패: {progressData.failed_count}
+                    실패: {taskProgress.failed_count}
                   </span>
                 )}
               </div>
@@ -255,14 +293,14 @@ export default function SignalsPage() {
         )}
 
         {/* Stats */}
-        {data && (
+        {stats && (
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <div className="bg-card border border-border rounded-xl p-6">
               <div className="flex items-center gap-3">
                 <Activity className="h-8 w-8 text-blue-500" />
                 <div>
                   <p className="text-sm text-muted-foreground">총 신호</p>
-                  <p className="text-2xl font-bold text-foreground">{data.stats?.total_signals || 0}개</p>
+                  <p className="text-2xl font-bold text-foreground">{stats.total_signals || 0}개</p>
                 </div>
               </div>
             </div>
@@ -273,7 +311,7 @@ export default function SignalsPage() {
                 <div>
                   <p className="text-sm text-muted-foreground">수익 중</p>
                   <p className="text-2xl font-bold text-green-600 dark:text-green-400">
-                    {data.stats?.positive_returns || 0}개
+                    {stats.positive_returns || 0}개
                   </p>
                 </div>
               </div>
@@ -285,7 +323,7 @@ export default function SignalsPage() {
                 <div>
                   <p className="text-sm text-muted-foreground">손실 중</p>
                   <p className="text-2xl font-bold text-red-600 dark:text-red-400">
-                    {data.stats?.negative_returns || 0}개
+                    {stats.negative_returns || 0}개
                   </p>
                 </div>
               </div>
@@ -297,7 +335,7 @@ export default function SignalsPage() {
                 <div>
                   <p className="text-sm text-muted-foreground">마지막 분석</p>
                   <p className="text-sm font-medium text-foreground">
-                    {data.analyzed_at ? formatDateTime(data.analyzed_at) : '분석 대기중'}
+                    {analyzedAt ? formatDateTime(analyzedAt) : '분석 대기중'}
                   </p>
                 </div>
               </div>
@@ -305,7 +343,7 @@ export default function SignalsPage() {
           </div>
         )}
 
-        {/* Loading */}
+        {/* Loading (initial) */}
         {isLoading && (
           <div className="flex flex-col items-center justify-center py-24">
             <div className="relative">
@@ -328,11 +366,11 @@ export default function SignalsPage() {
         )}
 
         {/* Signal Table */}
-        {data && data.signals.length > 0 ? (
+        {allSignals.length > 0 ? (
           <div className="bg-card border border-border rounded-xl overflow-hidden">
             <div className="overflow-x-auto">
               <table className="w-full">
-                <thead className="bg-muted/50 border-b border-border">
+                <thead className="bg-muted/50 border-b border-border sticky top-0">
                   <tr>
                     <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">종목</th>
                     <th className="px-4 py-3 text-center text-xs font-semibold text-muted-foreground uppercase tracking-wider">신호일</th>
@@ -343,7 +381,7 @@ export default function SignalsPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border">
-                  {data.signals.map((signal) => {
+                  {allSignals.map((signal) => {
                     const stockInfo = signal.stock ? {
                       symbol: signal.stock.symbol,
                       market: signal.stock.market,
@@ -449,6 +487,28 @@ export default function SignalsPage() {
                   })}
                 </tbody>
               </table>
+            </div>
+
+            {/* Load More Trigger & Loading indicator */}
+            <div ref={loadMoreRef} className="py-4">
+              {isFetchingNextPage ? (
+                <div className="flex items-center justify-center gap-2 text-muted-foreground">
+                  <Loader2 className="h-5 w-5 animate-spin" />
+                  <span className="text-sm">더 불러오는 중...</span>
+                </div>
+              ) : hasNextPage ? (
+                <div className="flex items-center justify-center">
+                  <span className="text-sm text-muted-foreground">
+                    스크롤하여 더 보기 ({allSignals.length} / {total})
+                  </span>
+                </div>
+              ) : allSignals.length > 0 ? (
+                <div className="flex items-center justify-center">
+                  <span className="text-sm text-muted-foreground">
+                    모든 신호를 불러왔습니다 ({total}개)
+                  </span>
+                </div>
+              ) : null}
             </div>
           </div>
         ) : (

@@ -1796,15 +1796,17 @@ def get_trading_signals(
 @app.get("/api/signals", response_model=schemas.SignalListResponse)
 def get_stored_signals(
     signal_type: Optional[str] = Query(None, description="Signal type filter (buy, sell)"),
-    limit: int = Query(100, ge=1, le=500),
+    skip: int = Query(0, ge=0, description="Number of records to skip (for pagination)"),
+    limit: int = Query(30, ge=1, le=500),
     db: Session = Depends(get_db),
     current_user: Optional[User] = Depends(get_optional_current_user)
 ):
     """
-    저장된 매매 신호 조회 (DB에서 읽기만 함 - 빠름)
+    저장된 매매 신호 조회 (DB에서 읽기만 함 - 빠름, 페이지네이션 지원)
 
     Args:
         signal_type: 신호 타입 필터
+        skip: 건너뛸 레코드 수 (페이지네이션용)
         limit: 최대 조회 개수
 
     Returns:
@@ -1816,10 +1818,13 @@ def get_stored_signals(
     if signal_type:
         query = query.filter(StockSignal.signal_type == signal_type)
 
-    # 최신 신호부터
+    # 전체 카운트 (페이지네이션용)
+    total = query.count()
+
+    # 최신 신호부터 (페이지네이션 적용)
     signals = query.order_by(
         desc(StockSignal.signal_date)
-    ).limit(limit).all()
+    ).offset(skip).limit(limit).all()
 
     # 종목 정보 로드
     stock_ids = [s.stock_id for s in signals]
@@ -1848,14 +1853,18 @@ def get_stored_signals(
         }
         signal_responses.append(signal_dict)
 
-    # 통계 계산
-    total = len(signals)
-    stats = {
-        "total_signals": total,
-        "positive_returns": len([s for s in signals if s.return_percent and s.return_percent > 0]),
-        "negative_returns": len([s for s in signals if s.return_percent and s.return_percent < 0]),
-        "avg_return": sum([s.return_percent or 0 for s in signals]) / total if total > 0 else 0
-    }
+    # 통계 계산 (전체 데이터 기준 - 첫 페이지에서만 계산)
+    if skip == 0:
+        all_signals = query.all()
+        stats = {
+            "total_signals": total,
+            "positive_returns": len([s for s in all_signals if s.return_percent and s.return_percent > 0]),
+            "negative_returns": len([s for s in all_signals if s.return_percent and s.return_percent < 0]),
+            "avg_return": sum([s.return_percent or 0 for s in all_signals]) / total if total > 0 else 0
+        }
+    else:
+        # 이후 페이지에서는 통계 생략
+        stats = None
 
     # 마지막 분석 시간
     latest_analyzed = db.query(StockSignal).order_by(
