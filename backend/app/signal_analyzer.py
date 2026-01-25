@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import desc
 
 from app.models import Stock, StockPriceHistory, StockSignal, TaskProgress
-from app.technical_indicators import generate_descending_trendline_breakout_signals, generate_approaching_breakout_signals
+from app.technical_indicators import generate_descending_trendline_breakout_signals, generate_approaching_breakout_signals, generate_pullback_signals
 from app.database import get_db
 
 logger = logging.getLogger(__name__)
@@ -28,7 +28,8 @@ class SignalAnalyzer:
         limit: Optional[int] = None,
         days: int = 120,
         db: Optional[Session] = None,
-        force_full: bool = False
+        force_full: bool = False,
+        task_id: Optional[str] = None
     ) -> Dict:
         """
         종목들의 신호를 분석하고 DB에 저장
@@ -39,6 +40,7 @@ class SignalAnalyzer:
             days: 분석할 일수
             db: DB 세션 (없으면 자동 생성)
             force_full: True면 델타 무시하고 전체 스캔
+            task_id: TaskProgress에 사용할 task_id (선택적, 없으면 자동 생성)
 
         Returns:
             분석 결과 통계
@@ -48,8 +50,9 @@ class SignalAnalyzer:
             db = next(get_db())
             close_db = True
 
-        # 작업 진행 상황 추적 생성
-        task_id = str(uuid.uuid4())
+        # 작업 진행 상황 추적 생성 (task_id가 없으면 자동 생성)
+        if task_id is None:
+            task_id = str(uuid.uuid4())
         task_progress = None
 
         try:
@@ -232,7 +235,7 @@ class SignalAnalyzer:
         # 1. 기존 신호 삭제 (새 알고리즘으로 재분석하므로)
         db.query(StockSignal).filter(
             StockSignal.stock_id == stock_id,
-            StockSignal.strategy_name.in_(['descending_trendline_breakout', 'approaching_breakout'])
+            StockSignal.strategy_name.in_(['descending_trendline_breakout', 'approaching_breakout', 'pullback_buy'])
         ).delete(synchronize_session=False)
         db.commit()
 
@@ -372,8 +375,17 @@ class SignalAnalyzer:
             )
             breakout_df['sma_90'] = sma_90_series
 
+            # 돌파 인덱스 추출 (되돌림 신호에서 사용)
+            breakout_indices = []
+            slope = breakout_df['trendline_slope'].iloc[0] if len(breakout_df) > 0 else 0
+            intercept = breakout_df['trendline_intercept'].iloc[0] if len(breakout_df) > 0 else 0
+
             buy_signals = breakout_df[breakout_df['buy_signal'] == 1].copy()
             for idx, row in buy_signals.iterrows():
+                # 정수 인덱스 저장 (되돌림 분석용)
+                int_idx = df.index.get_loc(idx)
+                breakout_indices.append(int_idx)
+
                 signal_price = row.get('close', 0)
                 sma_90 = row.get('sma_90', 0)
                 return_pct = 0.0
@@ -401,6 +413,55 @@ class SignalAnalyzer:
                     }
                 }
                 signals.append(signal_info)
+
+            # 1.5. 되돌림(Pullback) 신호 (돌파가 있는 경우에만)
+            if breakout_indices and slope < 0:
+                pullback_df = generate_pullback_signals(
+                    df,
+                    breakout_indices=breakout_indices,
+                    slope=slope,
+                    intercept=intercept,
+                    pullback_threshold=3.0  # 추세선의 3% 이내
+                )
+                pullback_df['sma_90'] = sma_90_series
+
+                # 최근 10일 데이터만 필터링 (최근 되돌림만)
+                recent_dates = df.index[-10:] if len(df) >= 10 else df.index
+                pullback_signals_df = pullback_df[
+                    (pullback_df['pullback_signal'] == 1) &
+                    (pullback_df.index.isin(recent_dates))
+                ].copy()
+
+                for idx, row in pullback_signals_df.iterrows():
+                    signal_price = row.get('close', 0)
+                    sma_90 = row.get('sma_90', 0)
+                    distance = row.get('pullback_distance', 0)
+                    return_pct = 0.0
+                    sma_90_ratio = 0.0
+
+                    if current_price and signal_price > 0:
+                        return_pct = ((current_price - signal_price) / signal_price) * 100
+
+                    if sma_90 and sma_90 > 0:
+                        sma_90_ratio = (signal_price / sma_90) * 100
+
+                    signal_info = {
+                        'signal_type': 'pullback',
+                        'strategy_name': 'pullback_buy',
+                        'signal_date': idx.date() if hasattr(idx, 'date') else idx,
+                        'signal_price': float(signal_price),
+                        'current_price': float(current_price) if current_price else None,
+                        'return_percent': float(round(return_pct, 2)),
+                        'details': {
+                            'strategy': 'pullback_buy',
+                            'trendline_slope': float(slope),
+                            'trendline_intercept': float(intercept),
+                            'pullback_distance': float(round(distance, 2)) if distance else None,
+                            'sma_90': float(sma_90) if sma_90 else None,
+                            'sma_90_ratio': float(round(sma_90_ratio, 1)) if sma_90_ratio else None
+                        }
+                    }
+                    signals.append(signal_info)
 
             # 2. 돌파 임박 신호 (최근 5일만)
             approaching_df = generate_approaching_breakout_signals(

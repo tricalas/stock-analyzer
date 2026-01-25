@@ -446,11 +446,17 @@ export default function SignalsPage() {
                             </span>
                             {/* 신호 타입 배지 */}
                             {(() => {
-                              const isApproaching = signal.strategy_name === 'approaching_breakout';
-                              if (isApproaching) {
+                              if (signal.strategy_name === 'approaching_breakout') {
                                 return (
                                   <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-yellow-500/20 text-yellow-600 dark:text-yellow-400">
                                     임박
+                                  </span>
+                                );
+                              }
+                              if (signal.strategy_name === 'pullback_buy') {
+                                return (
+                                  <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-purple-500/20 text-purple-600 dark:text-purple-400">
+                                    되돌림
                                   </span>
                                 );
                               }

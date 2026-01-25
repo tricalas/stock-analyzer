@@ -662,7 +662,7 @@ def generate_descending_trendline_breakout_signals(
         return result
 
     # 5. 돌파 감지 (고가 기준 - 추세선도 고가로 그렸으므로)
-    # + 돌파 확인: 3일 내 돌파 전날 종가 이탈하지 않아야 유효
+    # 단순화: 고가가 추세선 돌파하면 바로 신호
     last_lower_high_idx = lower_highs[-1][0]
 
     for i in range(last_lower_high_idx + 1, len(df)):
@@ -676,18 +676,7 @@ def generate_descending_trendline_breakout_signals(
         current_above = df['high'].iloc[i] > trendline_value
 
         if prev_below and current_above:
-            # 돌파 확인: 3일 내 돌파 전날 종가를 이탈하지 않아야 함
-            prev_close = df['close'].iloc[i - 1]
-            breakout_confirmed = True
-
-            # 돌파 후 3일간 종가 확인
-            for j in range(i, min(i + 3, len(df))):
-                if df['close'].iloc[j] < prev_close:
-                    breakout_confirmed = False
-                    break
-
-            if breakout_confirmed:
-                buy_signals[i] = 1
+            buy_signals[i] = 1
 
     result['buy_signal'] = buy_signals
     result['trendline_slope'] = slope
@@ -812,6 +801,76 @@ def generate_approaching_breakout_signals(
     result['distance_to_trendline'] = distances
     result['trendline_slope'] = slope
     result['trendline_intercept'] = intercept
+
+    return result
+
+
+def generate_pullback_signals(
+    df: pd.DataFrame,
+    breakout_indices: List[int],
+    slope: float,
+    intercept: float,
+    pullback_threshold: float = 3.0
+) -> pd.DataFrame:
+    """
+    돌파 후 되돌림 알림 신호 생성
+
+    전략:
+    1. 돌파가 발생한 종목에서
+    2. 돌파 이후 가격이 추세선 근처로 되돌아오면
+    3. 알림 신호 발생 (추세선의 3% 이내)
+
+    Args:
+        df: OHLCV 데이터프레임
+        breakout_indices: 돌파가 발생한 인덱스들 (정수 인덱스)
+        slope: 추세선 기울기
+        intercept: 추세선 절편
+        pullback_threshold: 추세선 근처 기준 (%, 기본 3%)
+
+    Returns:
+        되돌림 신호가 추가된 데이터프레임
+
+    추가 컬럼:
+        - pullback_signal: 되돌림 신호 (0 or 1)
+        - pullback_distance: 추세선까지 거리 (%)
+    """
+    result = df.copy()
+    pullback_signals = [0] * len(df)
+    pullback_distances = [None] * len(df)
+
+    if not breakout_indices or slope >= 0:
+        result['pullback_signal'] = pullback_signals
+        result['pullback_distance'] = pullback_distances
+        return result
+
+    # 각 돌파 지점 이후에서 되돌림 탐색
+    for breakout_idx in breakout_indices:
+        # 돌파 이후부터 탐색
+        for i in range(breakout_idx + 1, len(df)):
+            # 이미 되돌림 신호가 있으면 스킵
+            if pullback_signals[i] == 1:
+                continue
+
+            trendline_value = slope * i + intercept
+            low_price = df['low'].iloc[i]
+            close_price = df['close'].iloc[i]
+
+            # 추세선까지 거리 계산 (저가 기준 %)
+            if low_price > 0 and trendline_value > 0:
+                # 현재 가격이 추세선 위에 있어야 함 (돌파 유지)
+                if close_price <= trendline_value:
+                    continue
+
+                # 저가가 추세선에 가까운지 확인
+                distance_pct = ((low_price - trendline_value) / trendline_value) * 100
+                pullback_distances[i] = distance_pct
+
+                # 조건: 저가가 추세선의 threshold% 이내로 접근
+                if 0 <= distance_pct <= pullback_threshold:
+                    pullback_signals[i] = 1
+
+    result['pullback_signal'] = pullback_signals
+    result['pullback_distance'] = pullback_distances
 
     return result
 
