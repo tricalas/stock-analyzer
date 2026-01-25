@@ -1,9 +1,11 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
-import { stockApi, Stock } from '@/lib/api';
-import { Search, X, TrendingUp, TrendingDown } from 'lucide-react';
+import { stockApi, Stock, Tag } from '@/lib/api';
+import { Search, X, TrendingUp, TrendingDown, Star, ThumbsDown, ShoppingCart, ThumbsUp, Eye, AlertCircle, Trash2, BarChart3 } from 'lucide-react';
 import { toast } from 'sonner';
+import { useTags } from '@/contexts/TagContext';
+import { useQueryClient } from '@tanstack/react-query';
 
 interface SearchBarProps {
   onStockSelect?: (stock: Stock) => void;
@@ -18,6 +20,9 @@ const SearchBar: React.FC<SearchBarProps> = ({ onStockSelect }) => {
   const searchRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const { tags: availableTags } = useTags();
+  const queryClient = useQueryClient();
+  const [togglingTags, setTogglingTags] = useState<Map<number, Set<number>>>(new Map()); // Map<stockId, Set<tagId>>
 
   // 외부 클릭 감지
   useEffect(() => {
@@ -98,7 +103,12 @@ const SearchBar: React.FC<SearchBarProps> = ({ onStockSelect }) => {
       case 'Enter':
         e.preventDefault();
         if (selectedIndex >= 0 && selectedIndex < searchResults.length) {
-          handleStockSelect(searchResults[selectedIndex]);
+          const stock = searchResults[selectedIndex];
+          handleOpenChart(e as any, stock);
+          setSearchQuery('');
+          setShowResults(false);
+          setSearchResults([]);
+          setSelectedIndex(-1);
         }
         break;
       case 'Escape':
@@ -124,6 +134,130 @@ const SearchBar: React.FC<SearchBarProps> = ({ onStockSelect }) => {
     setShowResults(false);
     setSelectedIndex(-1);
     inputRef.current?.focus();
+  };
+
+  // 태그 토글 핸들러
+  const handleToggleTag = async (e: React.MouseEvent, stock: Stock, tag: Tag) => {
+    e.stopPropagation();
+
+    // Check if this tag is already being toggled for this stock
+    const stockTogglingTags = togglingTags.get(stock.id);
+    if (stockTogglingTags?.has(tag.id)) {
+      return;
+    }
+
+    const hasTag = stock.tags?.some(t => t.id === tag.id) || false;
+
+    // Add to toggling set
+    setTogglingTags(prev => {
+      const next = new Map(prev);
+      const stockTags = next.get(stock.id) || new Set();
+      stockTags.add(tag.id);
+      next.set(stock.id, stockTags);
+      return next;
+    });
+
+    try {
+      if (hasTag) {
+        await stockApi.removeTagFromStock(stock.id, tag.id);
+        // Update local state
+        setSearchResults(prev =>
+          prev.map(s =>
+            s.id === stock.id
+              ? { ...s, tags: s.tags?.filter(t => t.id !== tag.id) || [] }
+              : s
+          )
+        );
+        queryClient.invalidateQueries({ queryKey: ['stocks'] });
+        toast.success(`${tag.display_name} 태그 제거 완료!`);
+      } else {
+        await stockApi.addTagToStock(stock.id, tag.id);
+        // Update local state
+        setSearchResults(prev =>
+          prev.map(s =>
+            s.id === stock.id
+              ? { ...s, tags: [...(s.tags || []), tag] }
+              : s
+          )
+        );
+        queryClient.invalidateQueries({ queryKey: ['stocks'] });
+        toast.success(`${tag.display_name} 태그 추가 완료!`);
+      }
+    } catch (error) {
+      console.error(`Error toggling tag ${tag.name} for ${stock.symbol}:`, error);
+      toast.error(`${tag.display_name} 태그 ${hasTag ? '제거' : '추가'} 실패`, {
+        description: '요청 중 오류가 발생했습니다.'
+      });
+    } finally {
+      // Remove from toggling set
+      setTogglingTags(prev => {
+        const next = new Map(prev);
+        const stockTags = next.get(stock.id);
+        if (stockTags) {
+          stockTags.delete(tag.id);
+          if (stockTags.size === 0) {
+            next.delete(stock.id);
+          } else {
+            next.set(stock.id, stockTags);
+          }
+        }
+        return next;
+      });
+    }
+  };
+
+  // 태그 아이콘 가져오기
+  const getTagIcon = (iconName?: string) => {
+    const iconProps = { className: "h-3.5 w-3.5" };
+    switch (iconName) {
+      case 'Star':
+        return <Star {...iconProps} />;
+      case 'ThumbsDown':
+        return <ThumbsDown {...iconProps} />;
+      case 'ShoppingCart':
+        return <ShoppingCart {...iconProps} />;
+      case 'ThumbsUp':
+        return <ThumbsUp {...iconProps} />;
+      case 'Eye':
+        return <Eye {...iconProps} />;
+      case 'TrendingUp':
+        return <TrendingUp {...iconProps} />;
+      case 'AlertCircle':
+        return <AlertCircle {...iconProps} />;
+      case 'Trash2':
+        return <Trash2 {...iconProps} />;
+      default:
+        return null;
+    }
+  };
+
+  // 태그 색상 클래스
+  const getTagColorClass = (color?: string, isActive?: boolean) => {
+    if (!isActive) {
+      return 'bg-card text-foreground border-border hover:bg-muted/50';
+    }
+    return 'bg-purple-600 text-white border-purple-600 hover:bg-purple-700';
+  };
+
+  // 네이버 차트 열기
+  const handleOpenChart = (e: React.MouseEvent, stock: Stock) => {
+    e.stopPropagation();
+
+    const width = Math.floor(window.screen.width * 0.7);
+    const height = window.screen.height;
+    const left = Math.floor(window.screen.width * 0.3);
+    const top = 0;
+
+    const naverSymbol = stock.exchange === 'NASDAQ' ? `${stock.symbol}.O` : stock.symbol;
+    const url = stock.market === 'US'
+      ? `https://m.stock.naver.com/fchart/foreign/stock/${naverSymbol}`
+      : `https://m.stock.naver.com/fchart/domestic/stock/${stock.symbol}`;
+
+    window.open(
+      url,
+      '_blank',
+      `width=${width},height=${height},left=${left},top=${top},resizable=yes,scrollbars=yes`
+    );
   };
 
   // 가격 변동 포맷
@@ -185,77 +319,116 @@ const SearchBar: React.FC<SearchBarProps> = ({ onStockSelect }) => {
 
       {/* 검색 결과 드롭다운 */}
       {showResults && searchResults.length > 0 && (
-        <div className="absolute z-50 w-full mt-2 bg-card border border-border rounded-lg shadow-2xl max-h-[500px] overflow-y-auto">
-          {searchResults.map((stock, index) => (
-            <div
-              key={stock.id}
-              onClick={() => handleStockSelect(stock)}
-              className={`px-4 py-3 cursor-pointer border-b border-border/50 last:border-b-0 transition-colors ${
-                index === selectedIndex
-                  ? 'bg-primary/10'
-                  : 'hover:bg-muted/50'
-              }`}
-            >
-              <div className="flex items-start justify-between">
-                <div className="flex-1 min-w-0">
-                  {/* 종목명 & 심볼 */}
-                  <div className="flex items-center gap-2 mb-1">
-                    <span className="font-semibold text-foreground truncate">
-                      {stock.name}
-                    </span>
-                    <span className="text-sm text-muted-foreground font-mono">
-                      {stock.symbol}
-                    </span>
-                  </div>
-
-                  {/* 거래소 & 시가총액 */}
-                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                    <span className={`px-2 py-0.5 rounded text-xs font-medium ${
-                      stock.exchange === 'KOSPI'
-                        ? 'bg-primary/10 text-primary'
-                        : stock.exchange === 'KOSDAQ'
-                        ? 'bg-gain/10 text-gain'
-                        : 'bg-secondary/10 text-secondary-foreground'
-                    }`}>
-                      {stock.exchange || stock.market}
-                    </span>
-                    {stock.market_cap && (
-                      <span className="font-mono">
-                        시총 {formatMarketCap(stock.market_cap)}
+        <div className="absolute z-50 w-full mt-2 bg-card border border-border rounded-lg shadow-2xl max-h-[600px] overflow-y-auto">
+          {searchResults.map((stock, index) => {
+            const stockTogglingTags = togglingTags.get(stock.id) || new Set();
+            return (
+              <div
+                key={stock.id}
+                className={`px-4 py-3 border-b border-border/50 last:border-b-0 transition-colors ${
+                  index === selectedIndex
+                    ? 'bg-primary/10'
+                    : 'hover:bg-muted/50'
+                }`}
+              >
+                <div className="flex items-start justify-between gap-4">
+                  <div className="flex-1 min-w-0">
+                    {/* 종목명 & 심볼 & 차트 버튼 */}
+                    <div className="flex items-center gap-2 mb-2">
+                      <button
+                        onClick={(e) => handleOpenChart(e, stock)}
+                        className="font-semibold text-foreground hover:text-primary hover:underline cursor-pointer transition-colors text-left truncate"
+                      >
+                        {stock.name}
+                      </button>
+                      <span className="text-sm text-muted-foreground font-mono flex-shrink-0">
+                        {stock.symbol}
                       </span>
-                    )}
-                    {stock.sector && (
-                      <span className="truncate max-w-[200px]">
-                        {stock.sector}
-                      </span>
-                    )}
-                  </div>
-                </div>
-
-                {/* 가격 정보 */}
-                <div className="flex flex-col items-end ml-4">
-                  {stock.current_price && (
-                    <span className="font-mono font-semibold text-foreground">
-                      {stock.current_price.toLocaleString()}
-                      {stock.market === 'KR' ? '원' : '$'}
-                    </span>
-                  )}
-                  {stock.change_percent !== undefined && (
-                    <div className={`flex items-center gap-1 text-sm font-semibold ${getChangeColor(stock.change_percent)}`}>
-                      {stock.change_percent > 0 ? (
-                        <TrendingUp className="h-3 w-3" />
-                      ) : stock.change_percent < 0 ? (
-                        <TrendingDown className="h-3 w-3" />
-                      ) : null}
-                      <span className="font-mono">
-                        {formatChange(stock.change_percent)}
-                      </span>
+                      <button
+                        onClick={(e) => handleOpenChart(e, stock)}
+                        className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-primary/10 text-primary hover:bg-primary/20 cursor-pointer transition-colors flex-shrink-0"
+                        title="차트 보기"
+                      >
+                        <BarChart3 className="h-3 w-3 mr-1" />
+                        차트
+                      </button>
                     </div>
-                  )}
+
+                    {/* 거래소 & 시가총액 */}
+                    <div className="flex items-center gap-2 text-xs text-muted-foreground mb-2">
+                      <span className={`px-2 py-0.5 rounded text-xs font-medium ${
+                        stock.exchange === 'KOSPI'
+                          ? 'bg-primary/10 text-primary'
+                          : stock.exchange === 'KOSDAQ'
+                          ? 'bg-gain/10 text-gain'
+                          : 'bg-secondary/10 text-secondary-foreground'
+                      }`}>
+                        {stock.exchange || stock.market}
+                      </span>
+                      {stock.market_cap && (
+                        <span className="font-mono">
+                          시총 {formatMarketCap(stock.market_cap)}
+                        </span>
+                      )}
+                      {stock.sector && (
+                        <span className="truncate max-w-[200px]">
+                          {stock.sector}
+                        </span>
+                      )}
+                    </div>
+
+                    {/* 태그 버튼 */}
+                    {availableTags.length > 0 && (
+                      <div className="flex gap-1.5 mt-2 overflow-x-auto pb-1 scrollbar-thin scrollbar-thumb-muted scrollbar-track-transparent">
+                        {availableTags.map((tag) => {
+                          const hasTag = stock.tags?.some(t => t.id === tag.id) || false;
+                          const isToggling = stockTogglingTags.has(tag.id);
+                          return (
+                            <button
+                              key={tag.id}
+                              onClick={(e) => handleToggleTag(e, stock, tag)}
+                              disabled={isToggling}
+                              className={`inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-semibold border transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer whitespace-nowrap flex-shrink-0 ${getTagColorClass(tag.color, hasTag)}`}
+                              title={hasTag ? `${tag.display_name} 제거` : `${tag.display_name} 추가`}
+                            >
+                              {isToggling ? (
+                                <div className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-current border-t-transparent"></div>
+                              ) : (
+                                getTagIcon(tag.icon)
+                              )}
+                              <span>{tag.display_name}</span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* 가격 정보 */}
+                  <div className="flex flex-col items-end ml-4 flex-shrink-0">
+                    {stock.current_price && (
+                      <span className="font-mono font-semibold text-foreground">
+                        {stock.current_price.toLocaleString()}
+                        {stock.market === 'KR' ? '원' : '$'}
+                      </span>
+                    )}
+                    {stock.change_percent !== undefined && (
+                      <div className={`flex items-center gap-1 text-sm font-semibold ${getChangeColor(stock.change_percent)}`}>
+                        {stock.change_percent > 0 ? (
+                          <TrendingUp className="h-3 w-3" />
+                        ) : stock.change_percent < 0 ? (
+                          <TrendingDown className="h-3 w-3" />
+                        ) : null}
+                        <span className="font-mono">
+                          {formatChange(stock.change_percent)}
+                        </span>
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
 

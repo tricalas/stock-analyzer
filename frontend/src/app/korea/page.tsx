@@ -14,10 +14,9 @@ import { Toaster } from '@/components/ui/sonner';
 import { toast } from 'sonner';
 import { useAuth } from '@/contexts/AuthContext';
 
-export default function Home() {
+export default function KoreaPage() {
   const queryClient = useQueryClient();
   const { user } = useAuth();
-  const [activeTab, setActiveTab] = useState<'ALL' | 'US' | 'KR' | 'FAVORITES' | 'DISLIKES'>('US');
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [selectedStock, setSelectedStock] = useState<Stock | null>(null);
   const [isChartModalOpen, setIsChartModalOpen] = useState(false);
@@ -52,24 +51,15 @@ export default function Home() {
     isFetchingNextPage,
     refetch,
   } = useInfiniteQuery({
-    queryKey: ['stocks', activeTab],
+    queryKey: ['stocks', 'KR'],
     queryFn: ({ pageParam = 0 }) => {
-      if (activeTab === 'FAVORITES') {
-        return stockApi.getFavorites();
-      }
-      if (activeTab === 'DISLIKES') {
-        return stockApi.getDislikes();
-      }
       return stockApi.getStocks({
-        market: activeTab === 'ALL' ? undefined : activeTab,
+        market: 'KR',
         skip: pageParam,
         limit: 20,
       });
     },
     getNextPageParam: (lastPage, allPages) => {
-      if (activeTab === 'FAVORITES' || activeTab === 'DISLIKES') {
-        return undefined; // 즐겨찾기/싫어요는 페이징 안함
-      }
       const loadedCount = allPages.reduce((sum, page) => sum + (page.stocks?.length || 0), 0);
       return loadedCount < (lastPage.total || 0) ? loadedCount : undefined;
     },
@@ -98,8 +88,8 @@ export default function Home() {
     setIsRefreshing(true);
     toast.info('데이터를 가져오는 중입니다... (약 20초 소요)');
     try {
-      console.log('Starting crawl with market:', activeTab);
-      const result = await stockApi.crawlStocks(activeTab);
+      console.log('Starting crawl with market: KR');
+      const result = await stockApi.crawlStocks('KR');
       console.log('Crawl result:', result);
 
       // 백그라운드 작업이므로 즉시 응답받음
@@ -178,11 +168,7 @@ export default function Home() {
     const left = Math.floor(window.screen.width * 0.3);
     const top = 0;
 
-    // NASDAQ 종목은 .O 접미사 추가
-    const naverSymbol = stock.exchange === 'NASDAQ' ? `${stock.symbol}.O` : stock.symbol;
-    const url = stock.market === 'US'
-      ? `https://m.stock.naver.com/fchart/foreign/stock/${naverSymbol}`
-      : `https://m.stock.naver.com/fchart/domestic/stock/${stock.symbol}`;
+    const url = `https://m.stock.naver.com/fchart/domestic/stock/${stock.symbol}`;
 
     window.open(
       url,
@@ -197,7 +183,7 @@ export default function Home() {
         {/* Controls - Sticky Header */}
         <div className="sticky top-0 z-20 -mx-4 lg:-mx-8 px-4 lg:px-8 py-4 bg-background/95 backdrop-blur-sm border-b border-border mb-6">
           <div className="flex items-center justify-between gap-4">
-            <h2 className="text-xl font-bold text-foreground">US Market</h2>
+            <h2 className="text-xl font-bold text-foreground">한국 시장</h2>
 
             {/* 검색바 */}
             <div className="flex-1 max-w-2xl">

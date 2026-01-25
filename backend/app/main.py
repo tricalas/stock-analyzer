@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Depends, HTTPException, Query
+from fastapi import FastAPI, Depends, HTTPException, Query, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import ORJSONResponse
 from starlette.middleware.gzip import GZipMiddleware
@@ -578,12 +578,40 @@ def get_stock_daily_data(
     daily_data = query.order_by(StockDailyData.date.desc()).limit(500).all()
     return daily_data
 
+def run_background_crawl(market: str):
+    """백그라운드에서 실행될 크롤링 작업"""
+    try:
+        logger.info(f"Starting background crawl for market: {market}")
+        result = crawler_manager.update_stock_list(market)
+
+        # ETF 필터링 정보 포함한 메시지 생성
+        etf_info = ""
+        if result.get('skipped_etf', 0) > 0:
+            etf_info = f" ({result['skipped_etf']} ETF/Index stocks filtered out)"
+
+        logger.info(f"Background crawl completed: {result['success']} out of {result['total']} stocks{etf_info}")
+
+        # 캐시 무효화
+        if redis_client:
+            try:
+                # 모든 stocks 관련 캐시 삭제
+                for key in redis_client.scan_iter("cache:*stocks*"):
+                    redis_client.delete(key)
+                logger.info("Cache invalidated after crawling")
+            except Exception as e:
+                logger.error(f"Failed to invalidate cache: {e}")
+
+    except Exception as e:
+        logger.error(f"Error during background stock list crawling: {str(e)}")
+
+
 @app.post("/api/crawl/stocks", response_model=schemas.CrawlingStatus)
 def crawl_stock_list(
+    background_tasks: BackgroundTasks,
     market: str = Query("ALL", pattern="^(ALL|KR|US)$"),
     current_user: User = Depends(get_current_user)
 ):
-    """주식 데이터 크롤링 - 10분 쿨타임"""
+    """주식 데이터 크롤링 - 10분 쿨타임 (백그라운드 처리)"""
     global last_crawl_time
 
     # 쿨타임 체크
@@ -599,22 +627,20 @@ def crawl_stock_list(
                 detail=f"크롤링 쿨타임입니다. {remaining_minutes}분 {remaining_secs}초 후에 다시 시도해주세요."
             )
 
-    try:
-        last_crawl_time = datetime.utcnow()
-        result = crawler_manager.update_stock_list(market)
+    # 쿨타임 업데이트
+    last_crawl_time = datetime.utcnow()
 
-        # ETF 필터링 정보 포함한 메시지 생성
-        etf_info = ""
-        if result.get('skipped_etf', 0) > 0:
-            etf_info = f" ({result['skipped_etf']} ETF/Index stocks filtered out)"
+    # 백그라운드 작업 추가
+    background_tasks.add_task(run_background_crawl, market)
 
-        return {
-            **result,
-            "message": f"Successfully crawled {result['success']} out of {result['total']} stocks{etf_info}"
-        }
-    except Exception as e:
-        logger.error(f"Error during stock list crawling: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+    # 즉시 응답 반환
+    return {
+        "success": 0,
+        "failed": 0,
+        "total": 0,
+        "skipped_etf": 0,
+        "message": f"크롤링 작업이 시작되었습니다. 완료까지 약 20초 소요됩니다."
+    }
 
 
 @app.post("/api/crawl/indicators/{stock_id}")

@@ -1,6 +1,6 @@
 'use client';
 
-import { Home, Star, ThumbsDown, Settings, TrendingUp, ShoppingCart, ThumbsUp, Eye, AlertCircle, Trash2, LogOut, User } from 'lucide-react';
+import { Home, Star, ThumbsDown, Settings, TrendingUp, ShoppingCart, ThumbsUp, Eye, AlertCircle, Trash2, LogOut, User, Globe, Flag } from 'lucide-react';
 import { usePathname } from 'next/navigation';
 import Link from 'next/link';
 import ThemeToggle from './ThemeToggle';
@@ -48,7 +48,8 @@ export default function Sidebar({ favoriteCount = 0, dislikeCount = 0 }: Sidebar
   };
 
   const baseNavigation: NavItem[] = [
-    { name: '투자', href: '/', icon: Home },
+    { name: '미국', href: '/', icon: Globe },
+    { name: '한국', href: '/korea', icon: Flag },
   ];
 
   const tagNavigation: NavItem[] = tags.map(tag => ({
