@@ -1259,6 +1259,7 @@ def get_stocks_by_tag(
 
     # 태그 정보를 한 번에 가져오기
     tags_map = {}
+    history_count_map = {}
     if stocks:
         stock_ids = [s.id for s in stocks]
         tag_assignments = db.query(StockTagAssignment).filter(
@@ -1278,6 +1279,17 @@ def get_stocks_by_tag(
             tags_by_id = {tag.id: tag for tag in db.query(StockTag).filter(StockTag.id.in_(tag_ids)).all()}
         else:
             tags_by_id = {}
+
+        # 히스토리 레코드 수를 한 번에 조회
+        from sqlalchemy import func
+        history_counts = db.query(
+            StockPriceHistory.stock_id,
+            func.count(StockPriceHistory.id).label('count')
+        ).filter(
+            StockPriceHistory.stock_id.in_(stock_ids)
+        ).group_by(StockPriceHistory.stock_id).all()
+
+        history_count_map = {row.stock_id: row.count for row in history_counts}
 
     # 빠른 응답을 위해 최소한의 데이터만 반환
     stock_list = []
@@ -1322,10 +1334,10 @@ def get_stocks_by_tag(
             "face_value": stock.face_value,
             "shares_outstanding": stock.shares_outstanding,
             "foreign_ratio": stock.foreign_ratio,
-            "history_records_count": 0,
+            "history_records_count": history_count_map.get(stock.id, 0),
             "history_latest_date": None,
             "history_oldest_date": None,
-            "has_history_data": False,
+            "has_history_data": history_count_map.get(stock.id, 0) > 0,
             "latest_price": stock.current_price,
             "latest_change": stock.change_amount,
             "latest_change_percent": stock.change_percent,
