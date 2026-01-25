@@ -15,7 +15,7 @@ import orjson
 
 from app.config import settings
 from app.database import engine, Base, get_db
-from app.models import Stock, StockPrice, StockDailyData, StockPriceHistory, StockTag, StockTagAssignment, User, StockSignal, TaskProgress
+from app.models import Stock, StockPrice, StockDailyData, StockPriceHistory, StockTag, StockTagAssignment, User, StockSignal, TaskProgress, HistoryCollectionLog
 from app import schemas
 from app.crawlers.crawler_manager import CrawlerManager
 from app.crawlers.price_history_crawler import price_history_crawler
@@ -2203,6 +2203,52 @@ def scan_all_tagged_stocks(
     logger.info(f"✅ Scan completed ({mode} mode): {total_scanned} stocks scanned, {len(stocks_with_signals)} with signals")
 
     return result
+
+
+# ==================== Admin: 테이블 생성 (일회성) ====================
+
+@app.post("/api/admin/create-tables")
+def create_missing_tables(current_user: User = Depends(get_current_user)):
+    """
+    누락된 테이블 생성 (관리자 전용, 일회성)
+
+    HistoryCollectionLog 등 새로 추가된 테이블을 생성합니다.
+    """
+    if not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Admin access required")
+
+    try:
+        from sqlalchemy import inspect
+
+        # 테이블 생성
+        Base.metadata.create_all(bind=engine, tables=[HistoryCollectionLog.__table__])
+
+        # 확인
+        inspector = inspect(engine)
+        tables = inspector.get_table_names()
+
+        result = {
+            "success": True,
+            "message": "Tables created successfully",
+            "tables_exist": {
+                "history_collection_logs": "history_collection_logs" in tables
+            }
+        }
+
+        if "history_collection_logs" in tables:
+            columns = inspector.get_columns('history_collection_logs')
+            indexes = inspector.get_indexes('history_collection_logs')
+            result["history_collection_logs"] = {
+                "columns": [col['name'] for col in columns],
+                "indexes": [idx['name'] for idx in indexes]
+            }
+
+        logger.info(f"✅ Tables created: {result}")
+        return result
+
+    except Exception as e:
+        logger.error(f"❌ Error creating tables: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to create tables: {str(e)}")
 
 
 if __name__ == "__main__":
