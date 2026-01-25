@@ -52,7 +52,9 @@ export default function Sidebar({ favoriteCount = 0, dislikeCount = 0 }: Sidebar
     { name: '한국', href: '/korea', icon: Flag },
   ];
 
-  const tagNavigation: NavItem[] = tags.map(tag => ({
+  // 에러, 제외 태그는 사이드바에서 숨김 (설정 페이지에서만 표시)
+  const visibleTags = tags.filter(tag => !['error', 'dislike'].includes(tag.name));
+  const tagNavigation: NavItem[] = visibleTags.map(tag => ({
     name: tag.display_name,
     href: `/tags/${tag.name}`,
     icon: getTagIcon(tag.icon),

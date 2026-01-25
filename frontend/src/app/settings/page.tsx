@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import AppLayout from '@/components/AppLayout';
-import { Plus, Edit2, Trash2, Save, X, Tag as TagIcon, Users, Shield, User, Key } from 'lucide-react';
+import { Plus, Edit2, Trash2, Save, X, Tag as TagIcon, Users, Shield, User, Key, AlertCircle, ThumbsDown } from 'lucide-react';
 import { stockApi, Tag } from '@/lib/api';
 import { toast } from 'sonner';
 import { Toaster } from '@/components/ui/sonner';
@@ -190,6 +190,27 @@ export default function Settings() {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
               </svg>
             </button>
+
+            {/* 숨겨진 태그 바로가기 */}
+            <div className="mt-4 pt-4 border-t border-border">
+              <p className="text-sm text-muted-foreground mb-3">숨겨진 태그 (사이드바에 표시되지 않음)</p>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => router.push('/tags/error')}
+                  className="flex items-center gap-2 px-3 py-2 bg-loss/10 hover:bg-loss/20 text-loss rounded-lg transition-colors"
+                >
+                  <AlertCircle className="w-4 h-4" />
+                  <span className="text-sm font-medium">에러 종목</span>
+                </button>
+                <button
+                  onClick={() => router.push('/tags/dislike')}
+                  className="flex items-center gap-2 px-3 py-2 bg-loss/10 hover:bg-loss/20 text-loss rounded-lg transition-colors"
+                >
+                  <ThumbsDown className="w-4 h-4" />
+                  <span className="text-sm font-medium">제외 종목</span>
+                </button>
+              </div>
+            </div>
           </div>
         )}
 
