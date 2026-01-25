@@ -12,10 +12,10 @@ interface SettingsLayoutProps {
 }
 
 const adminMenuItems = [
-  { name: '사용자 관리', href: '/settings/users', icon: Users },
-  { name: '태그 관리', href: '/settings/tags', icon: Tag },
   { name: '신호 분석', href: '/settings/signals', icon: TrendingUp },
   { name: '데이터 수집', href: '/settings/data', icon: Database },
+  { name: '태그 관리', href: '/settings/tags', icon: Tag },
+  { name: '사용자 관리', href: '/settings/users', icon: Users },
   { name: '숨겨진 태그', href: '/settings/hidden-tags', icon: EyeOff },
 ];
 

@@ -1,12 +1,13 @@
 'use client';
 
-import { useEffect, useRef } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useInfiniteQuery } from '@tanstack/react-query';
 import AppLayout from '@/components/AppLayout';
-import { TrendingUp, TrendingDown, Activity, Calendar, Loader2, Star } from 'lucide-react';
+import { TrendingUp, TrendingDown, Activity, Clock, Star, ChevronDown } from 'lucide-react';
 import { Toaster, toast } from 'sonner';
 import { getNaverChartUrl, getNaverInfoUrl, openNaverChartPopup } from '@/lib/naverStock';
 import { stockApi } from '@/lib/api';
+import ScrollToTopButton from '@/components/atoms/ScrollToTopButton';
 
 interface Stock {
   id: number;
@@ -45,10 +46,15 @@ interface SignalListResponse {
   };
 }
 
+type SignalFilter = 'all' | 'breakout' | 'approaching' | 'pullback';
+type ReturnFilter = 'all' | 'positive' | 'negative';
+
 const PAGE_SIZE = 30;
 
 export default function SignalsPage() {
   const loadMoreRef = useRef<HTMLDivElement>(null);
+  const [signalFilter, setSignalFilter] = useState<SignalFilter>('all');
+  const [returnFilter, setReturnFilter] = useState<ReturnFilter>('all');
 
   // 무한 스크롤로 신호 조회
   const {
@@ -128,100 +134,120 @@ export default function SignalsPage() {
     });
   };
 
+  // 필터링된 신호
+  const filteredSignals = allSignals.filter(signal => {
+    // 신호 타입 필터
+    if (signalFilter !== 'all') {
+      if (signalFilter === 'breakout' && signal.strategy_name !== 'trendline_breakout') return false;
+      if (signalFilter === 'approaching' && signal.strategy_name !== 'approaching_breakout') return false;
+      if (signalFilter === 'pullback' && signal.strategy_name !== 'pullback_buy') return false;
+    }
+    // 수익률 필터
+    if (returnFilter !== 'all') {
+      if (returnFilter === 'positive' && (signal.return_percent ?? 0) < 0) return false;
+      if (returnFilter === 'negative' && (signal.return_percent ?? 0) >= 0) return false;
+    }
+    return true;
+  });
+
   return (
     <AppLayout>
       <div className="p-4 lg:p-8 space-y-6">
-        {/* Header */}
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-3xl font-bold text-foreground flex items-center gap-3">
-              <TrendingUp className="h-8 w-8 text-primary" />
-              매매 신호
-            </h1>
-            {total > 0 && (
-              <p className="text-muted-foreground mt-2">
-                <span className="text-foreground font-medium">{total}개</span>
-              </p>
-            )}
+        {/* Controls - Sticky Header */}
+        <div className="sticky top-0 z-20 -mx-4 lg:-mx-8 px-4 lg:px-8 py-4 bg-background/95 backdrop-blur-sm border-b border-border mb-6">
+          <div className="flex items-center justify-between gap-4">
+            {/* 필터 드롭다운 */}
+            <div className="flex items-center gap-2">
+              {/* 신호 타입 필터 */}
+              <div className="relative">
+                <select
+                  value={signalFilter}
+                  onChange={(e) => setSignalFilter(e.target.value as SignalFilter)}
+                  className="appearance-none bg-muted hover:bg-muted/80 border border-border rounded-lg px-3 py-2 pr-8 text-sm font-medium text-foreground cursor-pointer focus:outline-none focus:ring-2 focus:ring-primary/50"
+                >
+                  <option value="all">전체 신호</option>
+                  <option value="breakout">돌파</option>
+                  <option value="approaching">임박</option>
+                  <option value="pullback">되돌림</option>
+                </select>
+                <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+              </div>
+
+              {/* 수익률 필터 */}
+              <div className="relative">
+                <select
+                  value={returnFilter}
+                  onChange={(e) => setReturnFilter(e.target.value as ReturnFilter)}
+                  className="appearance-none bg-muted hover:bg-muted/80 border border-border rounded-lg px-3 py-2 pr-8 text-sm font-medium text-foreground cursor-pointer focus:outline-none focus:ring-2 focus:ring-primary/50"
+                >
+                  <option value="all">전체 수익</option>
+                  <option value="positive">수익 중</option>
+                  <option value="negative">손실 중</option>
+                </select>
+                <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+              </div>
+            </div>
+
+            {/* 통계 정보 (우측) */}
+            <div className="flex items-center gap-4">
+              {stats && (
+                <div className="hidden md:flex items-center gap-4 text-sm">
+                  <div className="flex items-center gap-1.5">
+                    <Activity className="h-4 w-4 text-muted-foreground" />
+                    <span className="text-muted-foreground">총</span>
+                    <span className="font-medium text-foreground">{stats.total_signals || 0}</span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <TrendingUp className="h-4 w-4 text-green-500" />
+                    <span className="font-medium text-green-600 dark:text-green-400">{stats.positive_returns || 0}</span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <TrendingDown className="h-4 w-4 text-red-500" />
+                    <span className="font-medium text-red-600 dark:text-red-400">{stats.negative_returns || 0}</span>
+                  </div>
+                </div>
+              )}
+              {analyzedAt && (
+                <div className="text-sm text-muted-foreground">
+                  <Clock className="inline h-3.5 w-3.5 mr-1" />
+                  {formatDateTime(analyzedAt)}
+                </div>
+              )}
+            </div>
           </div>
         </div>
 
-        {/* Stats */}
-        {stats && (
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            <div className="bg-card border border-border rounded-xl p-6">
-              <div className="flex items-center gap-3">
-                <Activity className="h-8 w-8 text-blue-500" />
-                <div>
-                  <p className="text-sm text-muted-foreground">총 신호</p>
-                  <p className="text-2xl font-bold text-foreground">{stats.total_signals || 0}개</p>
-                </div>
-              </div>
-            </div>
-
-            <div className="bg-card border border-border rounded-xl p-6">
-              <div className="flex items-center gap-3">
-                <TrendingUp className="h-8 w-8 text-green-500" />
-                <div>
-                  <p className="text-sm text-muted-foreground">수익 중</p>
-                  <p className="text-2xl font-bold text-green-600 dark:text-green-400">
-                    {stats.positive_returns || 0}개
-                  </p>
-                </div>
-              </div>
-            </div>
-
-            <div className="bg-card border border-border rounded-xl p-6">
-              <div className="flex items-center gap-3">
-                <TrendingDown className="h-8 w-8 text-red-500" />
-                <div>
-                  <p className="text-sm text-muted-foreground">손실 중</p>
-                  <p className="text-2xl font-bold text-red-600 dark:text-red-400">
-                    {stats.negative_returns || 0}개
-                  </p>
-                </div>
-              </div>
-            </div>
-
-            <div className="bg-card border border-border rounded-xl p-6">
-              <div className="flex items-center gap-3">
-                <Calendar className="h-8 w-8 text-purple-500" />
-                <div>
-                  <p className="text-sm text-muted-foreground">마지막 분석</p>
-                  <p className="text-sm font-medium text-foreground">
-                    {analyzedAt ? formatDateTime(analyzedAt) : '분석 대기중'}
-                  </p>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-
         {/* Loading (initial) */}
         {isLoading && (
-          <div className="flex flex-col items-center justify-center py-24">
-            <div className="relative">
-              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
-              <div className="absolute inset-0 animate-ping rounded-full h-12 w-12 border border-primary/20"></div>
+          <div className="bg-card shadow-lg rounded-xl overflow-hidden border border-border">
+            <div className="flex flex-col items-center justify-center py-24">
+              <div className="relative">
+                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
+                <div className="absolute inset-0 animate-ping rounded-full h-12 w-12 border border-primary/20"></div>
+              </div>
+              <p className="mt-4 text-sm text-muted-foreground font-medium">Loading signals...</p>
             </div>
-            <p className="mt-4 text-sm text-muted-foreground font-medium">신호 로딩 중...</p>
           </div>
         )}
 
         {/* Error */}
         {error && (
-          <div className="text-center py-24">
-            <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-destructive/10 mb-4">
-              <TrendingDown className="w-8 h-8 text-destructive" />
+          <div className="bg-card shadow-lg rounded-xl overflow-hidden border border-border">
+            <div className="text-center py-24">
+              <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-destructive/10 mb-4">
+                <svg className="w-8 h-8 text-destructive" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </div>
+              <p className="text-destructive font-semibold text-lg">Failed to load signals</p>
+              <p className="text-sm text-muted-foreground mt-2">Please try again later</p>
             </div>
-            <p className="text-destructive font-semibold text-lg">신호 조회 실패</p>
-            <p className="text-sm text-muted-foreground mt-2">다시 시도해주세요</p>
           </div>
         )}
 
         {/* Signal Table */}
-        {allSignals.length > 0 ? (
-          <div className="bg-card border border-border rounded-xl overflow-hidden">
+        {filteredSignals.length > 0 ? (
+          <div className="bg-card shadow-lg rounded-xl overflow-hidden border border-border">
             <div className="overflow-x-auto">
               <table className="w-full">
                 <thead className="bg-muted/50 border-b border-border sticky top-0">
@@ -237,7 +263,7 @@ export default function SignalsPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border">
-                  {allSignals.map((signal) => {
+                  {filteredSignals.map((signal) => {
                     const stockInfo = signal.stock ? {
                       symbol: signal.stock.symbol,
                       market: signal.stock.market,
@@ -419,41 +445,50 @@ export default function SignalsPage() {
             </div>
 
             {/* Load More Trigger & Loading indicator */}
-            <div ref={loadMoreRef} className="py-4">
+            <div ref={loadMoreRef} className="py-4 text-center">
               {isFetchingNextPage ? (
-                <div className="flex items-center justify-center gap-2 text-muted-foreground">
-                  <Loader2 className="h-5 w-5 animate-spin" />
-                  <span className="text-sm">더 불러오는 중...</span>
+                <div className="inline-flex items-center gap-2 text-muted-foreground">
+                  <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-primary"></div>
+                  <span>Loading more...</span>
                 </div>
               ) : hasNextPage ? (
-                <div className="flex items-center justify-center">
-                  <span className="text-sm text-muted-foreground">
-                    스크롤하여 더 보기 ({allSignals.length} / {total})
-                  </span>
-                </div>
-              ) : allSignals.length > 0 ? (
-                <div className="flex items-center justify-center">
-                  <span className="text-sm text-muted-foreground">
-                    모든 신호를 불러왔습니다 ({total}개)
-                  </span>
-                </div>
-              ) : null}
+                <span className="text-muted-foreground text-sm">
+                  스크롤하여 더 보기 ({allSignals.length} / {total})
+                </span>
+              ) : (
+                <span className="text-muted-foreground text-sm">
+                  {signalFilter !== 'all' || returnFilter !== 'all'
+                    ? `필터 결과: ${filteredSignals.length}개`
+                    : `All signals loaded (${total})`}
+                </span>
+              )}
             </div>
           </div>
         ) : (
           !isLoading && !error && (
-            <div className="text-center py-24">
-              <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-muted mb-4">
-                <TrendingUp className="w-8 h-8 text-muted-foreground" />
+            <div className="bg-card shadow-lg rounded-xl overflow-hidden border border-border">
+              <div className="text-center py-24">
+                <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-muted mb-4">
+                  <TrendingUp className="w-8 h-8 text-muted-foreground" />
+                </div>
+                <p className="text-foreground font-semibold text-lg">
+                  {signalFilter !== 'all' || returnFilter !== 'all'
+                    ? '필터 조건에 맞는 신호가 없습니다'
+                    : '매수 신호가 없습니다'}
+                </p>
+                <p className="text-sm text-muted-foreground mt-2">
+                  {signalFilter !== 'all' || returnFilter !== 'all'
+                    ? '다른 필터 조건을 선택해보세요'
+                    : '설정 > 신호 분석에서 분석을 실행하세요'}
+                </p>
               </div>
-              <p className="text-foreground font-semibold text-lg">매수 신호가 없습니다</p>
-              <p className="text-sm text-muted-foreground mt-2">
-                설정 &gt; 신호 분석에서 분석을 실행하세요
-              </p>
             </div>
           )
         )}
       </div>
+
+      {/* 위로가기 버튼 */}
+      <ScrollToTopButton />
 
       <Toaster position="top-center" richColors />
     </AppLayout>

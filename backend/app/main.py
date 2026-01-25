@@ -364,13 +364,22 @@ def get_stocks(
         if stock.ma90_price and stock.current_price:
             ma90_percentage = ((stock.current_price - stock.ma90_price) / stock.ma90_price) * 100
 
-        # 태그 목록 (이미 가져온 데이터 사용)
+        # 태그 목록 (이미 가져온 데이터 사용) - 딕셔너리로 변환
         tags = []
         latest_tag_date = None
         if current_user and stock.id in tags_map:
             latest_tag_date = latest_tag_dates.get(stock.id)
-            tags = [tags_by_id.get(ta.tag_id) for ta in tags_map[stock.id]]
-            tags = [t for t in tags if t is not None]
+            for ta in tags_map[stock.id]:
+                tag_obj = tags_by_id.get(ta.tag_id)
+                if tag_obj:
+                    tags.append({
+                        "id": tag_obj.id,
+                        "name": tag_obj.name,
+                        "display_name": tag_obj.display_name,
+                        "color": tag_obj.color,
+                        "icon": tag_obj.icon,
+                        "order": tag_obj.order,
+                    })
 
         stock_data = {
             "id": stock.id,
@@ -523,13 +532,22 @@ def search_stocks(
         if stock.ma90_price and stock.current_price:
             ma90_percentage = ((stock.current_price - stock.ma90_price) / stock.ma90_price) * 100
 
-        # 태그 목록
+        # 태그 목록 - 딕셔너리로 변환
         tags = []
         latest_tag_date = None
         if current_user and stock.id in tags_map:
             latest_tag_date = latest_tag_dates.get(stock.id)
-            tags = [tags_by_id.get(ta.tag_id) for ta in tags_map[stock.id]]
-            tags = [t for t in tags if t is not None]
+            for ta in tags_map[stock.id]:
+                tag_obj = tags_by_id.get(ta.tag_id)
+                if tag_obj:
+                    tags.append({
+                        "id": tag_obj.id,
+                        "name": tag_obj.name,
+                        "display_name": tag_obj.display_name,
+                        "color": tag_obj.color,
+                        "icon": tag_obj.icon,
+                        "order": tag_obj.order,
+                    })
 
         stock_data = {
             "id": stock.id,
@@ -1476,11 +1494,20 @@ def get_stocks_by_tag(
         if stock.ma90_price and stock.current_price:
             ma90_percentage = ((stock.current_price - stock.ma90_price) / stock.ma90_price) * 100
 
-        # 태그 목록 (이미 가져온 데이터 사용)
+        # 태그 목록 (이미 가져온 데이터 사용) - 딕셔너리로 변환
         tags = []
         if stock.id in tags_map:
-            tags = [tags_by_id.get(ta.tag_id) for ta in tags_map[stock.id]]
-            tags = [t for t in tags if t is not None]
+            for ta in tags_map[stock.id]:
+                tag_obj = tags_by_id.get(ta.tag_id)
+                if tag_obj:
+                    tags.append({
+                        "id": tag_obj.id,
+                        "name": tag_obj.name,
+                        "display_name": tag_obj.display_name,
+                        "color": tag_obj.color,
+                        "icon": tag_obj.icon,
+                        "order": tag_obj.order,
+                    })
 
         stock_data = {
             "id": stock.id,
