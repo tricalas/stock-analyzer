@@ -618,9 +618,10 @@ class KISHistoryCrawler:
                 logger.info(f"Submitted {len(futures)} tasks to ThreadPool")
 
                 # 완료되는 대로 처리
-                last_update = 0
+                last_db_update = 0
                 for future in as_completed(futures):
                     stock_data = futures[future]
+                    stock_name = stock_data.get("name", "")
 
                     try:
                         result = future.result(timeout=300)  # 5분 타임아웃
@@ -630,35 +631,39 @@ class KISHistoryCrawler:
                             counters["failed"] += 1
                             counters["processed"] += 1
 
-                    # 진행상황 업데이트 (매번)
+                    # 진행상황
                     with lock:
                         processed = counters["processed"]
+                        success = counters["success"]
+                        failed = counters["failed"]
+                        skipped = counters["skipped"]
+                        incremental = counters["incremental"]
+                        full = counters["full"]
 
-                    # DB 업데이트 (5개마다 또는 처음)
-                    if processed - last_update >= 5 or processed == total or processed <= 1:
+                    # DB 업데이트 (매번 - 실시간 반영)
+                    try:
+                        db.refresh(task_progress)
+                        task_progress.current_item = processed
+                        task_progress.current_stock_name = stock_name
+                        task_progress.success_count = success
+                        task_progress.failed_count = failed
+                        task_progress.message = (
+                            f"{processed}/{total} 종목 처리 완료 "
+                            f"(스킵: {skipped}, 증분: {incremental}, 전체: {full})"
+                        )
+                        db.commit()
+                    except Exception as e:
+                        logger.warning(f"Failed to update TaskProgress: {str(e)}")
                         try:
-                            # TaskProgress 새로 조회 후 업데이트
-                            db.refresh(task_progress)
-                            task_progress.current_item = processed
-                            task_progress.success_count = counters["success"]
-                            task_progress.failed_count = counters["failed"]
-                            task_progress.message = (
-                                f"{processed}/{total} 종목 처리 완료 "
-                                f"(스킵: {counters['skipped']}, 증분: {counters['incremental']}, "
-                                f"전체: {counters['full']})"
-                            )
-                            db.commit()
-                            last_update = processed
-                        except Exception as e:
-                            logger.warning(f"Failed to update TaskProgress: {str(e)}")
                             db.rollback()
+                        except:
+                            pass
 
-                    # 콘솔 로그 (20개마다)
-                    if processed % 20 == 0 or processed == 1:
+                    # 콘솔 로그 (10개마다)
+                    if processed % 10 == 0 or processed == 1:
                         logger.info(
                             f"Progress: {processed}/{total} stocks "
-                            f"(skip: {counters['skipped']}, inc: {counters['incremental']}, "
-                            f"full: {counters['full']}, fail: {counters['failed']})"
+                            f"(skip: {skipped}, inc: {incremental}, full: {full}, fail: {failed})"
                         )
 
             # TaskProgress 완료 처리
