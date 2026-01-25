@@ -319,9 +319,18 @@ const StockItem = React.memo<StockItemProps>(({ stock, rank, onStockClick, onSho
           </div>
           <div className="text-xs text-muted-foreground">
             {stock.symbol}
-            {stock.history_latest_date && (
-              <span className="ml-2 text-muted-foreground/60">
-                | 최신: {new Date(stock.history_latest_date).toLocaleDateString('ko-KR')}
+            {/* 히스토리 데이터 상태 표시 */}
+            {stock.history_records_count !== undefined && stock.history_records_count > 0 ? (
+              <span className={`ml-2 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium ${
+                stock.history_records_count >= 60
+                  ? 'bg-green-500/10 text-green-600 dark:text-green-400'
+                  : 'bg-yellow-500/10 text-yellow-600 dark:text-yellow-400'
+              }`}>
+                📊 {stock.history_records_count}일
+              </span>
+            ) : (
+              <span className="ml-2 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-red-500/10 text-red-600 dark:text-red-400">
+                ❌ 데이터 없음
               </span>
             )}
             {stock.latest_tag_date && (
