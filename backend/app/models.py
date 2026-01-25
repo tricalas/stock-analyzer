@@ -56,6 +56,10 @@ class Stock(Base):
     # 히스토리 데이터 캐시 (조인 없이 빠른 조회용)
     history_records_count = Column(Integer, default=0)  # 수집된 히스토리 레코드 수
 
+    # 델타 추적용 (최적화)
+    history_updated_at = Column(DateTime)    # 히스토리 마지막 업데이트 시간
+    signal_analyzed_at = Column(DateTime)    # 신호 마지막 분석 시간
+
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

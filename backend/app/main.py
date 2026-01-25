@@ -2044,6 +2044,7 @@ def refresh_signals(
     mode: str = Query("all", pattern="^(tagged|all|top)$"),
     limit: int = Query(500, ge=10, le=2000),
     days: int = Query(120, ge=60, le=365),
+    force_full: bool = Query(False, description="True면 델타 무시하고 전체 스캔"),
     db: Session = Depends(get_db),
     current_user: Optional[User] = Depends(get_optional_current_user)
 ):
@@ -2054,6 +2055,7 @@ def refresh_signals(
         mode: 분석 모드 (tagged, all, top)
         limit: top 모드일 때 상위 몇 개
         days: 분석할 일수
+        force_full: True면 델타 무시하고 전체 스캔 (기본: False = 변경된 종목만)
 
     Returns:
         작업 시작 메시지
@@ -2062,11 +2064,12 @@ def refresh_signals(
 
     def run_analysis_thread():
         try:
-            logger.info(f"🔍 Signal analysis thread started (mode: {mode})...")
+            logger.info(f"🔍 Signal analysis thread started (mode: {mode}, force_full: {force_full})...")
             result = signal_analyzer.analyze_and_store_signals(
                 mode=mode,
                 limit=limit,
-                days=days
+                days=days,
+                force_full=force_full
             )
             logger.info(f"✅ Signal analysis completed: {result}")
         except Exception as e:
@@ -2086,11 +2089,13 @@ def refresh_signals(
         TaskProgress.task_type == "signal_analysis"
     ).order_by(desc(TaskProgress.started_at)).first()
 
+    delta_msg = "전체 스캔" if force_full else "델타 분석 (변경된 종목만)"
     return {
         "success": True,
-        "message": f"신호 분석 작업이 시작되었습니다 (mode: {mode})",
+        "message": f"신호 분석 작업이 시작되었습니다 (mode: {mode}, {delta_msg})",
         "mode": mode,
         "days": days,
+        "force_full": force_full,
         "task_id": latest_task.task_id if latest_task else None,
         "note": f"Use GET /api/tasks/{{task_id}} to check progress"
     }

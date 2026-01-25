@@ -500,6 +500,7 @@ def find_lower_highs(
     """
     Lower High 패턴 찾기 (점점 낮아지는 고점들)
     가장 긴 Lower High 시퀀스를 반환
+    길이가 같으면 가장 높은 점에서 시작하는 시퀀스 선택
 
     Args:
         swing_highs: [(index, price), ...] 형태의 스윙 고점 리스트
@@ -512,7 +513,9 @@ def find_lower_highs(
         return []
 
     # 가장 긴 Lower High 시퀀스 찾기
+    # 길이가 같으면 시작점 가격이 높은 것을 선택
     best_sequence = []
+    best_start_price = 0
 
     for start in range(len(swing_highs)):
         current_sequence = [swing_highs[start]]
@@ -521,8 +524,13 @@ def find_lower_highs(
             if swing_highs[j][1] < current_sequence[-1][1]:
                 current_sequence.append(swing_highs[j])
 
-        if len(current_sequence) > len(best_sequence):
+        start_price = swing_highs[start][1]
+
+        # 더 긴 시퀀스이거나, 같은 길이인데 시작점이 더 높은 경우
+        if (len(current_sequence) > len(best_sequence) or
+            (len(current_sequence) == len(best_sequence) and start_price > best_start_price)):
             best_sequence = current_sequence
+            best_start_price = start_price
 
     return best_sequence if len(best_sequence) >= min_count else []
 
@@ -654,6 +662,7 @@ def generate_descending_trendline_breakout_signals(
         return result
 
     # 5. 돌파 감지 (고가 기준 - 추세선도 고가로 그렸으므로)
+    # + 돌파 확인: 3일 내 돌파 전날 종가 이탈하지 않아야 유효
     last_lower_high_idx = lower_highs[-1][0]
 
     for i in range(last_lower_high_idx + 1, len(df)):
@@ -667,7 +676,18 @@ def generate_descending_trendline_breakout_signals(
         current_above = df['high'].iloc[i] > trendline_value
 
         if prev_below and current_above:
-            buy_signals[i] = 1
+            # 돌파 확인: 3일 내 돌파 전날 종가를 이탈하지 않아야 함
+            prev_close = df['close'].iloc[i - 1]
+            breakout_confirmed = True
+
+            # 돌파 후 3일간 저가 확인
+            for j in range(i, min(i + 3, len(df))):
+                if df['low'].iloc[j] < prev_close:
+                    breakout_confirmed = False
+                    break
+
+            if breakout_confirmed:
+                buy_signals[i] = 1
 
     result['buy_signal'] = buy_signals
     result['trendline_slope'] = slope

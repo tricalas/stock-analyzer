@@ -133,9 +133,12 @@ class KISHistoryCrawler:
                 StockPriceHistory.stock_id == stock.id
             ).count()
 
-            # 직접 UPDATE 쿼리로 확실하게 업데이트
+            # 직접 UPDATE 쿼리로 확실하게 업데이트 (history_updated_at 포함)
             db.query(Stock).filter(Stock.id == stock.id).update(
-                {"history_records_count": total_records},
+                {
+                    "history_records_count": total_records,
+                    "history_updated_at": datetime.utcnow()
+                },
                 synchronize_session=False
             )
             db.commit()
