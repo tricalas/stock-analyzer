@@ -265,3 +265,35 @@ class TaskProgress(Base):
         Index('idx_task_status', 'status'),
         {'extend_existing': True}
     )
+
+
+class HistoryCollectionLog(Base):
+    """히스토리 수집 개별 종목 로그"""
+    __tablename__ = "history_collection_logs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    task_id = Column(String(100), nullable=False, index=True)  # TaskProgress의 task_id
+
+    # 종목 정보
+    stock_id = Column(Integer, ForeignKey("stocks.id"), nullable=False)
+    stock_symbol = Column(String(50), nullable=False)
+    stock_name = Column(String(255), nullable=False)
+
+    # 수집 결과
+    status = Column(String(20), nullable=False)  # "success", "failed"
+    records_saved = Column(Integer, default=0)
+    error_message = Column(Text)
+
+    # 시간
+    started_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    completed_at = Column(DateTime)
+
+    # 관계
+    stock = relationship("Stock", backref="collection_logs")
+
+    __table_args__ = (
+        Index('idx_log_task_id', 'task_id'),
+        Index('idx_log_status', 'status'),
+        Index('idx_log_task_status', 'task_id', 'status'),  # 실패 조회용
+        {'extend_existing': True}
+    )

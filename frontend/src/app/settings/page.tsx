@@ -62,6 +62,20 @@ export default function Settings() {
     completed_at?: string;
   }
 
+  // HistoryCollectionLog 인터페이스
+  interface HistoryCollectionLog {
+    id: number;
+    task_id: string;
+    stock_id: number;
+    stock_symbol: string;
+    stock_name: string;
+    status: string;  // "success", "failed"
+    records_saved: number;
+    error_message?: string;
+    started_at: string;
+    completed_at?: string;
+  }
+
   // 히스토리 수집 진행 상황 조회
   const { data: historyProgress } = useQuery<TaskProgress>({
     queryKey: ['history-progress', historyTaskId],
@@ -121,6 +135,57 @@ export default function Settings() {
       toast.error('히스토리 수집 시작에 실패했습니다.');
     }
   };
+
+  // 수집 로그 조회 (작업 완료 시)
+  const { data: collectionLogs } = useQuery<HistoryCollectionLog[]>({
+    queryKey: ['collection-logs', historyTaskId],
+    queryFn: async () => {
+      if (!historyTaskId) return [];
+      const response = await fetch(`${API_URL}/api/tasks/${historyTaskId}/logs`, {
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`,
+        },
+      });
+      if (!response.ok) return [];
+      return response.json();
+    },
+    enabled: !!historyTaskId && historyProgress?.status === 'completed',
+  });
+
+  // 실패한 종목 재시도 함수
+  const handleRetryFailed = async () => {
+    if (!historyTaskId) return;
+
+    try {
+      const response = await fetch(`${API_URL}/api/tasks/${historyTaskId}/retry-failed?days=120`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to retry');
+      }
+
+      const result = await response.json();
+
+      if (result.success && result.task_id) {
+        setHistoryTaskId(result.task_id);
+        setShowHistoryProgress(true);
+        toast.success(result.message || '실패 종목 재시도가 시작되었습니다.');
+      } else {
+        toast.info(result.message || '재시도할 실패 종목이 없습니다.');
+      }
+    } catch (error) {
+      console.error('Error retrying failed stocks:', error);
+      toast.error('재시도 시작에 실패했습니다.');
+    }
+  };
+
+  // 실패한 로그 개수
+  const failedCount = collectionLogs?.filter(log => log.status === 'failed').length || 0;
 
   const iconOptions = ['Star', 'ThumbsDown', 'ShoppingCart', 'ThumbsUp', 'Eye', 'TrendingUp', 'Tag'];
   const colorOptions = [
@@ -373,6 +438,65 @@ export default function Settings() {
                     {historyProgress.status === 'failed' && historyProgress.error_message && (
                       <p className="text-xs text-red-600 dark:text-red-400">
                         ✗ 에러: {historyProgress.error_message}
+                      </p>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* 수집 로그 (완료 후) */}
+              {historyProgress?.status === 'completed' && collectionLogs && collectionLogs.length > 0 && (
+                <div className="mt-3 border border-border rounded-lg p-4">
+                  <div className="flex items-center justify-between mb-3">
+                    <h4 className="text-sm font-semibold text-foreground">수집 결과</h4>
+                    {failedCount > 0 && (
+                      <button
+                        onClick={handleRetryFailed}
+                        className="flex items-center gap-1.5 px-2.5 py-1 text-xs bg-red-500/10 hover:bg-red-500/20 text-red-600 dark:text-red-400 rounded transition-colors"
+                      >
+                        <RefreshCw className="w-3 h-3" />
+                        실패 {failedCount}개 재시도
+                      </button>
+                    )}
+                  </div>
+
+                  <div className="max-h-60 overflow-y-auto space-y-1.5">
+                    {collectionLogs.slice(0, 50).map((log) => (
+                      <div
+                        key={log.id}
+                        className={`flex items-center justify-between px-2.5 py-1.5 rounded text-xs ${
+                          log.status === 'success'
+                            ? 'bg-green-500/5 border border-green-500/20'
+                            : 'bg-red-500/5 border border-red-500/20'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2 flex-1 min-w-0">
+                          <span className={log.status === 'success' ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}>
+                            {log.status === 'success' ? '✓' : '✗'}
+                          </span>
+                          <span className="font-medium text-foreground truncate">
+                            {log.stock_name}
+                          </span>
+                          <span className="text-muted-foreground text-[10px]">
+                            {log.stock_symbol}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-2 text-[10px]">
+                          {log.status === 'success' ? (
+                            <span className="text-green-600 dark:text-green-400">
+                              {log.records_saved}건
+                            </span>
+                          ) : (
+                            <span className="text-red-600 dark:text-red-400 truncate max-w-[150px]" title={log.error_message}>
+                              {log.error_message || '실패'}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                    {collectionLogs.length > 50 && (
+                      <p className="text-[10px] text-muted-foreground text-center pt-2">
+                        외 {collectionLogs.length - 50}개 항목
                       </p>
                     )}
                   </div>

@@ -262,3 +262,23 @@ class TaskProgress(TaskProgressBase):
 
     class Config:
         from_attributes = True
+
+
+# ==================== 히스토리 수집 로그 ====================
+
+class HistoryCollectionLogBase(BaseModel):
+    task_id: str
+    stock_id: int
+    stock_symbol: str
+    stock_name: str
+    status: str  # "success", "failed"
+    records_saved: int
+    error_message: Optional[str] = None
+
+class HistoryCollectionLog(HistoryCollectionLogBase):
+    id: int
+    started_at: datetime
+    completed_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True

@@ -1934,6 +1934,116 @@ def get_running_tasks(db: Session = Depends(get_db)):
     return tasks
 
 
+# ==================== 히스토리 수집 로그 ====================
+
+@app.get("/api/tasks/{task_id}/logs", response_model=List[schemas.HistoryCollectionLog])
+def get_task_logs(
+    task_id: str,
+    status: Optional[str] = Query(None, pattern="^(success|failed)$"),
+    db: Session = Depends(get_db)
+):
+    """
+    특정 작업의 개별 종목별 로그 조회
+
+    Args:
+        task_id: TaskProgress의 task_id
+        status: 필터링할 상태 (success, failed, 없으면 전체)
+
+    Returns:
+        HistoryCollectionLog 객체 리스트
+    """
+    from app.models import HistoryCollectionLog
+
+    query = db.query(HistoryCollectionLog).filter(
+        HistoryCollectionLog.task_id == task_id
+    )
+
+    if status:
+        query = query.filter(HistoryCollectionLog.status == status)
+
+    logs = query.order_by(HistoryCollectionLog.started_at).all()
+    return logs
+
+
+@app.post("/api/tasks/{task_id}/retry-failed")
+def retry_failed_stocks(
+    task_id: str,
+    background_tasks: BackgroundTasks,
+    days: int = Query(120, ge=1, le=365),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    특정 작업에서 실패한 종목들만 재시도
+
+    Args:
+        task_id: 재시도할 TaskProgress의 task_id
+        days: 수집할 일수
+
+    Returns:
+        재시도 작업 정보
+    """
+    from app.models import HistoryCollectionLog, Stock
+    import uuid
+
+    # 실패한 종목 조회
+    failed_logs = db.query(HistoryCollectionLog).filter(
+        HistoryCollectionLog.task_id == task_id,
+        HistoryCollectionLog.status == "failed"
+    ).all()
+
+    if not failed_logs:
+        return {
+            "success": False,
+            "message": "재시도할 실패 종목이 없습니다.",
+            "failed_count": 0
+        }
+
+    # 실패한 종목 ID 추출
+    failed_stock_ids = [log.stock_id for log in failed_logs]
+
+    # Stock 객체 조회
+    failed_stocks = db.query(Stock).filter(
+        Stock.id.in_(failed_stock_ids),
+        Stock.is_active == True
+    ).all()
+
+    if not failed_stocks:
+        return {
+            "success": False,
+            "message": "재시도 가능한 종목이 없습니다.",
+            "failed_count": len(failed_logs)
+        }
+
+    # 새 task_id 생성
+    new_task_id = str(uuid.uuid4())
+
+    # 백그라운드 작업으로 재시도 실행
+    def retry_collection():
+        try:
+            from app.crawlers.kis_history_crawler import kis_history_crawler
+            logger.info(f"Retrying {len(failed_stocks)} failed stocks with task_id: {new_task_id}")
+            result = kis_history_crawler._collect_history_for_stocks(
+                failed_stocks,
+                days,
+                db,
+                task_id=new_task_id
+            )
+            logger.info(f"Retry completed: {result}")
+        except Exception as e:
+            logger.error(f"Error during retry: {str(e)}")
+
+    background_tasks.add_task(retry_collection)
+
+    return {
+        "success": True,
+        "message": f"{len(failed_stocks)}개 실패 종목 재시도가 시작되었습니다.",
+        "task_id": new_task_id,
+        "retry_count": len(failed_stocks),
+        "original_failed_count": len(failed_logs)
+    }
+
+
 @app.get("/api/signals/scan")
 def scan_all_tagged_stocks(
     days: int = Query(120, ge=60, le=365),

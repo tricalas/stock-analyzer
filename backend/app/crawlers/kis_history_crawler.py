@@ -389,22 +389,47 @@ class KISHistoryCrawler:
         db.commit()
 
         try:
+            from app.models import HistoryCollectionLog
+
             for i, stock in enumerate(stocks, 1):
+                # 종목별 로그 시작
+                log_entry = HistoryCollectionLog(
+                    task_id=task_id,
+                    stock_id=stock.id,
+                    stock_symbol=stock.symbol,
+                    stock_name=stock.name,
+                    status="running",
+                    records_saved=0
+                )
+                db.add(log_entry)
+                db.commit()
+
                 # TaskProgress 업데이트
                 task_progress.current_item = i
                 task_progress.current_stock_name = stock.name
                 task_progress.message = f"{i}/{total} 종목 수집 중: {stock.name} ({stock.symbol})"
                 db.commit()
 
+                # 히스토리 수집 실행
                 result = self.collect_history_for_stock(stock, days=days, db=db)
 
+                # 종목별 로그 업데이트
+                log_entry.completed_at = datetime.utcnow()
                 if result["success"]:
                     success_count += 1
                     total_records += result.get("records_saved", 0)
                     task_progress.success_count += 1
+
+                    # 로그에 성공 기록
+                    log_entry.status = "success"
+                    log_entry.records_saved = result.get("records_saved", 0)
                 else:
                     failed_count += 1
                     task_progress.failed_count += 1
+
+                    # 로그에 실패 기록
+                    log_entry.status = "failed"
+                    log_entry.error_message = result.get("error", "Unknown error")
 
                 db.commit()
 
