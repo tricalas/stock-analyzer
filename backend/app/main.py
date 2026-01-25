@@ -870,6 +870,91 @@ def get_stock_history_status(stock_id: int, db: Session = Depends(get_db)):
         "has_data": total_records > 0
     }
 
+@app.post("/api/stocks/{stock_id}/sync-history")
+def sync_stock_history(
+    stock_id: int,
+    days: int = Query(120, ge=1, le=365, description="수집할 일수 (전체 수집 시)"),
+    db: Session = Depends(get_db)
+):
+    """
+    개별 종목의 히스토리 데이터 동기화 (하이브리드 전략)
+
+    - 데이터 없음/부족: 전체 수집 (full)
+    - 최신 데이터 있음: 스킵 (skip)
+    - 며칠 빠짐: 증분 수집 (incremental)
+    """
+    try:
+        stock = db.query(Stock).filter(Stock.id == stock_id).first()
+        if not stock:
+            raise HTTPException(status_code=404, detail="Stock not found")
+
+        # 한국 주식만 KIS API 지원
+        if stock.market != 'KR':
+            raise HTTPException(status_code=400, detail="한국 주식만 지원됩니다")
+
+        # 수집 필요 여부 확인 (하이브리드 전략)
+        should_collect, mode, last_date = kis_history_crawler._should_collect_history(stock, db)
+
+        if mode == "skip":
+            # 이미 최신 상태
+            return {
+                "success": True,
+                "mode": "skip",
+                "message": f"이미 최신 상태입니다 (마지막: {last_date})",
+                "stock_id": stock_id,
+                "symbol": stock.symbol,
+                "name": stock.name,
+                "records_count": stock.history_records_count,
+                "last_date": str(last_date) if last_date else None,
+                "records_added": 0
+            }
+
+        # 수집 실행
+        if mode == "incremental":
+            # 증분 수집
+            incremental_start = last_date + timedelta(days=1)
+            result = kis_history_crawler.collect_history_for_stock(stock, start_date=incremental_start, db=db)
+            logger.info(f"Incremental sync for {stock.symbol} from {incremental_start}")
+        else:
+            # 전체 수집
+            result = kis_history_crawler.collect_history_for_stock(stock, days=days, db=db)
+            logger.info(f"Full sync for {stock.symbol} ({days} days)")
+
+        # 업데이트된 레코드 수 조회
+        updated_count = db.query(StockPriceHistory).filter(
+            StockPriceHistory.stock_id == stock_id
+        ).count()
+
+        # Stock의 history_records_count 업데이트
+        db.execute(
+            text("UPDATE stocks SET history_records_count = :count WHERE id = :id"),
+            {"count": updated_count, "id": stock_id}
+        )
+        db.commit()
+
+        # 최신 날짜 조회
+        latest = db.query(StockPriceHistory.date).filter(
+            StockPriceHistory.stock_id == stock_id
+        ).order_by(StockPriceHistory.date.desc()).first()
+
+        return {
+            "success": result.get("success", False),
+            "mode": mode,
+            "message": f"{mode} 수집 완료",
+            "stock_id": stock_id,
+            "symbol": stock.symbol,
+            "name": stock.name,
+            "records_count": updated_count,
+            "last_date": str(latest[0]) if latest else None,
+            "records_added": result.get("records_saved", 0)
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error syncing history for stock {stock_id}: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.delete("/api/stocks/cleanup-etf")
 def cleanup_etf_stocks(db: Session = Depends(get_db)):
     """지수/ETF 종목들을 데이터베이스에서 완전히 삭제"""

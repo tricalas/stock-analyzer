@@ -34,6 +34,15 @@ const StockItem = React.memo<StockItemProps>(({ stock, rank, onStockClick, onSho
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [syncStatus, setSyncStatus] = useState<'none' | 'partial' | 'synced'>(() => {
+    // 초기 상태 계산
+    const count = stock.history_records_count || 0;
+    if (count === 0) return 'none';
+    if (count < 60) return 'partial';
+    return 'synced';
+  });
+  const [recordsCount, setRecordsCount] = useState(stock.history_records_count || 0);
   const [showAnalysisModal, setShowAnalysisModal] = useState(false);
   const [analysisResult, setAnalysisResult] = useState<any>(null);
   const { tags: availableTags } = useTags();
@@ -168,6 +177,51 @@ const StockItem = React.memo<StockItemProps>(({ stock, rank, onStockClick, onSho
       });
     } finally {
       setIsAnalyzing(false);
+    }
+  };
+
+  const handleSyncHistory = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+
+    // 한국 주식만 지원
+    if (stock.market !== 'KR') {
+      toast.error('한국 주식만 지원됩니다');
+      return;
+    }
+
+    setIsSyncing(true);
+
+    try {
+      const result = await stockApi.syncStockHistory(stock.id, 120);
+      console.log(`Sync completed for ${stock.symbol}:`, result);
+
+      // 상태 업데이트
+      setRecordsCount(result.records_count);
+      if (result.records_count >= 60) {
+        setSyncStatus('synced');
+      } else if (result.records_count > 0) {
+        setSyncStatus('partial');
+      }
+
+      if (result.mode === 'skip') {
+        toast.info(`${stock.name}: 이미 최신 상태`, {
+          description: `마지막 데이터: ${result.last_date}`
+        });
+      } else {
+        toast.success(`${stock.name} 동기화 완료!`, {
+          description: `${result.records_added}건 추가 (총 ${result.records_count}일)`
+        });
+      }
+
+      // 쿼리 무효화하여 신호 데이터 새로고침
+      queryClient.invalidateQueries({ queryKey: ['stock-signals', stock.id] });
+    } catch (error: any) {
+      console.error(`Error syncing ${stock.symbol}:`, error);
+      toast.error(`${stock.name} 동기화 실패`, {
+        description: error.response?.data?.detail || '동기화 중 오류가 발생했습니다.'
+      });
+    } finally {
+      setIsSyncing(false);
     }
   };
 
@@ -314,18 +368,49 @@ const StockItem = React.memo<StockItemProps>(({ stock, rank, onStockClick, onSho
           </div>
           <div className="text-xs text-muted-foreground">
             {stock.symbol}
-            {/* 히스토리 데이터 상태 표시 */}
-            {stock.history_records_count !== undefined && stock.history_records_count > 0 ? (
+            {/* 히스토리 데이터 상태 + 동기화 버튼 */}
+            {stock.market === 'KR' && (
+              <button
+                onClick={handleSyncHistory}
+                disabled={isSyncing}
+                className={`ml-2 inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium transition-all cursor-pointer disabled:cursor-wait ${
+                  isSyncing
+                    ? 'bg-blue-500/10 text-blue-600 dark:text-blue-400'
+                    : syncStatus === 'synced'
+                    ? 'bg-green-500/10 text-green-600 dark:text-green-400 hover:bg-green-500/20'
+                    : syncStatus === 'partial'
+                    ? 'bg-yellow-500/10 text-yellow-600 dark:text-yellow-400 hover:bg-yellow-500/20'
+                    : 'bg-red-500/10 text-red-600 dark:text-red-400 hover:bg-red-500/20'
+                }`}
+                title={
+                  isSyncing ? '동기화 중...' :
+                  syncStatus === 'synced' ? '클릭하여 최신 데이터 확인' :
+                  syncStatus === 'partial' ? '클릭하여 데이터 보충' :
+                  '클릭하여 데이터 수집'
+                }
+              >
+                {isSyncing ? (
+                  <>
+                    <div className="h-3 w-3 animate-spin rounded-full border-2 border-current border-t-transparent"></div>
+                    <span>동기화중</span>
+                  </>
+                ) : syncStatus === 'synced' ? (
+                  <>✓ {recordsCount}일</>
+                ) : syncStatus === 'partial' ? (
+                  <>⚠ {recordsCount}일</>
+                ) : (
+                  <>분석</>
+                )}
+              </button>
+            )}
+            {/* 미국 주식은 기존 표시 유지 */}
+            {stock.market !== 'KR' && recordsCount > 0 && (
               <span className={`ml-2 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium ${
-                stock.history_records_count >= 60
+                recordsCount >= 60
                   ? 'bg-green-500/10 text-green-600 dark:text-green-400'
                   : 'bg-yellow-500/10 text-yellow-600 dark:text-yellow-400'
               }`}>
-                📊 {stock.history_records_count}일
-              </span>
-            ) : (
-              <span className="ml-2 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-red-500/10 text-red-600 dark:text-red-400">
-                ❌ 데이터 없음
+                📊 {recordsCount}일
               </span>
             )}
             {stock.latest_tag_date && (

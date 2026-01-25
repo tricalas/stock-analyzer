@@ -202,6 +202,24 @@ export const stockApi = {
     return response.data;
   },
 
+  // 단일 종목 히스토리 동기화 (하이브리드 전략)
+  syncStockHistory: async (stockId: number, days: number = 120): Promise<{
+    success: boolean;
+    mode: 'skip' | 'incremental' | 'full';
+    message: string;
+    stock_id: number;
+    symbol: string;
+    name: string;
+    records_count: number;
+    last_date: string | null;
+    records_added: number;
+  }> => {
+    const response = await api.post(`/api/stocks/${stockId}/sync-history`, null, {
+      params: { days }
+    });
+    return response.data;
+  },
+
   deleteStock: async (stockId: number) => {
     const response = await api.delete(`/api/stocks/${stockId}`);
     return response.data;
