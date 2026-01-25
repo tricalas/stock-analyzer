@@ -310,6 +310,24 @@ const SearchBar: React.FC<SearchBarProps> = ({ onStockSelect }) => {
     return '';
   };
 
+  // 검색어 하이라이트 처리
+  const highlightMatch = (text: string, query: string) => {
+    if (!query.trim()) return text;
+
+    const regex = new RegExp(`(${query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi');
+    const parts = text.split(regex);
+
+    return parts.map((part, index) =>
+      regex.test(part) ? (
+        <mark key={index} className="bg-yellow-300/80 dark:bg-yellow-500/50 text-foreground px-0.5 rounded-sm">
+          {part}
+        </mark>
+      ) : (
+        part
+      )
+    );
+  };
+
   return (
     <div ref={searchRef} className="relative w-full max-w-2xl">
       {/* 검색 입력창 */}
@@ -366,10 +384,10 @@ const SearchBar: React.FC<SearchBarProps> = ({ onStockSelect }) => {
                         onClick={(e) => handleOpenChart(e, stock)}
                         className="font-semibold text-foreground hover:text-primary hover:underline cursor-pointer transition-colors text-left truncate"
                       >
-                        {stock.name}
+                        {highlightMatch(stock.name, searchQuery)}
                       </button>
                       <span className="text-sm text-muted-foreground font-mono flex-shrink-0">
-                        {stock.symbol}
+                        {highlightMatch(stock.symbol, searchQuery)}
                       </span>
                       <button
                         onClick={(e) => handleOpenChart(e, stock)}

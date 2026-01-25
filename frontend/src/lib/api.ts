@@ -142,6 +142,8 @@ export const stockApi = {
     sector?: string;
     skip?: number;
     limit?: number;
+    order_by?: string;
+    order_dir?: string;
   }): Promise<StockListResponse> => {
     const response = await api.get('/api/stocks', { params });
     return response.data;

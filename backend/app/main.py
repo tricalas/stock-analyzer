@@ -217,6 +217,8 @@ def get_stocks(
     exclude_etf: bool = Query(False, description="Exclude ETF and index funds"),
     skip: int = Query(0, ge=0),
     limit: int = Query(20, ge=1, le=100),
+    order_by: Optional[str] = Query("market_cap", description="Sort field (market_cap, change_percent)"),
+    order_dir: Optional[str] = Query("desc", description="Sort direction (asc, desc)"),
     db: Session = Depends(get_db),
     current_user: Optional[User] = Depends(get_optional_current_user)
 ):
@@ -229,7 +231,9 @@ def get_stocks(
         "sector": sector,
         "exclude_etf": exclude_etf,
         "skip": skip,
-        "limit": limit
+        "limit": limit,
+        "order_by": order_by,
+        "order_dir": order_dir
     }
     cache_key = hashlib.md5(orjson.dumps(cache_key_data, option=orjson.OPT_SORT_KEYS)).hexdigest()
 
@@ -271,11 +275,23 @@ def get_stocks(
     if sector:
         query = query.filter(Stock.sector == sector)
 
-    # 일관된 정렬: 시가총액 내림차순, NULL은 마지막, 같으면 ID 순
-    query = query.order_by(
-        Stock.market_cap.desc().nullslast(),
-        Stock.id.asc()
-    )
+    # 동적 정렬: order_by, order_dir 파라미터 기반
+    sort_field_map = {
+        "market_cap": Stock.market_cap,
+        "change_percent": Stock.change_percent
+    }
+    sort_field = sort_field_map.get(order_by, Stock.market_cap)
+
+    if order_dir == "asc":
+        query = query.order_by(
+            sort_field.asc().nullslast(),
+            Stock.id.asc()
+        )
+    else:
+        query = query.order_by(
+            sort_field.desc().nullslast(),
+            Stock.id.asc()
+        )
 
     # COUNT 최적화: 첫 페이지(skip==0)에서만 정확한 count 계산
     # 이후 페이지에서는 캐시된 값 사용 (3-5배 속도 향상)

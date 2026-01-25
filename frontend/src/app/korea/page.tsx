@@ -7,9 +7,10 @@ import StockTable from '@/components/StockTable';
 import StockChartModal from '@/components/StockChartModal';
 import AppLayout from '@/components/AppLayout';
 import SearchBar from '@/components/SearchBar';
-import { Download, TrendingUp } from 'lucide-react';
+import { RefreshCw, TrendingUp } from 'lucide-react';
 import SimpleButton from '@/components/atoms/SimpleButton';
 import ScrollToTopButton from '@/components/atoms/ScrollToTopButton';
+import SortDropdown, { SortField, SortDirection } from '@/components/SortDropdown';
 import { Toaster } from '@/components/ui/sonner';
 import { toast } from 'sonner';
 import { useAuth } from '@/contexts/AuthContext';
@@ -22,6 +23,8 @@ export default function KoreaPage() {
   const [isChartModalOpen, setIsChartModalOpen] = useState(false);
   const loadMoreRef = useRef<HTMLDivElement>(null);
   const [lastUpdateTime, setLastUpdateTime] = useState<string | null>(null);
+  const [sortField, setSortField] = useState<SortField>('market_cap');
+  const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
 
   // Load last update time from localStorage
   useEffect(() => {
@@ -51,12 +54,14 @@ export default function KoreaPage() {
     isFetchingNextPage,
     refetch,
   } = useInfiniteQuery({
-    queryKey: ['stocks', 'KR'],
+    queryKey: ['stocks', 'KR', sortField, sortDirection],
     queryFn: ({ pageParam = 0 }) => {
       return stockApi.getStocks({
         market: 'KR',
         skip: pageParam,
         limit: 20,
+        order_by: sortField,
+        order_dir: sortDirection,
       });
     },
     getNextPageParam: (lastPage, allPages) => {
@@ -161,6 +166,11 @@ export default function KoreaPage() {
     queryClient.invalidateQueries({ queryKey: ['stocks', 'DISLIKES'] });
   };
 
+  const handleSortChange = (field: SortField, direction: SortDirection) => {
+    setSortField(field);
+    setSortDirection(direction);
+  };
+
   const handleStockClick = (stock: Stock) => {
     // 화면 오른쪽 70%에 전체 높이로 새 창 열기
     const width = Math.floor(window.screen.width * 0.7);
@@ -183,7 +193,11 @@ export default function KoreaPage() {
         {/* Controls - Sticky Header */}
         <div className="sticky top-0 z-20 -mx-4 lg:-mx-8 px-4 lg:px-8 py-4 bg-background/95 backdrop-blur-sm border-b border-border mb-6">
           <div className="flex items-center justify-between gap-4">
-            <h2 className="text-xl font-bold text-foreground">한국 시장</h2>
+            <SortDropdown
+              sortField={sortField}
+              sortDirection={sortDirection}
+              onSortChange={handleSortChange}
+            />
 
             {/* 검색바 */}
             <div className="flex-1 max-w-2xl">
@@ -211,13 +225,13 @@ export default function KoreaPage() {
             >
               {isRefreshing ? (
                 <>
-                  <div className="animate-spin rounded-full h-4 w-4 border-2 border-current border-t-transparent"></div>
-                  <span>데이터 가져오는 중...</span>
+                  <RefreshCw className="h-4 w-4 animate-spin" />
+                  <span>가져오는 중...</span>
                 </>
               ) : (
                 <>
-                  <Download className="h-4 w-4" />
-                  <span>데이터 새로고침</span>
+                  <RefreshCw className="h-4 w-4" />
+                  <span>최신 데이터</span>
                 </>
               )}
             </button>
