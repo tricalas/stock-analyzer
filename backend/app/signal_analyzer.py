@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import desc
 
 from app.models import Stock, StockPriceHistory, StockSignal, TaskProgress
-from app.technical_indicators import generate_descending_trendline_breakout_signals
+from app.technical_indicators import generate_descending_trendline_breakout_signals, generate_approaching_breakout_signals
 from app.database import get_db
 
 logger = logging.getLogger(__name__)
@@ -209,13 +209,16 @@ class SignalAnalyzer:
         if len(price_history) < 60:
             return {"signals_count": 0, "saved_count": 0}
 
-        # 신호 분석
+        # 1. 기존 "돌파 임박" 신호의 돌파 확인 업데이트
+        self._check_breakout_confirmation(stock_id, price_history, db)
+
+        # 2. 신호 분석 (돌파 + 돌파 임박)
         signals = self._run_signal_analysis(price_history, stock.current_price)
 
         if not signals or len(signals) == 0:
             return {"signals_count": 0, "saved_count": 0}
 
-        # 신호 저장
+        # 3. 신호 저장
         saved_count = self._save_signals(stock_id, signals, db)
 
         return {
@@ -223,12 +226,89 @@ class SignalAnalyzer:
             "saved_count": saved_count
         }
 
+    def _check_breakout_confirmation(
+        self,
+        stock_id: int,
+        price_history: List[StockPriceHistory],
+        db: Session
+    ):
+        """기존 '돌파 임박' 신호의 실제 돌파 여부 확인 및 업데이트"""
+        from datetime import timedelta
+
+        # 최근 10일 내 "돌파 임박" 신호 중 아직 확인되지 않은 것들
+        recent_approaching = db.query(StockSignal).filter(
+            StockSignal.stock_id == stock_id,
+            StockSignal.strategy_name == "approaching_breakout",
+            StockSignal.signal_date >= date.today() - timedelta(days=10)
+        ).all()
+
+        if not recent_approaching:
+            return
+
+        # 가격 데이터를 날짜로 인덱싱
+        price_by_date = {ph.date: ph for ph in price_history}
+
+        for signal in recent_approaching:
+            try:
+                details = json.loads(signal.details) if signal.details else {}
+
+                # 이미 확인된 신호는 스킵
+                if details.get('breakout_confirmed') is not None:
+                    continue
+
+                signal_date = signal.signal_date
+                slope = details.get('trendline_slope', 0)
+                intercept = details.get('trendline_intercept', 0)
+
+                if slope >= 0:  # 하락 추세가 아니면 스킵
+                    continue
+
+                # 신호 발생 후 3일 내 돌파 확인
+                breakout_confirmed = False
+                breakout_date = None
+
+                # 날짜 인덱스 찾기
+                all_dates = sorted(price_by_date.keys())
+                try:
+                    signal_idx = all_dates.index(signal_date)
+                except ValueError:
+                    continue
+
+                # 신호 다음날부터 3일간 확인
+                for i in range(signal_idx + 1, min(signal_idx + 4, len(all_dates))):
+                    check_date = all_dates[i]
+                    ph = price_by_date.get(check_date)
+                    if not ph:
+                        continue
+
+                    # 해당 날짜의 추세선 값 계산
+                    trendline_value = slope * i + intercept
+
+                    # 돌파 확인 (종가가 추세선 위)
+                    if ph.close_price > trendline_value:
+                        breakout_confirmed = True
+                        breakout_date = check_date
+                        break
+
+                # 신호 업데이트
+                details['breakout_confirmed'] = breakout_confirmed
+                if breakout_date:
+                    details['breakout_date'] = breakout_date.isoformat()
+                details['checked_at'] = datetime.utcnow().isoformat()
+
+                signal.details = json.dumps(details)
+                signal.updated_at = datetime.utcnow()
+
+            except Exception as e:
+                logger.error(f"Error checking breakout confirmation: {str(e)}")
+                continue
+
     def _run_signal_analysis(
         self,
         price_history: List[StockPriceHistory],
         current_price: Optional[float]
     ) -> List[Dict]:
-        """실제 신호 분석 로직 실행"""
+        """실제 신호 분석 로직 실행 (돌파 + 돌파 임박)"""
         try:
             import pandas as pd
 
@@ -248,24 +328,20 @@ class SignalAnalyzer:
             df.set_index('date', inplace=True)
             df.sort_index(inplace=True)
 
-            # 신호 생성 (technical_indicators.py 사용 - 순수 차트 패턴)
-            signals_df = generate_descending_trendline_breakout_signals(
+            signals = []
+
+            # 90일 이동평균선 계산
+            sma_90_series = df['close'].rolling(window=90, min_periods=60).mean()
+
+            # 1. 실제 돌파 신호
+            breakout_df = generate_descending_trendline_breakout_signals(
                 df,
                 swing_window=5,
                 min_touches=3
             )
+            breakout_df['sma_90'] = sma_90_series
 
-            # 90일 이동평균선 계산
-            signals_df['sma_90'] = df['close'].rolling(window=90, min_periods=60).mean()
-
-            # 매수 신호만 추출 (컬럼명: buy_signal)
-            buy_signals = signals_df[signals_df['buy_signal'] == 1].copy()
-
-            if len(buy_signals) == 0:
-                return []
-
-            # 신호 리스트 생성
-            signals = []
+            buy_signals = breakout_df[breakout_df['buy_signal'] == 1].copy()
             for idx, row in buy_signals.iterrows():
                 signal_price = row.get('close', 0)
                 sma_90 = row.get('sma_90', 0)
@@ -275,11 +351,12 @@ class SignalAnalyzer:
                 if current_price and signal_price > 0:
                     return_pct = ((current_price - signal_price) / signal_price) * 100
 
-                # 90일선 대비 비율 계산 (예: 105.5 = 90일선보다 5.5% 위)
                 if sma_90 and sma_90 > 0:
                     sma_90_ratio = (signal_price / sma_90) * 100
 
                 signal_info = {
+                    'signal_type': 'buy',
+                    'strategy_name': 'descending_trendline_breakout',
                     'signal_date': idx.date() if hasattr(idx, 'date') else idx,
                     'signal_price': float(signal_price),
                     'current_price': float(current_price) if current_price else None,
@@ -290,6 +367,55 @@ class SignalAnalyzer:
                         'trendline_intercept': float(row.get('trendline_intercept', 0)),
                         'sma_90': float(sma_90) if sma_90 else None,
                         'sma_90_ratio': float(round(sma_90_ratio, 1)) if sma_90_ratio else None
+                    }
+                }
+                signals.append(signal_info)
+
+            # 2. 돌파 임박 신호 (최근 5일만)
+            approaching_df = generate_approaching_breakout_signals(
+                df,
+                swing_window=5,
+                min_touches=3,
+                approach_threshold=3.0  # 추세선 3% 이내 접근
+            )
+            approaching_df['sma_90'] = sma_90_series
+
+            # 최근 5일 데이터만 필터링
+            recent_dates = df.index[-5:] if len(df) >= 5 else df.index
+            approaching_signals = approaching_df[
+                (approaching_df['approaching_signal'] == 1) &
+                (approaching_df.index.isin(recent_dates))
+            ].copy()
+
+            for idx, row in approaching_signals.iterrows():
+                signal_price = row.get('close', 0)
+                sma_90 = row.get('sma_90', 0)
+                distance = row.get('distance_to_trendline', 0)
+                return_pct = 0.0
+                sma_90_ratio = 0.0
+
+                if current_price and signal_price > 0:
+                    return_pct = ((current_price - signal_price) / signal_price) * 100
+
+                if sma_90 and sma_90 > 0:
+                    sma_90_ratio = (signal_price / sma_90) * 100
+
+                signal_info = {
+                    'signal_type': 'approaching',
+                    'strategy_name': 'approaching_breakout',
+                    'signal_date': idx.date() if hasattr(idx, 'date') else idx,
+                    'signal_price': float(signal_price),
+                    'current_price': float(current_price) if current_price else None,
+                    'return_percent': float(round(return_pct, 2)),
+                    'details': {
+                        'strategy': 'approaching_breakout',
+                        'trendline_slope': float(row.get('trendline_slope', 0)),
+                        'trendline_intercept': float(row.get('trendline_intercept', 0)),
+                        'distance_to_trendline': float(round(distance, 2)) if distance else None,
+                        'sma_90': float(sma_90) if sma_90 else None,
+                        'sma_90_ratio': float(round(sma_90_ratio, 1)) if sma_90_ratio else None,
+                        'breakout_confirmed': None,  # 아직 확인 안됨
+                        'breakout_date': None
                     }
                 }
                 signals.append(signal_info)
@@ -306,11 +432,15 @@ class SignalAnalyzer:
 
         for signal_info in signals:
             try:
+                # 신호 정보에서 전략명과 타입 추출
+                strategy_name = signal_info.get('strategy_name', self.strategy_name)
+                signal_type = signal_info.get('signal_type', 'buy')
+
                 # 기존 신호 확인 (같은 종목, 같은 날짜, 같은 전략)
                 existing = db.query(StockSignal).filter(
                     StockSignal.stock_id == stock_id,
                     StockSignal.signal_date == signal_info['signal_date'],
-                    StockSignal.strategy_name == self.strategy_name
+                    StockSignal.strategy_name == strategy_name
                 ).first()
 
                 if existing:
@@ -322,10 +452,10 @@ class SignalAnalyzer:
                     # 새 신호 생성
                     new_signal = StockSignal(
                         stock_id=stock_id,
-                        signal_type="buy",
+                        signal_type=signal_type,
                         signal_date=signal_info['signal_date'],
                         signal_price=signal_info['signal_price'],
-                        strategy_name=self.strategy_name,
+                        strategy_name=strategy_name,
                         current_price=signal_info['current_price'],
                         return_percent=signal_info['return_percent'],
                         details=json.dumps(signal_info['details']),

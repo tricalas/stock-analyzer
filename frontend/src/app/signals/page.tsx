@@ -403,9 +403,39 @@ export default function SignalsPage() {
                       >
                         {/* 신호일 */}
                         <td className="px-4 py-3 whitespace-nowrap text-center">
-                          <span className="text-sm text-foreground">
-                            {formatDate(signal.signal_date)}
-                          </span>
+                          <div className="flex flex-col items-center gap-1">
+                            <span className="text-sm text-foreground">
+                              {formatDate(signal.signal_date)}
+                            </span>
+                            {/* 신호 타입 배지 */}
+                            {(() => {
+                              const isApproaching = signal.strategy_name === 'approaching_breakout';
+                              let details;
+                              try {
+                                details = signal.details ? JSON.parse(signal.details) : null;
+                              } catch { details = null; }
+
+                              if (isApproaching) {
+                                const confirmed = details?.breakout_confirmed;
+                                return (
+                                  <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${
+                                    confirmed === true
+                                      ? 'bg-green-500/20 text-green-600 dark:text-green-400'
+                                      : confirmed === false
+                                      ? 'bg-red-500/20 text-red-600 dark:text-red-400'
+                                      : 'bg-yellow-500/20 text-yellow-600 dark:text-yellow-400'
+                                  }`}>
+                                    {confirmed === true ? '✓ 돌파성공' : confirmed === false ? '✗ 실패' : '⏳ 임박'}
+                                  </span>
+                                );
+                              }
+                              return (
+                                <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-blue-500/20 text-blue-600 dark:text-blue-400">
+                                  돌파
+                                </span>
+                              );
+                            })()}
+                          </div>
                         </td>
 
                         {/* 종목명 */}

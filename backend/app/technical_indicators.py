@@ -616,6 +616,112 @@ def generate_descending_trendline_breakout_signals(
     return result
 
 
+def generate_approaching_breakout_signals(
+    df: pd.DataFrame,
+    swing_window: int = 5,
+    min_touches: int = 3,
+    approach_threshold: float = 3.0
+) -> pd.DataFrame:
+    """
+    하락 추세선 돌파 임박 신호 생성
+
+    전략:
+    1. 하락 추세선 계산 (Lower High 연결)
+    2. 가격이 추세선의 approach_threshold% 이내로 접근 시 신호 발생
+    3. 양봉일 때만 신호 발생 (상승 모멘텀 확인)
+
+    Args:
+        df: OHLCV 데이터프레임
+        swing_window: 스윙 고저점 인식 윈도우
+        min_touches: 추세선에 필요한 최소 터치 포인트
+        approach_threshold: 추세선 접근 임계값 (%, 기본 3%)
+
+    Returns:
+        신호가 추가된 데이터프레임
+
+    추가 컬럼:
+        - approaching_signal: 돌파 임박 신호 (0 or 1)
+        - distance_to_trendline: 추세선까지 거리 (%)
+        - trendline_slope: 추세선 기울기
+        - trendline_intercept: 추세선 절편
+    """
+    result = df.copy()
+    approaching_signals = [0] * len(df)
+    distances = [None] * len(df)
+
+    # 1. 스윙 고점 찾기
+    swings = find_swing_highs_lows(df, window=swing_window)
+    swing_highs = swings['swing_highs']
+
+    if len(swing_highs) < min_touches:
+        result['approaching_signal'] = approaching_signals
+        result['distance_to_trendline'] = distances
+        result['trendline_slope'] = 0.0
+        result['trendline_intercept'] = 0.0
+        return result
+
+    # 2. Lower High 패턴 찾기
+    lower_highs = find_lower_highs(swing_highs, min_count=min_touches)
+
+    if len(lower_highs) < min_touches:
+        result['approaching_signal'] = approaching_signals
+        result['distance_to_trendline'] = distances
+        result['trendline_slope'] = 0.0
+        result['trendline_intercept'] = 0.0
+        return result
+
+    # 3. 하락 추세선 계산
+    trendline = calculate_trendline(lower_highs)
+
+    if trendline is None:
+        result['approaching_signal'] = approaching_signals
+        result['distance_to_trendline'] = distances
+        result['trendline_slope'] = 0.0
+        result['trendline_intercept'] = 0.0
+        return result
+
+    slope, intercept = trendline
+
+    if slope >= 0:  # 하락 추세 아님
+        result['approaching_signal'] = approaching_signals
+        result['distance_to_trendline'] = distances
+        result['trendline_slope'] = slope
+        result['trendline_intercept'] = intercept
+        return result
+
+    # 4. 돌파 임박 감지
+    last_lower_high_idx = lower_highs[-1][0]
+
+    for i in range(last_lower_high_idx + 1, len(df)):
+        trendline_value = slope * i + intercept
+        close_price = df['close'].iloc[i]
+        open_price = df['open'].iloc[i]
+
+        # 추세선까지 거리 계산 (%)
+        if close_price > 0:
+            distance = (trendline_value - close_price) / close_price * 100
+            distances[i] = distance
+
+            # 조건 1: 추세선 아래에 있음 (아직 돌파 안함)
+            below_trendline = close_price < trendline_value
+
+            # 조건 2: 추세선에 가까움 (threshold% 이내)
+            close_to_trendline = 0 < distance <= approach_threshold
+
+            # 조건 3: 양봉 (상승 모멘텀)
+            is_bullish = close_price > open_price
+
+            if below_trendline and close_to_trendline and is_bullish:
+                approaching_signals[i] = 1
+
+    result['approaching_signal'] = approaching_signals
+    result['distance_to_trendline'] = distances
+    result['trendline_slope'] = slope
+    result['trendline_intercept'] = intercept
+
+    return result
+
+
 def generate_trading_signals(df: pd.DataFrame) -> pd.DataFrame:
     """
     [DEPRECATED] 기존 복합 지표 기반 신호 생성
