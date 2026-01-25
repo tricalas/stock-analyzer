@@ -1,14 +1,15 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import AppLayout from '@/components/AppLayout';
-import { Plus, Edit2, Trash2, Save, X, Tag as TagIcon, Users, Shield, User, Key, AlertCircle, ThumbsDown } from 'lucide-react';
+import { Plus, Edit2, Trash2, Save, X, Tag as TagIcon, Users, Shield, User, Key, AlertCircle, ThumbsDown, Database, RefreshCw } from 'lucide-react';
 import { stockApi, Tag } from '@/lib/api';
 import { toast } from 'sonner';
 import { Toaster } from '@/components/ui/sonner';
 import { useTags } from '@/contexts/TagContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { useRouter } from 'next/navigation';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 
 export default function Settings() {
   const { tags, loading: isLoading, refetchTags } = useTags();
@@ -36,6 +37,90 @@ export default function Settings() {
     newPin: '',
     confirmPin: '',
   });
+
+  // 히스토리 수집 진행 상황 추적
+  const [showHistoryProgress, setShowHistoryProgress] = useState(false);
+  const [historyTaskId, setHistoryTaskId] = useState<string | null>(null);
+
+  // API URL
+  const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+
+  // TaskProgress 인터페이스
+  interface TaskProgress {
+    task_id: string;
+    task_type: string;
+    status: string;
+    total_items: number;
+    current_item: number;
+    current_stock_name?: string;
+    success_count: number;
+    failed_count: number;
+    message?: string;
+    error_message?: string;
+    started_at: string;
+    updated_at: string;
+    completed_at?: string;
+  }
+
+  // 히스토리 수집 진행 상황 조회
+  const { data: historyProgress } = useQuery<TaskProgress>({
+    queryKey: ['history-progress', historyTaskId],
+    queryFn: async () => {
+      if (!historyTaskId) return null;
+      const response = await fetch(`${API_URL}/api/tasks/${historyTaskId}`, {
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`,
+        },
+      });
+      if (!response.ok) throw new Error('Failed to fetch task progress');
+      return response.json();
+    },
+    enabled: !!historyTaskId && showHistoryProgress,
+    refetchInterval: (data) => {
+      if (data?.status === 'completed' || data?.status === 'failed') {
+        return false;
+      }
+      return 2000; // 2초마다 갱신
+    },
+  });
+
+  // 진행 상황 완료 시 자동 숨김
+  useEffect(() => {
+    if (historyProgress?.status === 'completed' || historyProgress?.status === 'failed') {
+      setTimeout(() => {
+        setShowHistoryProgress(false);
+        setHistoryTaskId(null);
+      }, 5000); // 5초 후 자동 숨김
+    }
+  }, [historyProgress?.status]);
+
+  // 히스토리 수집 시작 함수
+  const handleStartHistoryCollection = async () => {
+    try {
+      const response = await fetch(`${API_URL}/api/stocks/tagged/collect-history?days=120`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to start history collection');
+      }
+
+      const result = await response.json();
+
+      if (result.task_id) {
+        setHistoryTaskId(result.task_id);
+        setShowHistoryProgress(true);
+        toast.success(result.message || '히스토리 수집이 시작되었습니다.');
+      }
+    } catch (error) {
+      console.error('Error starting history collection:', error);
+      toast.error('히스토리 수집 시작에 실패했습니다.');
+    }
+  };
 
   const iconOptions = ['Star', 'ThumbsDown', 'ShoppingCart', 'ThumbsUp', 'Eye', 'TrendingUp', 'Tag'];
   const colorOptions = [
@@ -210,6 +295,93 @@ export default function Settings() {
                   <span className="text-sm font-medium">제외 종목</span>
                 </button>
               </div>
+            </div>
+
+            {/* 데이터 수집 현황 */}
+            <div className="mt-4 pt-4 border-t border-border">
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-2">
+                  <Database className="w-4 h-4 text-primary" />
+                  <p className="text-sm font-medium text-foreground">히스토리 데이터 수집</p>
+                </div>
+                <button
+                  onClick={handleStartHistoryCollection}
+                  disabled={showHistoryProgress}
+                  className="flex items-center gap-2 px-3 py-1.5 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-sm"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${showHistoryProgress ? 'animate-spin' : ''}`} />
+                  수집 시작
+                </button>
+              </div>
+
+              {/* 히스토리 수집 진행 상황 */}
+              {showHistoryProgress && historyProgress && (
+                <div className="bg-primary/10 border border-primary/30 rounded-lg p-4 mb-3">
+                  <div className="space-y-3">
+                    {/* 헤더 */}
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <RefreshCw className="h-4 w-4 text-primary animate-spin" />
+                        <div>
+                          <h4 className="text-sm font-semibold text-foreground">수집 진행 중</h4>
+                          <p className="text-xs text-muted-foreground">{historyProgress.message}</p>
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-xs font-medium text-foreground">
+                          {historyProgress.current_item} / {historyProgress.total_items}
+                        </p>
+                        <p className="text-[10px] text-muted-foreground">
+                          {Math.round((historyProgress.current_item / historyProgress.total_items) * 100)}% 완료
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* 프로그레스 바 */}
+                    <div className="w-full bg-muted rounded-full h-2">
+                      <div
+                        className="bg-primary rounded-full h-2 transition-all duration-300 ease-out"
+                        style={{
+                          width: `${(historyProgress.current_item / historyProgress.total_items) * 100}%`,
+                        }}
+                      />
+                    </div>
+
+                    {/* 현재 종목 */}
+                    {historyProgress.current_stock_name && (
+                      <p className="text-xs text-muted-foreground">
+                        현재 수집 중: <span className="font-medium text-foreground">{historyProgress.current_stock_name}</span>
+                      </p>
+                    )}
+
+                    {/* 성공/실패 카운트 */}
+                    <div className="flex gap-3 text-xs">
+                      <span className="text-green-600 dark:text-green-400">
+                        ✓ 성공: {historyProgress.success_count}
+                      </span>
+                      <span className="text-red-600 dark:text-red-400">
+                        ✗ 실패: {historyProgress.failed_count}
+                      </span>
+                    </div>
+
+                    {/* 완료 또는 에러 메시지 */}
+                    {historyProgress.status === 'completed' && (
+                      <p className="text-xs text-green-600 dark:text-green-400 font-medium">
+                        ✓ 수집 완료!
+                      </p>
+                    )}
+                    {historyProgress.status === 'failed' && historyProgress.error_message && (
+                      <p className="text-xs text-red-600 dark:text-red-400">
+                        ✗ 에러: {historyProgress.error_message}
+                      </p>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              <p className="text-xs text-muted-foreground">
+                종목 리스트에서 히스토리 데이터를 수집하면 진행 상황이 여기에 표시됩니다.
+              </p>
             </div>
           </div>
         )}

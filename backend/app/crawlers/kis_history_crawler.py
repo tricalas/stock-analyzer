@@ -246,13 +246,15 @@ class KISHistoryCrawler:
 
     def collect_history_for_tagged_stocks(
         self,
-        days: int = 120
+        days: int = 120,
+        task_id: Optional[str] = None
     ) -> Dict[str, any]:
         """
         태그가 있는 모든 종목의 히스토리 수집
 
         Args:
             days: 수집할 일수
+            task_id: TaskProgress에 사용할 task_id (선택적, 없으면 자동 생성)
 
         Returns:
             수집 결과 딕셔너리
@@ -274,7 +276,8 @@ class KISHistoryCrawler:
                     "success_count": 0,
                     "failed_count": 0,
                     "total_records": 0,
-                    "message": "No tagged stocks to process"
+                    "message": "No tagged stocks to process",
+                    "task_id": task_id
                 }
 
             stocks = db.query(Stock).filter(
@@ -284,7 +287,7 @@ class KISHistoryCrawler:
 
             logger.info(f"Found {len(stocks)} tagged stocks to process")
 
-            return self._collect_history_for_stocks(stocks, days, db)
+            return self._collect_history_for_stocks(stocks, days, db, task_id=task_id)
 
         except Exception as e:
             logger.error(f"Error collecting history for tagged stocks: {str(e)}")
@@ -350,7 +353,8 @@ class KISHistoryCrawler:
         self,
         stocks: List[Stock],
         days: int,
-        db: Session
+        db: Session,
+        task_id: Optional[str] = None
     ) -> Dict[str, any]:
         """
         주어진 종목 리스트의 히스토리 수집 (공통 로직)
@@ -359,6 +363,7 @@ class KISHistoryCrawler:
             stocks: 종목 리스트
             days: 수집할 일수
             db: DB 세션
+            task_id: TaskProgress에 사용할 task_id (선택적, 없으면 자동 생성)
 
         Returns:
             수집 결과 딕셔너리
@@ -368,8 +373,10 @@ class KISHistoryCrawler:
         failed_count = 0
         total_records = 0
 
-        # TaskProgress 생성
-        task_id = str(uuid.uuid4())
+        # TaskProgress 생성 (task_id가 제공되지 않으면 자동 생성)
+        if task_id is None:
+            task_id = str(uuid.uuid4())
+
         task_progress = TaskProgress(
             task_id=task_id,
             task_type="history_collection",

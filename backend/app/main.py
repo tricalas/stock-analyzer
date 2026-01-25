@@ -1537,12 +1537,12 @@ def create_user_direct(
 
 # ==================== 히스토리 데이터 수집 ====================
 
-def run_background_history_collection(days: int):
+def run_background_history_collection(days: int, task_id: str):
     """백그라운드에서 실행될 히스토리 수집 작업"""
     try:
         from app.crawlers.kis_history_crawler import kis_history_crawler
-        logger.info(f"Starting background history collection ({days} days)")
-        result = kis_history_crawler.collect_history_for_tagged_stocks(days=days)
+        logger.info(f"Starting background history collection ({days} days) with task_id: {task_id}")
+        result = kis_history_crawler.collect_history_for_tagged_stocks(days=days, task_id=task_id)
         logger.info(f"History collection completed: {result}")
     except Exception as e:
         logger.error(f"Error during background history collection: {str(e)}")
@@ -1561,16 +1561,22 @@ def collect_history_for_tagged_stocks(
         days: 수집할 일수 (1~365일, 기본 120일)
 
     Returns:
-        수집 작업 시작 메시지
+        수집 작업 시작 메시지 및 task_id
     """
-    # 백그라운드 작업 추가
-    background_tasks.add_task(run_background_history_collection, days)
+    import uuid
 
-    # 즉시 응답 반환
+    # task_id 생성
+    task_id = str(uuid.uuid4())
+
+    # 백그라운드 작업 추가
+    background_tasks.add_task(run_background_history_collection, days, task_id)
+
+    # task_id와 함께 즉시 응답 반환
     return {
         "success": True,
         "message": f"히스토리 수집 작업이 시작되었습니다. ({days}일치 데이터)",
-        "days": days
+        "days": days,
+        "task_id": task_id
     }
 
 
