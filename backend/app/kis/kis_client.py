@@ -63,16 +63,28 @@ class KISClient:
         """앱키 기반 캐시 키 생성 (여러 계정 구분용)"""
         return hashlib.md5(f"{self.app_key}:{self.is_mock}".encode()).hexdigest()[:8]
 
+    def _ensure_table_exists(self) -> None:
+        """토큰 캐시 테이블이 존재하는지 확인하고 없으면 생성"""
+        try:
+            from app.database import engine
+            from app.models import ApiTokenCache
+            ApiTokenCache.__table__.create(bind=engine, checkfirst=True)
+        except Exception as e:
+            logger.warning(f"Could not ensure table exists: {e}")
+
     def _load_cached_token(self) -> bool:
         """DB에서 캐시된 토큰 로드"""
         try:
             from app.database import SessionLocal
             from app.models import ApiTokenCache
 
+            # 테이블 존재 확인
+            self._ensure_table_exists()
+
             db = SessionLocal()
             try:
                 cache_key = self._get_cache_key()
-                logger.info(f"Loading KIS token from DB (cache_key: {cache_key})")
+                logger.info(f"[KIS Token] Loading from DB (cache_key: {cache_key})")
 
                 cached = db.query(ApiTokenCache).filter(
                     ApiTokenCache.provider == 'kis',
@@ -80,28 +92,30 @@ class KISClient:
                 ).first()
 
                 if not cached:
-                    logger.info("No cached token in DB, will issue new one")
+                    logger.info("[KIS Token] No cached token in DB, will issue new one")
                     return False
 
                 # 만료 5분 전까지만 유효하게 처리
                 time_until_expiry = cached.expired_at - datetime.now()
-                logger.info(f"Token expires at {cached.expired_at}, time until expiry: {time_until_expiry}")
+                logger.info(f"[KIS Token] Found! expires at {cached.expired_at}, time until expiry: {time_until_expiry}")
 
                 if datetime.now() >= (cached.expired_at - timedelta(minutes=5)):
-                    logger.info("Cached token is expired or expiring soon, will issue new one")
+                    logger.info("[KIS Token] Cached token is expired or expiring soon, will issue new one")
                     return False
 
                 self.access_token = cached.access_token
                 self.token_expired_at = cached.expired_at
 
-                logger.info(f"SUCCESS: Loaded cached KIS token from DB (expires at {self.token_expired_at})")
+                logger.info(f"[KIS Token] SUCCESS: Using cached token (expires at {self.token_expired_at})")
                 return True
 
             finally:
                 db.close()
 
         except Exception as e:
-            logger.warning(f"Failed to load cached token from DB: {str(e)}")
+            logger.error(f"[KIS Token] Failed to load cached token from DB: {str(e)}")
+            import traceback
+            logger.error(traceback.format_exc())
             return False
 
     def _save_token_cache(self) -> None:
@@ -110,10 +124,13 @@ class KISClient:
             from app.database import SessionLocal
             from app.models import ApiTokenCache
 
+            # 테이블 존재 확인
+            self._ensure_table_exists()
+
             db = SessionLocal()
             try:
                 cache_key = self._get_cache_key()
-                logger.info(f"Saving KIS token to DB (cache_key: {cache_key})")
+                logger.info(f"[KIS Token] Saving to DB (cache_key: {cache_key})")
 
                 # 기존 캐시 확인
                 cached = db.query(ApiTokenCache).filter(
@@ -126,6 +143,7 @@ class KISClient:
                     cached.access_token = self.access_token
                     cached.expired_at = self.token_expired_at
                     cached.updated_at = datetime.now()
+                    logger.info(f"[KIS Token] Updating existing cache entry")
                 else:
                     # 새로 생성
                     cached = ApiTokenCache(
@@ -135,15 +153,18 @@ class KISClient:
                         expired_at=self.token_expired_at
                     )
                     db.add(cached)
+                    logger.info(f"[KIS Token] Creating new cache entry")
 
                 db.commit()
-                logger.info(f"SUCCESS: Saved KIS token to DB (expires at {self.token_expired_at})")
+                logger.info(f"[KIS Token] SUCCESS: Saved to DB (expires at {self.token_expired_at})")
 
             finally:
                 db.close()
 
         except Exception as e:
-            logger.error(f"Failed to save token to DB: {str(e)}")
+            logger.error(f"[KIS Token] Failed to save to DB: {str(e)}")
+            import traceback
+            logger.error(traceback.format_exc())
 
     def _ensure_token(self) -> None:
         """토큰이 유효한지 확인하고, 필요 시 갱신"""
@@ -158,7 +179,9 @@ class KISClient:
         return datetime.now() >= (self.token_expired_at - timedelta(minutes=5))
 
     def _issue_token(self) -> None:
-        """접근 토큰 발급"""
+        """접근 토큰 발급 (신규 발급 - 문자 발송됨)"""
+        logger.warning("[KIS Token] *** ISSUING NEW TOKEN *** (SMS will be sent)")
+
         # 모의투자: tokenP, 실전투자: token
         endpoint = "/oauth2/tokenP" if self.is_mock else "/oauth2/token"
         url = f"{self.base_url}{endpoint}"
@@ -184,13 +207,13 @@ class KISClient:
             expires_in = int(result.get("expires_in", 86400))  # 기본 24시간
             self.token_expired_at = datetime.now() + timedelta(seconds=expires_in)
 
-            logger.info(f"KIS API token issued successfully (expires at {self.token_expired_at})")
+            logger.info(f"[KIS Token] New token issued (expires at {self.token_expired_at})")
 
             # 토큰 캐시 저장
             self._save_token_cache()
 
         except Exception as e:
-            logger.error(f"Failed to issue KIS API token: {str(e)}")
+            logger.error(f"[KIS Token] Failed to issue token: {str(e)}")
             raise
 
     def _get_headers(self, tr_id: str, tr_cont: str = "") -> Dict[str, str]:
