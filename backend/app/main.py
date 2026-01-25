@@ -1968,7 +1968,6 @@ def get_stored_signals(
 
 @app.post("/api/signals/refresh")
 def refresh_signals(
-    background_tasks: BackgroundTasks,
     mode: str = Query("all", pattern="^(tagged|all|top)$"),
     limit: int = Query(500, ge=10, le=2000),
     days: int = Query(120, ge=60, le=365),
@@ -1976,7 +1975,7 @@ def refresh_signals(
     current_user: Optional[User] = Depends(get_optional_current_user)
 ):
     """
-    매매 신호 재분석 (백그라운드 작업)
+    매매 신호 재분석 (별도 스레드에서 실행)
 
     Args:
         mode: 분석 모드 (tagged, all, top)
@@ -1986,23 +1985,30 @@ def refresh_signals(
     Returns:
         작업 시작 메시지
     """
-    def run_analysis():
+    import threading
+
+    def run_analysis_thread():
         try:
-            logger.info(f"🔍 Background signal analysis started (mode: {mode})...")
+            logger.info(f"🔍 Signal analysis thread started (mode: {mode})...")
             result = signal_analyzer.analyze_and_store_signals(
                 mode=mode,
                 limit=limit,
                 days=days
             )
-            logger.info(f"✅ Background signal analysis completed: {result}")
+            logger.info(f"✅ Signal analysis completed: {result}")
         except Exception as e:
-            logger.error(f"❌ Error in background signal analysis: {str(e)}")
+            logger.error(f"❌ Error in signal analysis thread: {str(e)}")
+            import traceback
+            logger.error(traceback.format_exc())
 
-    background_tasks.add_task(run_analysis)
+    # 별도 스레드에서 실행 (daemon=True: 메인 프로세스 종료 시 함께 종료)
+    thread = threading.Thread(target=run_analysis_thread, daemon=True)
+    thread.start()
+    logger.info(f"🚀 Signal analysis thread launched (thread_id: {thread.ident})")
 
-    # 최신 TaskProgress를 조회하여 task_id 반환 (약간의 지연 허용)
+    # 스레드가 TaskProgress를 생성할 시간 확보
     import time
-    time.sleep(0.5)  # 백그라운드 작업이 TaskProgress를 생성할 시간 확보
+    time.sleep(0.5)
     latest_task = db.query(TaskProgress).filter(
         TaskProgress.task_type == "signal_analysis"
     ).order_by(desc(TaskProgress.started_at)).first()
