@@ -384,6 +384,10 @@ def get_stocks(
             "tags": tags,
             "latest_tag_date": latest_tag_date,
 
+            # 히스토리 데이터 상태
+            "history_records_count": stock.history_records_count or 0,
+            "has_history_data": (stock.history_records_count or 0) > 0,
+
             # 호환성을 위한 최소 필드만 유지
             "latest_price": stock.current_price,
             "latest_change": stock.change_amount,
@@ -538,6 +542,10 @@ def search_stocks(
             "ma90_percentage": ma90_percentage,
             "tags": tags,
             "latest_tag_date": latest_tag_date,
+
+            # 히스토리 데이터 상태
+            "history_records_count": stock.history_records_count or 0,
+            "has_history_data": (stock.history_records_count or 0) > 0,
 
             # 호환성을 위한 최소 필드
             "latest_price": stock.current_price,
