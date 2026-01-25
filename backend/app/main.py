@@ -2026,10 +2026,18 @@ def get_stored_signals(
         limit: 최대 조회 개수
 
     Returns:
-        저장된 시그널 목록
+        저장된 시그널 목록 (최근 10일 이내)
     """
-    # 활성 시그널 조회
-    query = db.query(StockSignal).filter(StockSignal.is_active == True)
+    from datetime import timedelta
+
+    # 최근 10일 이내 시그널만 조회
+    ten_days_ago = date.today() - timedelta(days=10)
+
+    # 활성 시그널 조회 (최근 10일)
+    query = db.query(StockSignal).filter(
+        StockSignal.is_active == True,
+        StockSignal.signal_date >= ten_days_ago
+    )
 
     if signal_type:
         query = query.filter(StockSignal.signal_type == signal_type)
