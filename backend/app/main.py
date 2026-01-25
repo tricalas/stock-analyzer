@@ -2384,6 +2384,53 @@ def check_history_counts(
     }
 
 
+@app.get("/api/admin/history-stats")
+def get_history_stats(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """종목별 히스토리 데이터 통계 조회 (디버깅용)"""
+    if not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Admin access required")
+
+    from sqlalchemy import func
+
+    # 종목별 히스토리 개수 조회
+    history_counts = db.query(
+        StockPriceHistory.stock_id,
+        func.count(StockPriceHistory.id).label('count')
+    ).group_by(StockPriceHistory.stock_id).all()
+
+    # 통계 분석
+    total_with_history = len(history_counts)
+    count_60_or_more = sum(1 for row in history_counts if row.count >= 60)
+    count_distribution = {}
+
+    for row in history_counts:
+        bucket = (row.count // 30) * 30  # 30일 단위로 그룹화
+        bucket_key = f"{bucket}-{bucket+29}"
+        count_distribution[bucket_key] = count_distribution.get(bucket_key, 0) + 1
+
+    # 상세 내역 (60일 이상만)
+    stocks_with_60_plus = []
+    for row in sorted(history_counts, key=lambda x: x.count, reverse=True)[:20]:
+        stock = db.query(Stock).filter(Stock.id == row.stock_id).first()
+        if stock:
+            stocks_with_60_plus.append({
+                "id": stock.id,
+                "symbol": stock.symbol,
+                "name": stock.name,
+                "history_count": row.count
+            })
+
+    return {
+        "total_stocks_with_history": total_with_history,
+        "stocks_with_60_plus_days": count_60_or_more,
+        "count_distribution": count_distribution,
+        "top_20_stocks": stocks_with_60_plus
+    }
+
+
 @app.post("/api/admin/sync-history-counts")
 def sync_history_counts(
     db: Session = Depends(get_db),
