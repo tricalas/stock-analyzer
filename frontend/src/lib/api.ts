@@ -284,6 +284,21 @@ export const stockApi = {
     return response.data;
   },
 
+  // 신호 관련 API
+  getStockSignals: async (stockId: number, days: number = 120) => {
+    const response = await api.get(`/api/stocks/${stockId}/signals`, { params: { days } });
+    return response.data;
+  },
+
+  scanAllSignals: async (params?: {
+    days?: number;
+    mode?: 'tagged' | 'all' | 'top';
+    limit?: number;
+  }) => {
+    const response = await api.get('/api/signals/scan', { params });
+    return response.data;
+  },
+
 };
 
 // 유저 관리 API

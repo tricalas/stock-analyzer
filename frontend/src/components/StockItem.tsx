@@ -2,10 +2,10 @@
 
 import React, { useState, useEffect } from 'react';
 import { Stock, stockApi, Tag } from '@/lib/api';
-import { ArrowUpIcon, ArrowDownIcon, BarChart3, TrendingUp, LineChart, Trash2, Star, ThumbsDown, ShoppingCart, ThumbsUp, Eye, AlertCircle } from 'lucide-react';
+import { ArrowUpIcon, ArrowDownIcon, BarChart3, TrendingUp, LineChart, Trash2, Star, ThumbsDown, ShoppingCart, ThumbsUp, Eye, AlertCircle, TrendingDown } from 'lucide-react';
 import { toast } from 'sonner';
 import { useTags } from '@/contexts/TagContext';
-import { useQueryClient } from '@tanstack/react-query';
+import { useQueryClient, useQuery } from '@tanstack/react-query';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -39,6 +39,15 @@ const StockItem = React.memo<StockItemProps>(({ stock, rank, onStockClick, onSho
   const [stockTags, setStockTags] = useState<Tag[]>(stock.tags || []);
   const [togglingTags, setTogglingTags] = useState<Set<number>>(new Set());
   const queryClient = useQueryClient();
+
+  // 신호 데이터 가져오기 (히스토리가 있는 종목만)
+  const { data: signalData } = useQuery({
+    queryKey: ['stock-signals', stock.id],
+    queryFn: () => stockApi.getStockSignals(stock.id, 120),
+    enabled: !!stock.history_records_count && stock.history_records_count >= 60,
+    staleTime: 5 * 60 * 1000, // 5분 캐싱
+    retry: false,
+  });
 
   // Sync stock tags when stock.tags changes
   useEffect(() => {
@@ -290,6 +299,23 @@ const StockItem = React.memo<StockItemProps>(({ stock, rank, onStockClick, onSho
               <BarChart3 className="h-3 w-3 mr-1" />
               차트
             </a>
+            {signalData && signalData.signals && signalData.signals.length > 0 && (
+              <div
+                className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold cursor-pointer transition-colors ${
+                  signalData.latest_return_pct >= 0
+                    ? 'bg-green-500/10 text-green-600 dark:text-green-400 hover:bg-green-500/20'
+                    : 'bg-red-500/10 text-red-600 dark:text-red-400 hover:bg-red-500/20'
+                }`}
+                title={`매수 신호 ${signalData.signals.length}개 발견 (최근: ${new Date(signalData.latest_signal_date).toLocaleDateString('ko-KR')})`}
+              >
+                {signalData.latest_return_pct >= 0 ? (
+                  <TrendingUp className="h-3 w-3 mr-1" />
+                ) : (
+                  <TrendingDown className="h-3 w-3 mr-1" />
+                )}
+                {signalData.latest_return_pct >= 0 ? '+' : ''}{signalData.latest_return_pct.toFixed(1)}%
+              </div>
+            )}
           </div>
           <div className="text-xs text-muted-foreground">
             {stock.symbol}
