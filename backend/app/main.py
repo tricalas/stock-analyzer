@@ -2341,6 +2341,17 @@ def create_missing_tables(
         raise HTTPException(status_code=500, detail=f"Failed to create tables/columns: {str(e)}")
 
 
+@app.post("/api/admin/clear-cache")
+def clear_all_cache(current_user: User = Depends(get_current_user)):
+    """캐시 전체 삭제 (관리자 전용)"""
+    if not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Admin access required")
+
+    invalidate_cache()
+    logger.info("✅ All cache cleared by admin")
+    return {"success": True, "message": "Cache cleared successfully"}
+
+
 @app.post("/api/admin/sync-history-counts")
 def sync_history_counts(
     db: Session = Depends(get_db),
