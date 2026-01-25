@@ -20,7 +20,7 @@ class SignalAnalyzer:
     """매매 신호 분석 및 저장"""
 
     def __init__(self):
-        self.strategy_name = "breakout_pullback"
+        self.strategy_name = "descending_trendline_breakout"
 
     def analyze_and_store_signals(
         self,
@@ -242,12 +242,11 @@ class SignalAnalyzer:
             df.sort_index(inplace=True)
 
             # 신호 생성 (technical_indicators.py 사용)
-            signals_df = generate_breakout_pullback_signals(
+            signals_df = generate_descending_trendline_breakout_signals(
                 df,
                 swing_window=5,
-                trendline_points=3,
-                volume_threshold=1.5,
-                pullback_threshold=0.02
+                min_touches=3,
+                volume_threshold=1.5
             )
 
             # 매수 신호만 추출 (컬럼명: buy_signal)
@@ -271,8 +270,7 @@ class SignalAnalyzer:
                     'current_price': current_price,
                     'return_percent': round(return_pct, 2),
                     'details': {
-                        'breakout_idx': int(row.get('breakout_idx', -1)),
-                        'pullback_idx': int(row.get('pullback_idx', -1)),
+                        'strategy': 'descending_trendline_breakout',
                         'trendline_slope': float(row.get('trendline_slope', 0)),
                         'trendline_intercept': float(row.get('trendline_intercept', 0))
                     }
