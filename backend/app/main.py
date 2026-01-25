@@ -370,7 +370,8 @@ def get_stocks(
         tags = []
         latest_tag_date = None
         if current_user and stock.id in tags_map:
-            latest_tag_date = latest_tag_dates.get(stock.id)
+            _tag_date = latest_tag_dates.get(stock.id)
+            latest_tag_date = _tag_date.isoformat() if _tag_date else None
             for ta in tags_map[stock.id]:
                 tag_obj = tags_by_id.get(ta.tag_id)
                 if tag_obj:
@@ -539,7 +540,8 @@ def search_stocks(
         tags = []
         latest_tag_date = None
         if current_user and stock.id in tags_map:
-            latest_tag_date = latest_tag_dates.get(stock.id)
+            _tag_date = latest_tag_dates.get(stock.id)
+            latest_tag_date = _tag_date.isoformat() if _tag_date else None
             for ta in tags_map[stock.id]:
                 tag_obj = tags_by_id.get(ta.tag_id)
                 if tag_obj:
