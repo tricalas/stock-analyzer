@@ -598,6 +598,7 @@ export default function Settings() {
                 {(!historySummaries || historySummaries.length === 0) ? (
                   <p className="text-xs text-muted-foreground py-2">수집 기록이 없습니다.</p>
                 ) : (
+                  <>
                   <div className="space-y-2 max-h-60 overflow-y-auto">
                     {historySummaries.map((summary) => (
                       <button
