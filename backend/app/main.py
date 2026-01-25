@@ -2050,6 +2050,29 @@ def get_stored_signals(
     }
 
 
+@app.delete("/api/signals")
+def delete_all_signals(
+    db: Session = Depends(get_db),
+    current_user: Optional[User] = Depends(get_optional_current_user)
+):
+    """
+    모든 신호 삭제
+
+    Returns:
+        삭제된 신호 수
+    """
+    deleted_count = db.query(StockSignal).delete()
+    db.commit()
+
+    logger.info(f"🗑️ Deleted {deleted_count} signals")
+
+    return {
+        "success": True,
+        "deleted_count": deleted_count,
+        "message": f"{deleted_count}개 신호가 삭제되었습니다"
+    }
+
+
 @app.post("/api/signals/refresh")
 def refresh_signals(
     mode: str = Query("all", pattern="^(tagged|all|top)$"),

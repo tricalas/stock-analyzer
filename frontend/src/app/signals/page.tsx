@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useInfiniteQuery, useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import AppLayout from '@/components/AppLayout';
-import { TrendingUp, TrendingDown, Activity, RefreshCw, Calendar, Loader2, Star } from 'lucide-react';
+import { TrendingUp, TrendingDown, Activity, RefreshCw, Calendar, Loader2, Star, Trash2 } from 'lucide-react';
 import { Toaster, toast } from 'sonner';
 import { getNaverChartUrl, getNaverInfoUrl, openNaverChartPopup } from '@/lib/naverStock';
 import { stockApi } from '@/lib/api';
@@ -186,6 +186,29 @@ export default function SignalsPage() {
     },
   });
 
+  // 신호 삭제 뮤테이션
+  const deleteMutation = useMutation({
+    mutationFn: async () => {
+      const response = await fetch(
+        `${process.env.NEXT_PUBLIC_API_URL}/api/signals`,
+        { method: 'DELETE' }
+      );
+      if (!response.ok) throw new Error('Failed to delete signals');
+      return response.json();
+    },
+    onSuccess: (data) => {
+      toast.success('신호 삭제 완료', {
+        description: data.message || '모든 신호가 삭제되었습니다',
+      });
+      queryClient.invalidateQueries({ queryKey: ['stored-signals-infinite'] });
+    },
+    onError: () => {
+      toast.error('삭제 실패', {
+        description: '잠시 후 다시 시도해주세요',
+      });
+    },
+  });
+
   // 모든 페이지의 신호를 하나의 배열로 합치기
   const allSignals = data?.pages.flatMap(page => page.signals) || [];
   const stats = data?.pages[0]?.stats;
@@ -232,14 +255,28 @@ export default function SignalsPage() {
               분석을 통해 발견된 매수 신호 {total > 0 && <span className="text-foreground font-medium">({total}개)</span>}
             </p>
           </div>
-          <button
-            onClick={() => refreshMutation.mutate()}
-            disabled={refreshMutation.isPending || isRefreshing}
-            className="px-4 py-2 rounded-lg text-sm font-medium bg-primary text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-          >
-            <RefreshCw className={`h-4 w-4 ${(refreshMutation.isPending || isRefreshing) ? 'animate-spin' : ''}`} />
-            {refreshMutation.isPending || isRefreshing ? '분석 중...' : '재분석'}
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => {
+                if (confirm('모든 신호를 삭제하시겠습니까?')) {
+                  deleteMutation.mutate();
+                }
+              }}
+              disabled={deleteMutation.isPending || total === 0}
+              className="px-4 py-2 rounded-lg text-sm font-medium bg-destructive text-destructive-foreground hover:bg-destructive/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+            >
+              <Trash2 className="h-4 w-4" />
+              삭제
+            </button>
+            <button
+              onClick={() => refreshMutation.mutate()}
+              disabled={refreshMutation.isPending || isRefreshing}
+              className="px-4 py-2 rounded-lg text-sm font-medium bg-primary text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+            >
+              <RefreshCw className={`h-4 w-4 ${(refreshMutation.isPending || isRefreshing) ? 'animate-spin' : ''}`} />
+              {refreshMutation.isPending || isRefreshing ? '분석 중...' : '재분석'}
+            </button>
+          </div>
         </div>
 
         {/* Progress Display */}
