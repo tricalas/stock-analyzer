@@ -161,7 +161,7 @@ export default function SignalsPage() {
   const refreshMutation = useMutation({
     mutationFn: async () => {
       const response = await fetch(
-        `${process.env.NEXT_PUBLIC_API_URL}/api/signals/refresh?mode=all&days=120`,
+        `${process.env.NEXT_PUBLIC_API_URL}/api/signals/refresh?mode=all&days=120&force_full=true`,
         { method: 'POST' }
       );
       if (!response.ok) throw new Error('Failed to refresh signals');
