@@ -3,9 +3,10 @@
 import { useState, useEffect, useRef } from 'react';
 import { useInfiniteQuery, useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import AppLayout from '@/components/AppLayout';
-import { TrendingUp, TrendingDown, Activity, RefreshCw, Calendar, Loader2 } from 'lucide-react';
+import { TrendingUp, TrendingDown, Activity, RefreshCw, Calendar, Loader2, Star } from 'lucide-react';
 import { Toaster, toast } from 'sonner';
 import { getNaverChartUrl, getNaverInfoUrl, openNaverChartPopup } from '@/lib/naverStock';
+import { stockApi } from '@/lib/api';
 
 interface Stock {
   id: number;
@@ -379,6 +380,7 @@ export default function SignalsPage() {
                     <th className="px-4 py-3 text-right text-xs font-semibold text-muted-foreground uppercase tracking-wider">현재가</th>
                     <th className="px-4 py-3 text-right text-xs font-semibold text-muted-foreground uppercase tracking-wider">수익률</th>
                     <th className="px-4 py-3 text-center text-xs font-semibold text-muted-foreground uppercase tracking-wider">거래소</th>
+                    <th className="px-4 py-3 text-center text-xs font-semibold text-muted-foreground uppercase tracking-wider">관심</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border">
@@ -505,6 +507,32 @@ export default function SignalsPage() {
                           }`}>
                             {signal.stock?.exchange || signal.stock?.market || 'N/A'}
                           </span>
+                        </td>
+
+                        {/* 관심종목 추가 */}
+                        <td className="px-4 py-3 whitespace-nowrap text-center">
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              if (signal.stock_id) {
+                                stockApi.addToFavorites(signal.stock_id)
+                                  .then(() => {
+                                    toast.success('관심종목 추가', {
+                                      description: `${signal.stock?.name || '종목'}이(가) 관심종목에 추가되었습니다`,
+                                    });
+                                  })
+                                  .catch(() => {
+                                    toast.error('추가 실패', {
+                                      description: '이미 관심종목이거나 로그인이 필요합니다',
+                                    });
+                                  });
+                              }
+                            }}
+                            className="p-1.5 rounded-lg hover:bg-yellow-500/20 transition-colors group"
+                            title="관심종목 추가"
+                          >
+                            <Star className="h-4 w-4 text-muted-foreground group-hover:text-yellow-500 group-hover:fill-yellow-500" />
+                          </button>
                         </td>
                       </tr>
                     );
