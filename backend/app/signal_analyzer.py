@@ -147,34 +147,39 @@ class SignalAnalyzer:
         limit: Optional[int],
         db: Session
     ) -> List[int]:
-        """모드에 따라 분석할 종목 ID 목록 가져오기"""
+        """모드에 따라 분석할 종목 ID 목록 가져오기 (최적화됨)"""
         from app.models import StockTagAssignment
+        from sqlalchemy import func
 
         if mode == "tagged":
             # 태그가 있는 종목만
             tagged_stocks = db.query(StockTagAssignment.stock_id).distinct().all()
-            stock_ids = [sid[0] for sid in tagged_stocks]
+            stock_ids = set(sid[0] for sid in tagged_stocks)
 
         elif mode == "top":
             # 시총 상위 N개
             top_stocks = db.query(Stock.id).filter(
                 Stock.is_active == True
             ).order_by(Stock.market_cap.desc().nullslast()).limit(limit or 500).all()
-            stock_ids = [s.id for s in top_stocks]
+            stock_ids = set(s.id for s in top_stocks)
 
         else:  # "all"
             # 모든 활성 종목
             all_stocks = db.query(Stock.id).filter(Stock.is_active == True).all()
-            stock_ids = [s.id for s in all_stocks]
+            stock_ids = set(s.id for s in all_stocks)
 
-        # 히스토리 데이터가 있는 종목만 필터링
-        filtered_ids = []
-        for stock_id in stock_ids:
-            count = db.query(StockPriceHistory).filter(
-                StockPriceHistory.stock_id == stock_id
-            ).count()
-            if count >= 60:  # 최소 60일 이상 데이터 필요
-                filtered_ids.append(stock_id)
+        # 히스토리 데이터가 60일 이상인 종목 한 번에 조회 (최적화)
+        history_counts = db.query(
+            StockPriceHistory.stock_id
+        ).group_by(StockPriceHistory.stock_id).having(
+            func.count(StockPriceHistory.id) >= 60
+        ).all()
+        stocks_with_history = set(row.stock_id for row in history_counts)
+
+        # 교집합: 선택된 종목 중 히스토리가 60일 이상인 종목
+        filtered_ids = list(stock_ids & stocks_with_history)
+
+        logger.info(f"Mode: {mode}, Total stocks: {len(stock_ids)}, With 60+ history: {len(filtered_ids)}")
 
         return filtered_ids
 

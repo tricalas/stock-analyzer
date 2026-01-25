@@ -2390,7 +2390,7 @@ def debug_signal_analysis(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """신호 분석 대상 종목 확인 (디버깅용) - signal_analyzer와 동일한 로직"""
+    """신호 분석 대상 종목 확인 (디버깅용) - signal_analyzer와 동일한 로직 (최적화됨)"""
     if not current_user.is_admin:
         raise HTTPException(status_code=403, detail="Admin access required")
 
@@ -2400,41 +2400,41 @@ def debug_signal_analysis(
     # Step 1: 모드별 종목 선택 (signal_analyzer와 동일)
     if mode == "tagged":
         tagged_stocks = db.query(StockTagAssignment.stock_id).distinct().all()
-        stock_ids = [sid[0] for sid in tagged_stocks]
+        stock_ids = set(sid[0] for sid in tagged_stocks)
         mode_desc = "태그가 있는 종목"
     elif mode == "top":
         top_stocks = db.query(Stock.id).filter(
             Stock.is_active == True
         ).order_by(Stock.market_cap.desc().nullslast()).limit(500).all()
-        stock_ids = [s.id for s in top_stocks]
+        stock_ids = set(s.id for s in top_stocks)
         mode_desc = "시총 상위 500개"
     else:  # "all"
         all_stocks = db.query(Stock.id).filter(Stock.is_active == True).all()
-        stock_ids = [s.id for s in all_stocks]
+        stock_ids = set(s.id for s in all_stocks)
         mode_desc = "모든 활성 종목"
 
-    # Step 2: 히스토리 데이터 60일 이상인 종목 필터링
-    filtered_ids = []
-    for stock_id in stock_ids:
-        count = db.query(StockPriceHistory).filter(
-            StockPriceHistory.stock_id == stock_id
-        ).count()
-        if count >= 60:
-            filtered_ids.append(stock_id)
+    # Step 2: 히스토리 데이터 60일 이상인 종목 필터링 (최적화: 단일 쿼리)
+    history_counts = db.query(
+        StockPriceHistory.stock_id,
+        func.count(StockPriceHistory.id).label('count')
+    ).group_by(StockPriceHistory.stock_id).having(
+        func.count(StockPriceHistory.id) >= 60
+    ).all()
 
-    # 결과 상세
+    # stock_ids와 교집합 (활성 종목 중 60일 이상 히스토리 있는 것)
+    history_map = {row.stock_id: row.count for row in history_counts}
+    filtered_ids = [sid for sid in stock_ids if sid in history_map]
+
+    # 결과 상세 (상위 20개)
     stocks_detail = []
-    for stock_id in filtered_ids[:20]:  # 상위 20개만
+    for stock_id in filtered_ids[:20]:
         stock = db.query(Stock).filter(Stock.id == stock_id).first()
-        count = db.query(StockPriceHistory).filter(
-            StockPriceHistory.stock_id == stock_id
-        ).count()
         if stock:
             stocks_detail.append({
                 "id": stock.id,
                 "symbol": stock.symbol,
                 "name": stock.name,
-                "history_count": count
+                "history_count": history_map.get(stock_id, 0)
             })
 
     return {
