@@ -10,15 +10,8 @@ from typing import Dict, List, Optional, Any
 from datetime import datetime, date, timedelta
 import hashlib
 import json
-from pathlib import Path
-import os
 
 logger = logging.getLogger(__name__)
-
-# 토큰 캐시 파일 경로 (backend 디렉토리에 저장)
-_BASE_DIR = Path(__file__).resolve().parent.parent.parent
-TOKEN_CACHE_FILE = _BASE_DIR / ".kis_token_cache.json"
-logger.info(f"KIS token cache file path: {TOKEN_CACHE_FILE}")
 
 
 class KISClient:
@@ -71,82 +64,86 @@ class KISClient:
         return hashlib.md5(f"{self.app_key}:{self.is_mock}".encode()).hexdigest()[:8]
 
     def _load_cached_token(self) -> bool:
-        """파일에서 캐시된 토큰 로드"""
+        """DB에서 캐시된 토큰 로드"""
         try:
-            logger.info(f"Attempting to load token from: {TOKEN_CACHE_FILE}")
-            logger.info(f"File exists: {TOKEN_CACHE_FILE.exists()}")
+            from app.database import SessionLocal
+            from app.models import ApiTokenCache
 
-            if not TOKEN_CACHE_FILE.exists():
-                logger.info("Token cache file not found, will issue new token")
-                return False
+            db = SessionLocal()
+            try:
+                cache_key = self._get_cache_key()
+                logger.info(f"Loading KIS token from DB (cache_key: {cache_key})")
 
-            with open(TOKEN_CACHE_FILE, 'r') as f:
-                cache_data = json.load(f)
+                cached = db.query(ApiTokenCache).filter(
+                    ApiTokenCache.provider == 'kis',
+                    ApiTokenCache.cache_key == cache_key
+                ).first()
 
-            cache_key = self._get_cache_key()
-            logger.info(f"Looking for cache key: {cache_key}")
+                if not cached:
+                    logger.info("No cached token in DB, will issue new one")
+                    return False
 
-            if cache_key not in cache_data:
-                logger.info(f"No cached token for key {cache_key}, available keys: {list(cache_data.keys())}")
-                return False
+                # 만료 5분 전까지만 유효하게 처리
+                time_until_expiry = cached.expired_at - datetime.now()
+                logger.info(f"Token expires at {cached.expired_at}, time until expiry: {time_until_expiry}")
 
-            token_data = cache_data[cache_key]
-            expired_at = datetime.fromisoformat(token_data['expired_at'])
+                if datetime.now() >= (cached.expired_at - timedelta(minutes=5)):
+                    logger.info("Cached token is expired or expiring soon, will issue new one")
+                    return False
 
-            # 만료 5분 전까지만 유효하게 처리
-            time_until_expiry = expired_at - datetime.now()
-            logger.info(f"Token expires at {expired_at}, time until expiry: {time_until_expiry}")
+                self.access_token = cached.access_token
+                self.token_expired_at = cached.expired_at
 
-            if datetime.now() >= (expired_at - timedelta(minutes=5)):
-                logger.info("Cached token is expired or expiring soon, will issue new one")
-                return False
+                logger.info(f"SUCCESS: Loaded cached KIS token from DB (expires at {self.token_expired_at})")
+                return True
 
-            self.access_token = token_data['access_token']
-            self.token_expired_at = expired_at
-
-            logger.info(f"SUCCESS: Loaded cached KIS token (expires at {self.token_expired_at})")
-            return True
+            finally:
+                db.close()
 
         except Exception as e:
-            logger.warning(f"Failed to load cached token: {str(e)}")
-            import traceback
-            logger.warning(traceback.format_exc())
+            logger.warning(f"Failed to load cached token from DB: {str(e)}")
             return False
 
     def _save_token_cache(self) -> None:
-        """토큰을 파일에 캐시"""
+        """토큰을 DB에 캐시"""
         try:
-            logger.info(f"Saving token to: {TOKEN_CACHE_FILE}")
-            cache_data = {}
+            from app.database import SessionLocal
+            from app.models import ApiTokenCache
 
-            # 기존 캐시 파일이 있으면 로드
-            if TOKEN_CACHE_FILE.exists():
-                try:
-                    with open(TOKEN_CACHE_FILE, 'r') as f:
-                        cache_data = json.load(f)
-                except:
-                    pass
+            db = SessionLocal()
+            try:
+                cache_key = self._get_cache_key()
+                logger.info(f"Saving KIS token to DB (cache_key: {cache_key})")
 
-            # 현재 토큰 저장
-            cache_key = self._get_cache_key()
-            cache_data[cache_key] = {
-                'access_token': self.access_token,
-                'expired_at': self.token_expired_at.isoformat() if self.token_expired_at else None
-            }
+                # 기존 캐시 확인
+                cached = db.query(ApiTokenCache).filter(
+                    ApiTokenCache.provider == 'kis',
+                    ApiTokenCache.cache_key == cache_key
+                ).first()
 
-            # 디렉토리가 없으면 생성
-            TOKEN_CACHE_FILE.parent.mkdir(parents=True, exist_ok=True)
+                if cached:
+                    # 업데이트
+                    cached.access_token = self.access_token
+                    cached.expired_at = self.token_expired_at
+                    cached.updated_at = datetime.now()
+                else:
+                    # 새로 생성
+                    cached = ApiTokenCache(
+                        provider='kis',
+                        cache_key=cache_key,
+                        access_token=self.access_token,
+                        expired_at=self.token_expired_at
+                    )
+                    db.add(cached)
 
-            with open(TOKEN_CACHE_FILE, 'w') as f:
-                json.dump(cache_data, f, indent=2)
+                db.commit()
+                logger.info(f"SUCCESS: Saved KIS token to DB (expires at {self.token_expired_at})")
 
-            logger.info(f"SUCCESS: Saved KIS token to cache file (expires at {self.token_expired_at})")
-            logger.info(f"Cache file size: {TOKEN_CACHE_FILE.stat().st_size} bytes")
+            finally:
+                db.close()
 
         except Exception as e:
-            logger.error(f"Failed to save token cache: {str(e)}")
-            import traceback
-            logger.error(traceback.format_exc())
+            logger.error(f"Failed to save token to DB: {str(e)}")
 
     def _ensure_token(self) -> None:
         """토큰이 유효한지 확인하고, 필요 시 갱신"""

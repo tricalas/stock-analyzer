@@ -300,3 +300,21 @@ class HistoryCollectionLog(Base):
         Index('idx_log_task_status', 'task_id', 'status'),  # 실패 조회용
         {'extend_existing': True}
     )
+
+
+class ApiTokenCache(Base):
+    """API 토큰 캐시 (KIS 등 외부 API용)"""
+    __tablename__ = "api_token_cache"
+
+    id = Column(Integer, primary_key=True, index=True)
+    provider = Column(String(50), nullable=False)  # 'kis', 'naver' 등
+    cache_key = Column(String(100), nullable=False)  # 앱키 기반 해시
+    access_token = Column(Text, nullable=False)
+    expired_at = Column(DateTime, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    __table_args__ = (
+        UniqueConstraint('provider', 'cache_key', name='uq_provider_cache_key'),
+        {'extend_existing': True}
+    )

@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import desc
 
 from app.models import Stock, StockPriceHistory, StockSignal, TaskProgress
-from app.technical_indicators import generate_breakout_pullback_signals
+from app.technical_indicators import generate_descending_trendline_breakout_signals
 from app.database import get_db
 
 logger = logging.getLogger(__name__)
