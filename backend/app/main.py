@@ -883,6 +883,8 @@ def sync_stock_history(
     - 최신 데이터 있음: 스킵 (skip)
     - 며칠 빠짐: 증분 수집 (incremental)
     """
+    from app.crawlers.kis_history_crawler import kis_history_crawler
+
     try:
         stock = db.query(Stock).filter(Stock.id == stock_id).first()
         if not stock:
