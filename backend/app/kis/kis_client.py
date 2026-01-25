@@ -95,11 +95,12 @@ class KISClient:
                     logger.info("[KIS Token] No cached token in DB, will issue new one")
                     return False
 
-                # 만료 5분 전까지만 유효하게 처리
-                time_until_expiry = cached.expired_at - datetime.now()
-                logger.info(f"[KIS Token] Found! expires at {cached.expired_at}, time until expiry: {time_until_expiry}")
+                # 만료 5분 전까지만 유효하게 처리 (UTC 기준)
+                now_utc = datetime.utcnow()
+                time_until_expiry = cached.expired_at - now_utc
+                logger.info(f"[KIS Token] Found! expires at {cached.expired_at} (UTC), now: {now_utc} (UTC), time until expiry: {time_until_expiry}")
 
-                if datetime.now() >= (cached.expired_at - timedelta(minutes=5)):
+                if now_utc >= (cached.expired_at - timedelta(minutes=5)):
                     logger.info("[KIS Token] Cached token is expired or expiring soon, will issue new one")
                     return False
 
@@ -142,7 +143,7 @@ class KISClient:
                     # 업데이트
                     cached.access_token = self.access_token
                     cached.expired_at = self.token_expired_at
-                    cached.updated_at = datetime.now()
+                    cached.updated_at = datetime.utcnow()
                     logger.info(f"[KIS Token] Updating existing cache entry")
                 else:
                     # 새로 생성
@@ -172,11 +173,11 @@ class KISClient:
             self._issue_token()
 
     def _is_token_expired(self) -> bool:
-        """토큰 만료 여부 확인"""
+        """토큰 만료 여부 확인 (UTC 기준)"""
         if self.token_expired_at is None:
             return True
-        # 만료 5분 전에 미리 갱신
-        return datetime.now() >= (self.token_expired_at - timedelta(minutes=5))
+        # 만료 5분 전에 미리 갱신 (UTC 기준)
+        return datetime.utcnow() >= (self.token_expired_at - timedelta(minutes=5))
 
     def _issue_token(self) -> None:
         """접근 토큰 발급 (신규 발급 - 문자 발송됨)"""
@@ -203,11 +204,11 @@ class KISClient:
             result = response.json()
             self.access_token = result["access_token"]
 
-            # 토큰 만료 시간 설정 (24시간)
+            # 토큰 만료 시간 설정 (24시간, UTC 기준)
             expires_in = int(result.get("expires_in", 86400))  # 기본 24시간
-            self.token_expired_at = datetime.now() + timedelta(seconds=expires_in)
+            self.token_expired_at = datetime.utcnow() + timedelta(seconds=expires_in)
 
-            logger.info(f"[KIS Token] New token issued (expires at {self.token_expired_at})")
+            logger.info(f"[KIS Token] New token issued (expires at {self.token_expired_at} UTC)")
 
             # 토큰 캐시 저장
             self._save_token_cache()
