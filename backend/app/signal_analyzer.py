@@ -229,20 +229,27 @@ class SignalAnalyzer:
             db.commit()
             return {"signals_count": 0, "saved_count": 0}
 
-        # 1. 기존 "돌파 임박" 신호의 돌파 확인 업데이트
+        # 1. 기존 신호 삭제 (새 알고리즘으로 재분석하므로)
+        db.query(StockSignal).filter(
+            StockSignal.stock_id == stock_id,
+            StockSignal.strategy_name.in_(['descending_trendline_breakout', 'approaching_breakout'])
+        ).delete(synchronize_session=False)
+        db.commit()
+
+        # 2. 기존 "돌파 임박" 신호의 돌파 확인 업데이트 (삭제 후 남은 신호가 있다면)
         self._check_breakout_confirmation(stock_id, price_history, db)
 
-        # 2. 신호 분석 (돌파 + 돌파 임박)
+        # 3. 신호 분석 (돌파 + 돌파 임박)
         signals = self._run_signal_analysis(price_history, stock.current_price)
 
-        # 3. 분석 완료 타임스탬프 갱신
+        # 4. 분석 완료 타임스탬프 갱신
         stock.signal_analyzed_at = datetime.utcnow()
         db.commit()
 
         if not signals or len(signals) == 0:
             return {"signals_count": 0, "saved_count": 0}
 
-        # 4. 신호 저장
+        # 5. 신호 저장
         saved_count = self._save_signals(stock_id, signals, db)
 
         return {

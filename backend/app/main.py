@@ -186,8 +186,19 @@ async def startup_event():
     stock_scheduler.start()
     logger.info("Stock scheduler started on application startup")
 
-    # 기본 태그 생성
+    # DB 마이그레이션 (누락 컬럼 추가)
     db = next(get_db())
+    try:
+        from sqlalchemy import text
+        db.execute(text('ALTER TABLE stocks ADD COLUMN IF NOT EXISTS history_updated_at TIMESTAMP'))
+        db.execute(text('ALTER TABLE stocks ADD COLUMN IF NOT EXISTS signal_analyzed_at TIMESTAMP'))
+        db.commit()
+        logger.info("DB migration completed")
+    except Exception as e:
+        logger.warning(f"DB migration skipped: {e}")
+        db.rollback()
+
+    # 기본 태그 생성
     try:
         seed_default_tags(db)
     finally:
