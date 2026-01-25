@@ -273,8 +273,8 @@ class SignalAnalyzer:
                 signal_info = {
                     'signal_date': idx.date() if hasattr(idx, 'date') else idx,
                     'signal_price': float(signal_price),
-                    'current_price': current_price,
-                    'return_percent': round(return_pct, 2),
+                    'current_price': float(current_price) if current_price else None,
+                    'return_percent': float(round(return_pct, 2)),
                     'details': {
                         'strategy': 'descending_trendline_breakout',
                         'trendline_slope': float(row.get('trendline_slope', 0)),

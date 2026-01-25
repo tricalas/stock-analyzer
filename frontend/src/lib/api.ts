@@ -203,7 +203,7 @@ export const stockApi = {
   },
 
   // 단일 종목 히스토리 동기화 (하이브리드 전략)
-  syncStockHistory: async (stockId: number, days: number = 120): Promise<{
+  syncStockHistory: async (stockId: number, days: number = 100): Promise<{
     success: boolean;
     mode: 'skip' | 'incremental' | 'full';
     message: string;

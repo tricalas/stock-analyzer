@@ -873,7 +873,7 @@ def get_stock_history_status(stock_id: int, db: Session = Depends(get_db)):
 @app.post("/api/stocks/{stock_id}/sync-history")
 def sync_stock_history(
     stock_id: int,
-    days: int = Query(120, ge=1, le=365, description="수집할 일수 (전체 수집 시)"),
+    days: int = Query(100, ge=1, le=365, description="수집할 일수 (전체 수집 시)"),
     db: Session = Depends(get_db)
 ):
     """

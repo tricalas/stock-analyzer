@@ -185,7 +185,7 @@ const StockItem = React.memo<StockItemProps>(({ stock, rank, onStockClick, onSho
     setIsSyncing(true);
 
     try {
-      const result = await stockApi.syncStockHistory(stock.id, 120);
+      const result = await stockApi.syncStockHistory(stock.id, 100);
       console.log(`Sync completed for ${stock.symbol}:`, result);
 
       // 상태 업데이트
