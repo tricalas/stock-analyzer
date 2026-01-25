@@ -1,9 +1,9 @@
 'use client';
 
 import { useEffect, useRef } from 'react';
-import { useInfiniteQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useInfiniteQuery } from '@tanstack/react-query';
 import AppLayout from '@/components/AppLayout';
-import { TrendingUp, TrendingDown, Activity, Calendar, Loader2, Star, Trash2 } from 'lucide-react';
+import { TrendingUp, TrendingDown, Activity, Calendar, Loader2, Star } from 'lucide-react';
 import { Toaster, toast } from 'sonner';
 import { getNaverChartUrl, getNaverInfoUrl, openNaverChartPopup } from '@/lib/naverStock';
 import { stockApi } from '@/lib/api';
@@ -48,7 +48,6 @@ interface SignalListResponse {
 const PAGE_SIZE = 30;
 
 export default function SignalsPage() {
-  const queryClient = useQueryClient();
   const loadMoreRef = useRef<HTMLDivElement>(null);
 
   // 무한 스크롤로 신호 조회
@@ -97,29 +96,6 @@ export default function SignalsPage() {
     return () => observer.disconnect();
   }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
 
-  // 신호 삭제 뮤테이션
-  const deleteMutation = useMutation({
-    mutationFn: async () => {
-      const response = await fetch(
-        `${process.env.NEXT_PUBLIC_API_URL}/api/signals`,
-        { method: 'DELETE' }
-      );
-      if (!response.ok) throw new Error('Failed to delete signals');
-      return response.json();
-    },
-    onSuccess: (data) => {
-      toast.success('신호 삭제 완료', {
-        description: data.message || '모든 신호가 삭제되었습니다',
-      });
-      queryClient.invalidateQueries({ queryKey: ['stored-signals-infinite'] });
-    },
-    onError: () => {
-      toast.error('삭제 실패', {
-        description: '잠시 후 다시 시도해주세요',
-      });
-    },
-  });
-
   // 모든 페이지의 신호를 하나의 배열로 합치기
   const allSignals = data?.pages.flatMap(page => page.signals) || [];
   const stats = data?.pages[0]?.stats;
@@ -167,20 +143,6 @@ export default function SignalsPage() {
                 <span className="text-foreground font-medium">{total}개</span>
               </p>
             )}
-          </div>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => {
-                if (confirm('모든 신호를 삭제하시겠습니까?')) {
-                  deleteMutation.mutate();
-                }
-              }}
-              disabled={deleteMutation.isPending || total === 0}
-              className="px-4 py-2 rounded-lg text-sm font-medium bg-destructive text-destructive-foreground hover:bg-destructive/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-            >
-              <Trash2 className="h-4 w-4" />
-              삭제
-            </button>
           </div>
         </div>
 

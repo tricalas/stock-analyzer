@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { TrendingUp, RefreshCw, Activity, Calendar, Play, StopCircle, CloudOff } from 'lucide-react';
+import { TrendingUp, RefreshCw, Activity, Calendar, Play, StopCircle, CloudOff, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 
 interface TaskProgress {
@@ -36,6 +36,7 @@ interface SignalListResponse {
 
 export default function SignalAnalysisPage() {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
   const [currentTaskId, setCurrentTaskId] = useState<string | null>(null);
   const [showProgress, setShowProgress] = useState(false);
 
@@ -126,6 +127,31 @@ export default function SignalAnalysisPage() {
     } catch (error) {
       console.error('Error cancelling task:', error);
       toast.error('작업 취소에 실패했습니다.');
+    }
+  };
+
+  // 신호 삭제
+  const handleDeleteSignals = async () => {
+    if (!confirm('모든 신호를 삭제하시겠습니까?')) return;
+
+    try {
+      setIsDeleting(true);
+      const response = await fetch(`${API_URL}/api/signals`, { method: 'DELETE' });
+
+      if (!response.ok) throw new Error('Failed to delete signals');
+
+      const data = await response.json();
+      toast.success('신호 삭제 완료', {
+        description: data.message || '모든 신호가 삭제되었습니다',
+      });
+      refetchSignals();
+    } catch (error) {
+      console.error('Error deleting signals:', error);
+      toast.error('삭제 실패', {
+        description: '잠시 후 다시 시도해주세요',
+      });
+    } finally {
+      setIsDeleting(false);
     }
   };
 
@@ -247,6 +273,29 @@ export default function SignalAnalysisPage() {
                 <h3 className="font-semibold text-foreground">관심 종목만 분석</h3>
                 <p className="text-sm text-muted-foreground">태그가 지정된 종목만 빠르게 분석</p>
               </div>
+            </button>
+          </div>
+        </div>
+
+        {/* 신호 삭제 카드 */}
+        <div className="bg-card border border-border rounded-lg p-6">
+          <h2 className="font-semibold text-foreground mb-4">신호 삭제</h2>
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm text-muted-foreground">
+                저장된 모든 매매 신호를 삭제합니다.
+              </p>
+              <p className="text-xs text-muted-foreground mt-1">
+                현재 {signalData?.total || 0}개의 신호가 저장되어 있습니다.
+              </p>
+            </div>
+            <button
+              onClick={handleDeleteSignals}
+              disabled={isDeleting || !signalData?.total}
+              className="flex items-center gap-2 px-4 py-2 bg-destructive text-destructive-foreground hover:bg-destructive/90 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <Trash2 className="w-4 h-4" />
+              {isDeleting ? '삭제 중...' : '전체 삭제'}
             </button>
           </div>
         </div>
