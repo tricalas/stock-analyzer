@@ -25,9 +25,8 @@ interface StockWithoutHistory {
   tag_count: number;
 }
 
-interface CleanupPreviewResponse {
-  mode: 'preview';
-  message: string;
+interface NoHistoryResponse {
+  count: number;
   stocks: StockWithoutHistory[];
 }
 
@@ -46,12 +45,11 @@ export default function NoHistoryStocksPage() {
   const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
   // 데이터 없는 종목 목록 조회
-  const { data, isLoading, refetch } = useQuery<CleanupPreviewResponse>({
+  const { data, isLoading, refetch } = useQuery<NoHistoryResponse>({
     queryKey: ['stocks-no-history'],
     queryFn: async () => {
       const token = localStorage.getItem('auth_token');
-      const response = await fetch(`${API_URL}/api/stocks/cleanup-no-history`, {
-        method: 'DELETE',
+      const response = await fetch(`${API_URL}/api/stocks/no-history`, {
         headers: {
           'Authorization': `Bearer ${token}`,
         },
