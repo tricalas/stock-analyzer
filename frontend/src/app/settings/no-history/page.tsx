@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Trash2, AlertTriangle, RefreshCw, Search } from 'lucide-react';
+import { Trash2, AlertTriangle, RefreshCw, Search, ChevronLeft, ChevronRight } from 'lucide-react';
 import { toast } from 'sonner';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
@@ -26,7 +26,10 @@ interface StockWithoutHistory {
 }
 
 interface NoHistoryResponse {
-  count: number;
+  total_count: number;
+  page: number;
+  limit: number;
+  total_pages: number;
   stocks: StockWithoutHistory[];
 }
 
@@ -40,16 +43,18 @@ interface CleanupDeleteResponse {
 export default function NoHistoryStocksPage() {
   const [isDeleting, setIsDeleting] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [page, setPage] = useState(1);
+  const limit = 50;
   const queryClient = useQueryClient();
 
   const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
   // 데이터 없는 종목 목록 조회
   const { data, isLoading, refetch } = useQuery<NoHistoryResponse>({
-    queryKey: ['stocks-no-history'],
+    queryKey: ['stocks-no-history', page, limit],
     queryFn: async () => {
       const token = localStorage.getItem('auth_token');
-      const response = await fetch(`${API_URL}/api/stocks/no-history`, {
+      const response = await fetch(`${API_URL}/api/stocks/no-history?page=${page}&limit=${limit}`, {
         headers: {
           'Authorization': `Bearer ${token}`,
         },
@@ -76,9 +81,9 @@ export default function NoHistoryStocksPage() {
       const result: CleanupDeleteResponse = await response.json();
       toast.success(result.message);
 
-      // 목록 새로고침
-      refetch();
-      // 종목 목록 캐시 무효화
+      // 첫 페이지로 이동 및 새로고침
+      setPage(1);
+      queryClient.invalidateQueries({ queryKey: ['stocks-no-history'] });
       queryClient.invalidateQueries({ queryKey: ['stocks'] });
     } catch (error) {
       console.error('Error deleting stocks:', error);
@@ -111,10 +116,15 @@ export default function NoHistoryStocksPage() {
   };
 
   const stocks = data?.stocks || [];
-  const filteredStocks = stocks.filter(stock =>
-    stock.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    stock.symbol.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  const totalCount = data?.total_count || 0;
+  const totalPages = data?.total_pages || 1;
+
+  const filteredStocks = searchQuery
+    ? stocks.filter(stock =>
+        stock.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        stock.symbol.toLowerCase().includes(searchQuery.toLowerCase())
+      )
+    : stocks;
 
   return (
     <div className="p-6">
@@ -136,7 +146,7 @@ export default function NoHistoryStocksPage() {
               <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
               새로고침
             </button>
-            {stocks.length > 0 && (
+            {totalCount > 0 && (
               <AlertDialog>
                 <AlertDialogTrigger asChild>
                   <button
@@ -144,7 +154,7 @@ export default function NoHistoryStocksPage() {
                     className="flex items-center gap-2 px-4 py-2 bg-destructive text-destructive-foreground rounded-lg hover:bg-destructive/90 transition-colors disabled:opacity-50"
                   >
                     <Trash2 className="w-4 h-4" />
-                    전체 삭제 ({stocks.length}개)
+                    전체 삭제 ({totalCount}개)
                   </button>
                 </AlertDialogTrigger>
                 <AlertDialogContent>
@@ -154,7 +164,7 @@ export default function NoHistoryStocksPage() {
                       전체 삭제 확인
                     </AlertDialogTitle>
                     <AlertDialogDescription>
-                      <span className="font-semibold text-foreground">{stocks.length}개</span> 종목을 모두 삭제하시겠습니까?
+                      <span className="font-semibold text-foreground">{totalCount}개</span> 종목을 모두 삭제하시겠습니까?
                       <br /><br />
                       이 작업은 되돌릴 수 없으며, 다음 데이터가 함께 삭제됩니다:
                       <ul className="list-disc list-inside mt-2 text-sm">
@@ -180,22 +190,14 @@ export default function NoHistoryStocksPage() {
         </div>
 
         {/* 통계 */}
-        <div className="grid grid-cols-3 gap-4">
+        <div className="grid grid-cols-2 gap-4">
           <div className="bg-card border border-border rounded-lg p-4">
             <p className="text-sm text-muted-foreground">총 종목 수</p>
-            <p className="text-2xl font-bold text-foreground">{stocks.length}</p>
+            <p className="text-2xl font-bold text-foreground">{totalCount}</p>
           </div>
           <div className="bg-card border border-border rounded-lg p-4">
-            <p className="text-sm text-muted-foreground">시그널 있는 종목</p>
-            <p className="text-2xl font-bold text-orange-600 dark:text-orange-400">
-              {stocks.filter(s => s.signal_count > 0).length}
-            </p>
-          </div>
-          <div className="bg-card border border-border rounded-lg p-4">
-            <p className="text-sm text-muted-foreground">태그 있는 종목</p>
-            <p className="text-2xl font-bold text-purple-600 dark:text-purple-400">
-              {stocks.filter(s => s.tag_count > 0).length}
-            </p>
+            <p className="text-sm text-muted-foreground">현재 페이지</p>
+            <p className="text-2xl font-bold text-foreground">{page} / {totalPages}</p>
           </div>
         </div>
 
@@ -204,7 +206,7 @@ export default function NoHistoryStocksPage() {
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
           <input
             type="text"
-            placeholder="종목명 또는 심볼로 검색..."
+            placeholder="현재 페이지에서 검색..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             className="w-full pl-10 pr-4 py-2 bg-card border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50"
@@ -302,6 +304,55 @@ export default function NoHistoryStocksPage() {
             </div>
           )}
         </div>
+
+        {/* 페이지네이션 */}
+        {totalPages > 1 && (
+          <div className="flex items-center justify-center gap-2">
+            <button
+              onClick={() => setPage(p => Math.max(1, p - 1))}
+              disabled={page === 1}
+              className="flex items-center gap-1 px-3 py-2 text-sm border border-border rounded-lg hover:bg-muted transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <ChevronLeft className="w-4 h-4" />
+              이전
+            </button>
+            <div className="flex items-center gap-1">
+              {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                let pageNum;
+                if (totalPages <= 5) {
+                  pageNum = i + 1;
+                } else if (page <= 3) {
+                  pageNum = i + 1;
+                } else if (page >= totalPages - 2) {
+                  pageNum = totalPages - 4 + i;
+                } else {
+                  pageNum = page - 2 + i;
+                }
+                return (
+                  <button
+                    key={pageNum}
+                    onClick={() => setPage(pageNum)}
+                    className={`w-10 h-10 text-sm rounded-lg transition-colors ${
+                      page === pageNum
+                        ? 'bg-primary text-primary-foreground'
+                        : 'border border-border hover:bg-muted'
+                    }`}
+                  >
+                    {pageNum}
+                  </button>
+                );
+              })}
+            </div>
+            <button
+              onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+              disabled={page === totalPages}
+              className="flex items-center gap-1 px-3 py-2 text-sm border border-border rounded-lg hover:bg-muted transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              다음
+              <ChevronRight className="w-4 h-4" />
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );

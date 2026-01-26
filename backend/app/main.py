@@ -612,36 +612,62 @@ def search_stocks(
 
 
 @app.get("/api/stocks/no-history")
-def get_stocks_without_history(db: Session = Depends(get_db)):
-    """히스토리가 없는 종목 목록 조회"""
-    from sqlalchemy import or_
+def get_stocks_without_history(
+    page: int = Query(1, ge=1, description="페이지 번호"),
+    limit: int = Query(50, ge=1, le=200, description="페이지당 항목 수"),
+    db: Session = Depends(get_db)
+):
+    """히스토리가 없는 종목 목록 조회 (최적화된 단일 쿼리 + 페이징)"""
+    from sqlalchemy import or_, func
 
-    stocks = db.query(Stock).filter(
+    # 전체 개수 조회
+    total_count = db.query(func.count(Stock.id)).filter(
         or_(
             Stock.history_records_count == 0,
             Stock.history_records_count == None
         )
-    ).all()
+    ).scalar()
 
-    result = []
-    for stock in stocks:
-        signal_count = db.query(StockSignal).filter(
-            StockSignal.stock_id == stock.id
-        ).count()
-        tag_count = db.query(StockTagAssignment).filter(
-            StockTagAssignment.stock_id == stock.id
-        ).count()
-        result.append({
-            "id": stock.id,
-            "symbol": stock.symbol,
-            "name": stock.name,
-            "market": stock.market,
-            "signal_count": signal_count,
-            "tag_count": tag_count
-        })
+    # 페이징 적용하여 종목과 시그널/태그 카운트를 함께 조회
+    offset = (page - 1) * limit
+    query = db.query(
+        Stock.id,
+        Stock.symbol,
+        Stock.name,
+        Stock.market,
+        func.count(func.distinct(StockSignal.id)).label('signal_count'),
+        func.count(func.distinct(StockTagAssignment.id)).label('tag_count')
+    ).outerjoin(
+        StockSignal, Stock.id == StockSignal.stock_id
+    ).outerjoin(
+        StockTagAssignment, Stock.id == StockTagAssignment.stock_id
+    ).filter(
+        or_(
+            Stock.history_records_count == 0,
+            Stock.history_records_count == None
+        )
+    ).group_by(
+        Stock.id, Stock.symbol, Stock.name, Stock.market
+    ).order_by(
+        Stock.name
+    ).offset(offset).limit(limit).all()
+
+    result = [{
+        "id": row.id,
+        "symbol": row.symbol,
+        "name": row.name,
+        "market": row.market,
+        "signal_count": row.signal_count,
+        "tag_count": row.tag_count
+    } for row in query]
+
+    total_pages = (total_count + limit - 1) // limit
 
     return {
-        "count": len(result),
+        "total_count": total_count,
+        "page": page,
+        "limit": limit,
+        "total_pages": total_pages,
         "stocks": result
     }
 
