@@ -4,6 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { X, TrendingUp, Calendar } from 'lucide-react';
 // import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { Stock, stockApi } from '@/lib/api';
+import { useTimezone } from '@/hooks/useTimezone';
 
 interface StockChartModalProps {
   stock: Stock | null;
@@ -37,6 +38,7 @@ interface TableData {
 }
 
 const StockChartModal: React.FC<StockChartModalProps> = ({ stock, isOpen, onClose }) => {
+  const { formatShortDate } = useTimezone();
   const [tableData, setTableData] = useState<TableData[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -65,11 +67,7 @@ const StockChartModal: React.FC<StockChartModalProps> = ({ stock, isOpen, onClos
 
           return {
             date: item.date,
-            displayDate: new Date(item.date).toLocaleDateString('ko-KR', {
-              year: 'numeric',
-              month: 'short',
-              day: 'numeric'
-            }),
+            displayDate: formatShortDate(item.date),
             open_price: item.open_price,
             high_price: item.high_price,
             low_price: item.low_price,

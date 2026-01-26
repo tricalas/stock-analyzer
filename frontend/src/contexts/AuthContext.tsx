@@ -8,6 +8,7 @@ interface User {
   user_token: string;
   nickname: string;
   is_admin: boolean;
+  timezone: string;
   created_at: string;
   last_login: string | null;
 }
@@ -19,6 +20,7 @@ interface AuthContextType {
   login: (nickname: string, pin: string) => Promise<void>;
   register: (nickname: string, pin: string) => Promise<void>;
   logout: () => void;
+  updateTimezone: (timezone: string) => Promise<void>;
   isAuthenticated: boolean;
 }
 
@@ -125,6 +127,35 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     router.push('/login');
   };
 
+  const updateTimezone = async (timezone: string) => {
+    if (!token) {
+      throw new Error('Not authenticated');
+    }
+
+    try {
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/auth/me/timezone`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify({ timezone }),
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.detail || 'Failed to update timezone');
+      }
+
+      // Update local user state
+      if (user) {
+        setUser({ ...user, timezone });
+      }
+    } catch (error: any) {
+      throw error;
+    }
+  };
+
   return (
     <AuthContext.Provider
       value={{
@@ -134,6 +165,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         login,
         register,
         logout,
+        updateTimezone,
         isAuthenticated: !!user && !!token,
       }}
     >

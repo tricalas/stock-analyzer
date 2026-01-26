@@ -5,6 +5,7 @@ import { Database, RefreshCw, X, Settings2, Zap, Clock, SkipForward, TrendingUp,
 import { toast } from 'sonner';
 import { useAuth } from '@/contexts/AuthContext';
 import { useQuery } from '@tanstack/react-query';
+import { useTimezone } from '@/hooks/useTimezone';
 
 interface TaskProgress {
   task_id: string;
@@ -56,6 +57,7 @@ interface CollectionResult {
 
 export default function DataCollectionPage() {
   const { user } = useAuth();
+  const { formatTableDateTime } = useTimezone();
   const [showHistoryProgress, setShowHistoryProgress] = useState(false);
   const [historyTaskId, setHistoryTaskId] = useState<string | null>(null);
   const [selectedHistoryTaskId, setSelectedHistoryTaskId] = useState<string | null>(null);
@@ -716,13 +718,7 @@ export default function DataCollectionPage() {
                   >
                     <div className="flex items-center justify-between">
                       <span className="text-sm text-muted-foreground">
-                        {new Date(summary.started_at).toLocaleString('ko-KR', {
-                          year: 'numeric',
-                          month: '2-digit',
-                          day: '2-digit',
-                          hour: '2-digit',
-                          minute: '2-digit'
-                        })}
+                        {formatTableDateTime(summary.started_at)}
                       </span>
                       <div className="flex items-center gap-3 text-sm">
                         <span className="text-green-600 dark:text-green-400">

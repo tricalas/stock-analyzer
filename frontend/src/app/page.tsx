@@ -15,10 +15,12 @@ import SortDropdown, { SortField, SortDirection } from '@/components/SortDropdow
 import { Toaster } from '@/components/ui/sonner';
 import { toast } from 'sonner';
 import { useAuth } from '@/contexts/AuthContext';
+import { useTimezone } from '@/hooks/useTimezone';
 
 export default function Home() {
   const queryClient = useQueryClient();
   const { user } = useAuth();
+  const { formatShortDateTime } = useTimezone();
   const [activeTab, setActiveTab] = useState<'US' | 'FAVORITES' | 'DISLIKES'>('US');
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [selectedStock, setSelectedStock] = useState<Stock | null>(null);
@@ -208,12 +210,7 @@ export default function Home() {
               <div key={lastUpdateTime} className="text-sm text-muted-foreground">
                 <span className="font-medium">최근:</span>{' '}
                 <span className="text-foreground">
-                  {new Date(lastUpdateTime).toLocaleString('ko-KR', {
-                    month: 'short',
-                    day: 'numeric',
-                    hour: '2-digit',
-                    minute: '2-digit'
-                  })}
+                  {formatShortDateTime(lastUpdateTime)}
                 </span>
               </div>
             )}

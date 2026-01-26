@@ -8,6 +8,7 @@ import { Toaster, toast } from 'sonner';
 import { getNaverChartUrl, getNaverInfoUrl, openNaverChartPopup } from '@/lib/naverStock';
 import { stockApi } from '@/lib/api';
 import ScrollToTopButton from '@/components/atoms/ScrollToTopButton';
+import { useTimezone } from '@/hooks/useTimezone';
 
 interface Stock {
   id: number;
@@ -55,6 +56,7 @@ export default function SignalsPage() {
   const loadMoreRef = useRef<HTMLDivElement>(null);
   const [signalFilter, setSignalFilter] = useState<SignalFilter>('all');
   const [returnFilter, setReturnFilter] = useState<ReturnFilter>('all');
+  const { formatShortDate, formatShortDateTime } = useTimezone();
 
   // 무한 스크롤로 시그널 조회
   const {
@@ -110,25 +112,6 @@ export default function SignalsPage() {
 
   const formatPrice = (price: number) => {
     return `$${price.toFixed(2)}`;
-  };
-
-  const formatDate = (dateStr: string) => {
-    const date = new Date(dateStr);
-    return date.toLocaleDateString('ko-KR', {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
-    });
-  };
-
-  const formatDateTime = (dateStr: string) => {
-    const date = new Date(dateStr);
-    return date.toLocaleString('ko-KR', {
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-    });
   };
 
   // 필터링된 시그널
@@ -207,7 +190,7 @@ export default function SignalsPage() {
               {analyzedAt && (
                 <div className="text-sm text-muted-foreground">
                   <Clock className="inline h-3.5 w-3.5 mr-1" />
-                  {formatDateTime(analyzedAt)}
+                  {formatShortDateTime(analyzedAt)}
                 </div>
               )}
             </div>
@@ -281,7 +264,7 @@ export default function SignalsPage() {
                         <td className="px-4 py-3 whitespace-nowrap text-center">
                           <div className="flex flex-col items-center gap-1">
                             <span className="text-sm text-foreground">
-                              {formatDate(signal.signal_date)}
+                              {formatShortDate(signal.signal_date)}
                             </span>
                             {/* 시그널 타입 배지 */}
                             {(() => {

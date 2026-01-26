@@ -12,6 +12,7 @@ class User(Base):
     nickname = Column(String(50), nullable=False)
     pin_hash = Column(String(255), nullable=False)
     is_admin = Column(Boolean, default=False, nullable=False)
+    timezone = Column(String(50), default='Asia/Seoul', nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
     last_login = Column(DateTime)
 

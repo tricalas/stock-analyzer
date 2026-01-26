@@ -241,7 +241,7 @@ class SignalAnalyzer:
         # 1. 기존 시그널 삭제 (새 알고리즘으로 재분석하므로)
         db.query(StockSignal).filter(
             StockSignal.stock_id == stock_id,
-            StockSignal.strategy_name.in_(['descending_trendline_breakout', 'approaching_breakout', 'pullback_buy'])
+            StockSignal.strategy_name.in_(['descending_trendline_breakout', 'approaching_breakout', 'pullback_buy', 'doji_star'])
         ).delete(synchronize_session=False)
         db.commit()
 
@@ -518,11 +518,78 @@ class SignalAnalyzer:
                 }
                 signals.append(signal_info)
 
+            # 3. Doji(샛별형) 패턴 시그널
+            doji_signals = self._detect_doji_pattern(df, current_price)
+            signals.extend(doji_signals)
+
             return signals
 
         except Exception as e:
             logger.error(f"Error running signal analysis: {str(e)}")
             return []
+
+    def _detect_doji_pattern(self, df, current_price: Optional[float]) -> List[Dict]:
+        """
+        납작한 봉(Doji-like) 패턴 감지
+
+        조건:
+        - 몸통 크기: |종가-시가|/시가 <= 1%
+        - 위꼬리, 아래꼬리 모두 존재
+        - 샛별봉 종가 > 전날 종가
+        - 최근 3일 이내만 시그널로 기록
+        """
+        signals = []
+        today = date.today()
+
+        for i in range(1, len(df)):  # i=1부터 (전날 비교 필요)
+            row = df.iloc[i]
+            prev_row = df.iloc[i - 1]  # 전날
+            signal_date = df.index[i].date() if hasattr(df.index[i], 'date') else df.index[i]
+
+            # 최근 3일 이내만
+            if (today - signal_date).days > 3:
+                continue
+
+            # 몸통 크기 계산
+            body_size = abs(row['close'] - row['open'])
+            body_ratio = body_size / row['open'] if row['open'] > 0 else 0
+
+            # 꼬리 계산
+            upper_wick = row['high'] - max(row['open'], row['close'])
+            lower_wick = min(row['open'], row['close']) - row['low']
+
+            # 조건: 작은 몸통(1% 이내) + 위아래 꼬리 존재 + 전날보다 종가 상승
+            is_small_body = body_ratio <= 0.01
+            has_both_wicks = upper_wick > 0 and lower_wick > 0
+            is_higher_close = row['close'] > prev_row['close']
+
+            if is_small_body and has_both_wicks and is_higher_close:
+                signal_price = row['close']
+                return_pct = 0.0
+                if current_price and signal_price > 0:
+                    return_pct = ((current_price - signal_price) / signal_price) * 100
+
+                signals.append({
+                    'signal_type': 'buy',
+                    'strategy_name': 'doji_star',
+                    'signal_date': signal_date,
+                    'signal_price': float(signal_price),
+                    'current_price': float(current_price) if current_price else None,
+                    'return_percent': float(round(return_pct, 2)),
+                    'details': {
+                        'pattern': 'doji_star',
+                        'body_ratio': round(body_ratio * 100, 3),
+                        'upper_wick': round(upper_wick, 2),
+                        'lower_wick': round(lower_wick, 2),
+                        'open': row['open'],
+                        'close': row['close'],
+                        'high': row['high'],
+                        'low': row['low'],
+                        'prev_close': prev_row['close'],
+                    }
+                })
+
+        return signals
 
     def _save_signals(self, stock_id: int, signals: List[Dict], db: Session) -> int:
         """시그널을 DB에 저장 (중복 방지)"""

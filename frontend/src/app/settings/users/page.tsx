@@ -5,6 +5,7 @@ import { Plus, Trash2, Shield, User as UserIcon } from 'lucide-react';
 import { userApi } from '@/lib/api';
 import { toast } from 'sonner';
 import { useAuth } from '@/contexts/AuthContext';
+import { useTimezone } from '@/hooks/useTimezone';
 
 interface User {
   id: number;
@@ -16,6 +17,7 @@ interface User {
 
 export default function UserManagement() {
   const { user: currentUser } = useAuth();
+  const { formatTableDateTime } = useTimezone();
   const [users, setUsers] = useState<User[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isAdding, setIsAdding] = useState(false);
@@ -72,13 +74,7 @@ export default function UserManagement() {
 
   const formatDate = (dateString: string | null) => {
     if (!dateString) return '-';
-    return new Date(dateString).toLocaleString('ko-KR', {
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-      hour: '2-digit',
-      minute: '2-digit',
-    });
+    return formatTableDateTime(dateString);
   };
 
   return (

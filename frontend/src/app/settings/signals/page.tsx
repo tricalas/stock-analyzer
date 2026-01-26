@@ -16,6 +16,7 @@ import {
   BarChart3
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { useTimezone } from '@/hooks/useTimezone';
 
 interface TaskProgress {
   task_id: string;
@@ -47,6 +48,7 @@ interface SignalListResponse {
 }
 
 export default function SignalAnalysisPage() {
+  const { formatShortDateTime } = useTimezone();
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analyzingMode, setAnalyzingMode] = useState<'all' | 'tagged' | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -189,16 +191,6 @@ export default function SignalAnalysisPage() {
       setIsAnalyzing(false);
       setAnalyzingMode(null);
     }
-  };
-
-  const formatDateTime = (dateStr: string) => {
-    const date = new Date(dateStr);
-    return date.toLocaleString('ko-KR', {
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-    });
   };
 
   const progressPercent = progressData
@@ -375,7 +367,7 @@ export default function SignalAnalysisPage() {
                   <Clock className="w-3 h-3 text-muted-foreground" />
                 </div>
                 <p className="text-sm font-medium text-foreground">
-                  {signalData.analyzed_at ? formatDateTime(signalData.analyzed_at) : '-'}
+                  {signalData.analyzed_at ? formatShortDateTime(signalData.analyzed_at) : '-'}
                 </p>
                 <p className="text-xs text-muted-foreground">마지막 분석</p>
               </div>

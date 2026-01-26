@@ -7,6 +7,7 @@ import { getNaverChartUrl, getNaverInfoUrl } from '@/lib/naverStock';
 import { toast } from 'sonner';
 import { useTags } from '@/contexts/TagContext';
 import { useQueryClient, useQuery } from '@tanstack/react-query';
+import { useTimezone } from '@/hooks/useTimezone';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -31,6 +32,7 @@ interface StockItemProps {
 }
 
 const StockItem = React.memo<StockItemProps>(({ stock, rank, onStockClick, onShowChart, onStockDeleted, onFavoriteChanged, onDislikeChanged }) => {
+  const { formatShortDateTime, formatShortDate } = useTimezone();
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
@@ -348,7 +350,7 @@ const StockItem = React.memo<StockItemProps>(({ stock, rank, onStockClick, onSho
                     ? 'bg-green-500/10 text-green-600 dark:text-green-400 hover:bg-green-500/20'
                     : 'bg-red-500/10 text-red-600 dark:text-red-400 hover:bg-red-500/20'
                 }`}
-                title={`매수 시그널 ${signalData.signals.length}개 발견 (최근: ${new Date(signalData.latest_signal_date).toLocaleDateString('ko-KR')})`}
+                title={`매수 시그널 ${signalData.signals.length}개 발견 (최근: ${formatShortDate(signalData.latest_signal_date)})`}
               >
                 {signalData.latest_return_pct >= 0 ? (
                   <TrendingUp className="h-3 w-3 mr-1" />
@@ -396,12 +398,7 @@ const StockItem = React.memo<StockItemProps>(({ stock, rank, onStockClick, onSho
               </button>
             {stock.latest_tag_date && (
               <span className="ml-2 text-primary/70 text-[10px]">
-                | 📌 {new Date(stock.latest_tag_date).toLocaleDateString('ko-KR', {
-                  month: 'short',
-                  day: 'numeric',
-                  hour: '2-digit',
-                  minute: '2-digit'
-                })}
+                | 📌 {formatShortDateTime(stock.latest_tag_date)}
               </span>
             )}
           </div>
@@ -519,11 +516,7 @@ const StockItem = React.memo<StockItemProps>(({ stock, rank, onStockClick, onSho
               <div className="flex justify-between py-2 border-b border-border/50">
                 <span className="text-muted-foreground">최신 업데이트</span>
                 <span className="font-medium text-foreground">
-                  {analysisResult.latest_update_date ? new Date(analysisResult.latest_update_date).toLocaleDateString('ko-KR', {
-                    year: 'numeric',
-                    month: 'long',
-                    day: 'numeric'
-                  }) : '-'}
+                  {analysisResult.latest_update_date ? formatShortDate(analysisResult.latest_update_date) : '-'}
                 </span>
               </div>
               <div className="flex justify-between py-2 border-b border-border/50">

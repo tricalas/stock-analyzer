@@ -194,6 +194,7 @@ class UserResponse(BaseModel):
     user_token: str
     nickname: str
     is_admin: bool
+    timezone: str = 'Asia/Seoul'
     created_at: datetime
     last_login: Optional[datetime] = None
 

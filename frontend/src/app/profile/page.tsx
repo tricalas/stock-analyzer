@@ -1,20 +1,73 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import AppLayout from '@/components/AppLayout';
-import { User, Key, Save, X, Shield } from 'lucide-react';
+import { User, Key, Save, X, Shield, Globe } from 'lucide-react';
 import { toast } from 'sonner';
 import { Toaster } from '@/components/ui/sonner';
 import { useAuth } from '@/contexts/AuthContext';
+import { useTimezone } from '@/hooks/useTimezone';
+
+interface TimezoneOption {
+  value: string;
+  label: string;
+}
 
 export default function ProfilePage() {
-  const { user } = useAuth();
+  const { user, updateTimezone } = useAuth();
+  const { formatDate } = useTimezone();
   const [isChangingPin, setIsChangingPin] = useState(false);
+  const [isChangingTimezone, setIsChangingTimezone] = useState(false);
+  const [timezones, setTimezones] = useState<TimezoneOption[]>([]);
+  const [selectedTimezone, setSelectedTimezone] = useState(user?.timezone || 'Asia/Seoul');
+  const [isSavingTimezone, setIsSavingTimezone] = useState(false);
   const [pinForm, setPinForm] = useState({
     currentPin: '',
     newPin: '',
     confirmPin: '',
   });
+
+  // Fetch available timezones
+  useEffect(() => {
+    const fetchTimezones = async () => {
+      try {
+        const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/timezones`);
+        if (response.ok) {
+          const data = await response.json();
+          setTimezones(data.timezones);
+        }
+      } catch (error) {
+        console.error('Failed to fetch timezones:', error);
+      }
+    };
+    fetchTimezones();
+  }, []);
+
+  // Update selected timezone when user changes
+  useEffect(() => {
+    if (user?.timezone) {
+      setSelectedTimezone(user.timezone);
+    }
+  }, [user?.timezone]);
+
+  const handleChangeTimezone = async () => {
+    if (selectedTimezone === user?.timezone) {
+      setIsChangingTimezone(false);
+      return;
+    }
+
+    setIsSavingTimezone(true);
+    try {
+      await updateTimezone(selectedTimezone);
+      toast.success('시간대가 변경되었습니다.');
+      setIsChangingTimezone(false);
+    } catch (error) {
+      console.error('Error changing timezone:', error);
+      toast.error('시간대 변경에 실패했습니다.');
+    } finally {
+      setIsSavingTimezone(false);
+    }
+  };
 
   const handleChangePin = async () => {
     if (!pinForm.currentPin || !pinForm.newPin || !pinForm.confirmPin) {
@@ -80,9 +133,71 @@ export default function ProfilePage() {
                 <div className="flex justify-between py-3 border-b border-border/50">
                   <span className="text-muted-foreground">가입일</span>
                   <span className="font-semibold text-foreground">
-                    {user?.created_at ? new Date(user.created_at).toLocaleDateString('ko-KR') : '-'}
+                    {user?.created_at ? formatDate(user.created_at) : '-'}
                   </span>
                 </div>
+              </div>
+
+              {/* Timezone Settings */}
+              <div className="mt-6 p-5 bg-muted/30 rounded-lg">
+                <div className="flex items-center gap-2 mb-4">
+                  <Globe className="w-5 h-5 text-primary" />
+                  <h3 className="font-semibold text-foreground">시간대 설정</h3>
+                </div>
+
+                {!isChangingTimezone ? (
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <span className="text-muted-foreground">현재 시간대: </span>
+                      <span className="font-semibold text-foreground">
+                        {timezones.find(tz => tz.value === user?.timezone)?.label || user?.timezone || 'Asia/Seoul'}
+                      </span>
+                    </div>
+                    <button
+                      onClick={() => setIsChangingTimezone(true)}
+                      className="px-4 py-2 text-sm bg-muted hover:bg-muted/80 text-foreground rounded-lg transition-colors"
+                    >
+                      변경
+                    </button>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    <div>
+                      <label className="block text-sm font-medium mb-2">시간대 선택</label>
+                      <select
+                        value={selectedTimezone}
+                        onChange={(e) => setSelectedTimezone(e.target.value)}
+                        className="w-full px-4 py-2 border border-border rounded-lg bg-card text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+                      >
+                        {timezones.map((tz) => (
+                          <option key={tz.value} value={tz.value}>
+                            {tz.label}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={handleChangeTimezone}
+                        disabled={isSavingTimezone}
+                        className="flex-1 inline-flex items-center justify-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 disabled:opacity-50"
+                      >
+                        <Save className="h-4 w-4" />
+                        {isSavingTimezone ? '저장 중...' : '저장'}
+                      </button>
+                      <button
+                        onClick={() => {
+                          setIsChangingTimezone(false);
+                          setSelectedTimezone(user?.timezone || 'Asia/Seoul');
+                        }}
+                        className="flex-1 inline-flex items-center justify-center gap-2 px-4 py-2 bg-muted text-foreground rounded-lg hover:bg-muted/80"
+                      >
+                        <X className="h-4 w-4" />
+                        취소
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* Change PIN Button */}

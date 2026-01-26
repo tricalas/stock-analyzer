@@ -195,6 +195,7 @@ async def startup_event():
         from sqlalchemy import text
         db.execute(text('ALTER TABLE stocks ADD COLUMN IF NOT EXISTS history_updated_at TIMESTAMP'))
         db.execute(text('ALTER TABLE stocks ADD COLUMN IF NOT EXISTS signal_analyzed_at TIMESTAMP'))
+        db.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS timezone VARCHAR(50) DEFAULT 'Asia/Seoul' NOT NULL"))
         db.commit()
         logger.info("DB migration completed")
     except Exception as e:
@@ -1733,6 +1734,48 @@ def login(login_data: schemas.UserLogin, db: Session = Depends(get_db)):
 def get_me(current_user: User = Depends(get_current_user)):
     """현재 로그인된 사용자 정보"""
     return current_user
+
+
+# 지원 시간대 목록
+SUPPORTED_TIMEZONES = [
+    {"value": "Asia/Seoul", "label": "서울 (KST)"},
+    {"value": "Asia/Tokyo", "label": "도쿄 (JST)"},
+    {"value": "America/New_York", "label": "뉴욕 (EST/EDT)"},
+    {"value": "America/Los_Angeles", "label": "LA (PST/PDT)"},
+    {"value": "America/Chicago", "label": "시카고 (CST/CDT)"},
+    {"value": "Europe/London", "label": "런던 (GMT/BST)"},
+    {"value": "Europe/Paris", "label": "파리 (CET/CEST)"},
+    {"value": "UTC", "label": "UTC"},
+]
+
+
+@app.get("/api/timezones")
+def get_timezones():
+    """지원하는 시간대 목록"""
+    return {"timezones": SUPPORTED_TIMEZONES}
+
+
+@app.put("/api/auth/me/timezone")
+def update_timezone(
+    data: dict,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """사용자 시간대 변경"""
+    timezone = data.get("timezone")
+
+    # 유효한 시간대인지 확인
+    valid_timezones = [tz["value"] for tz in SUPPORTED_TIMEZONES]
+    if timezone not in valid_timezones:
+        raise HTTPException(status_code=400, detail=f"Invalid timezone. Supported: {', '.join(valid_timezones)}")
+
+    current_user.timezone = timezone
+    db.commit()
+    db.refresh(current_user)
+
+    logger.info(f"User {current_user.nickname} changed timezone to {timezone}")
+
+    return {"message": "Timezone updated successfully", "timezone": timezone}
 
 
 @app.get("/api/auth/users")

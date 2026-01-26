@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { Clock, Calendar, CheckCircle, AlertCircle } from 'lucide-react';
 import { stockApi } from '@/lib/api';
+import { useTimezone } from '@/hooks/useTimezone';
 
 interface ScheduleJob {
   id: string;
@@ -21,6 +22,7 @@ const ScheduleStatus = React.memo(() => {
   const [schedulerData, setSchedulerData] = useState<SchedulerData | null>(null);
   const [lastUpdated, setLastUpdated] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const { formatDateTime, formatTimeUntil } = useTimezone();
 
   const fetchSchedulerStatus = async () => {
     try {
@@ -59,44 +61,11 @@ const ScheduleStatus = React.memo(() => {
   }, []);
 
   const formatTime = (dateString: string | null) => {
-    if (!dateString) return '-';
-
-    try {
-      const date = new Date(dateString);
-      return date.toLocaleString('ko-KR', {
-        year: 'numeric',
-        month: '2-digit',
-        day: '2-digit',
-        hour: '2-digit',
-        minute: '2-digit',
-        timeZone: 'Asia/Seoul'
-      });
-    } catch {
-      return '-';
-    }
+    return formatDateTime(dateString);
   };
 
   const formatNextRunTime = (dateString: string | null) => {
-    if (!dateString) return '-';
-
-    try {
-      const date = new Date(dateString);
-      const now = new Date();
-      const diff = date.getTime() - now.getTime();
-
-      if (diff < 0) return '지난 시간';
-
-      const hours = Math.floor(diff / (1000 * 60 * 60));
-      const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
-
-      if (hours > 0) {
-        return `${hours}시간 ${minutes}분 후`;
-      } else {
-        return `${minutes}분 후`;
-      }
-    } catch {
-      return '-';
-    }
+    return formatTimeUntil(dateString);
   };
 
   if (loading) {
