@@ -3,7 +3,7 @@
 import { useEffect } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { Users, Tag, Database, EyeOff, Shield, TrendingUp } from 'lucide-react';
+import { Users, Tag, Database, EyeOff, Shield, TrendingUp, Trash2 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from 'sonner';
 
@@ -14,6 +14,7 @@ interface SettingsLayoutProps {
 const adminMenuItems = [
   { name: '시그널 분석', href: '/settings/signals', icon: TrendingUp },
   { name: '데이터 수집', href: '/settings/data', icon: Database },
+  { name: '데이터 없는 종목', href: '/settings/no-history', icon: Trash2 },
   { name: '태그 관리', href: '/settings/tags', icon: Tag },
   { name: '사용자 관리', href: '/settings/users', icon: Users },
   { name: '숨겨진 태그', href: '/settings/hidden-tags', icon: EyeOff },
