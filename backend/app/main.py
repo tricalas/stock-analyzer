@@ -611,6 +611,41 @@ def search_stocks(
     return result
 
 
+@app.get("/api/stocks/no-history")
+def get_stocks_without_history(db: Session = Depends(get_db)):
+    """히스토리가 없는 종목 목록 조회"""
+    from sqlalchemy import or_
+
+    stocks = db.query(Stock).filter(
+        or_(
+            Stock.history_records_count == 0,
+            Stock.history_records_count == None
+        )
+    ).all()
+
+    result = []
+    for stock in stocks:
+        signal_count = db.query(StockSignal).filter(
+            StockSignal.stock_id == stock.id
+        ).count()
+        tag_count = db.query(StockTagAssignment).filter(
+            StockTagAssignment.stock_id == stock.id
+        ).count()
+        result.append({
+            "id": stock.id,
+            "symbol": stock.symbol,
+            "name": stock.name,
+            "market": stock.market,
+            "signal_count": signal_count,
+            "tag_count": tag_count
+        })
+
+    return {
+        "count": len(result),
+        "stocks": result
+    }
+
+
 @app.get("/api/stocks/{stock_id}", response_model=schemas.Stock)
 def get_stock(stock_id: int, db: Session = Depends(get_db)):
     stock = db.query(Stock).filter(Stock.id == stock_id).first()
@@ -1168,40 +1203,6 @@ def cleanup_korean_stocks(db: Session = Depends(get_db)):
         db.rollback()
         logger.error(f"Error during Korean stocks cleanup: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
-
-@app.get("/api/stocks/no-history")
-def get_stocks_without_history(db: Session = Depends(get_db)):
-    """히스토리가 없는 종목 목록 조회"""
-    from sqlalchemy import or_
-
-    stocks = db.query(Stock).filter(
-        or_(
-            Stock.history_records_count == 0,
-            Stock.history_records_count == None
-        )
-    ).all()
-
-    result = []
-    for stock in stocks:
-        signal_count = db.query(StockSignal).filter(
-            StockSignal.stock_id == stock.id
-        ).count()
-        tag_count = db.query(StockTagAssignment).filter(
-            StockTagAssignment.stock_id == stock.id
-        ).count()
-        result.append({
-            "id": stock.id,
-            "symbol": stock.symbol,
-            "name": stock.name,
-            "market": stock.market,
-            "signal_count": signal_count,
-            "tag_count": tag_count
-        })
-
-    return {
-        "count": len(result),
-        "stocks": result
-    }
 
 @app.delete("/api/stocks/cleanup-no-history")
 def cleanup_stocks_without_history(
