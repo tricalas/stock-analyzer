@@ -469,6 +469,50 @@ const StockItem = React.memo<StockItemProps>(({ stock, rank, onStockClick, onSho
           </div>
         )}
       </td>
+
+      {/* 삭제 버튼 */}
+      <td className="px-2 py-4 text-center">
+        <AlertDialog>
+          <AlertDialogTrigger asChild>
+            <button
+              onClick={(e) => e.stopPropagation()}
+              disabled={isDeleting}
+              className="opacity-0 group-hover:opacity-100 p-1.5 rounded-md text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-all duration-200 disabled:opacity-50 cursor-pointer"
+              title="종목 삭제"
+            >
+              {isDeleting ? (
+                <div className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent"></div>
+              ) : (
+                <Trash2 className="h-4 w-4" />
+              )}
+            </button>
+          </AlertDialogTrigger>
+          <AlertDialogContent onClick={(e) => e.stopPropagation()}>
+            <AlertDialogHeader>
+              <AlertDialogTitle>종목 삭제</AlertDialogTitle>
+              <AlertDialogDescription>
+                <span className="font-semibold text-foreground">{stock.name} ({stock.symbol})</span> 종목을 삭제하시겠습니까?
+                <br /><br />
+                이 작업은 되돌릴 수 없으며, 다음 데이터가 함께 삭제됩니다:
+                <ul className="list-disc list-inside mt-2 text-sm">
+                  <li>가격 히스토리 데이터</li>
+                  <li>시그널 분석 데이터</li>
+                  <li>태그 지정 내역</li>
+                </ul>
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>취소</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={handleDeleteStock}
+                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              >
+                삭제
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      </td>
     </tr>
 
     {/* 분석 결과 모달 */}

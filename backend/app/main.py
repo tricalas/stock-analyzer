@@ -1169,6 +1169,85 @@ def cleanup_korean_stocks(db: Session = Depends(get_db)):
         logger.error(f"Error during Korean stocks cleanup: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.delete("/api/stocks/cleanup-no-history")
+def cleanup_stocks_without_history(
+    confirm: bool = Query(False, description="삭제 확인 플래그"),
+    db: Session = Depends(get_db)
+):
+    """히스토리가 없는 종목 삭제"""
+    from sqlalchemy import or_
+
+    try:
+        # 1. 히스토리 없는 종목 조회
+        stocks_to_delete = db.query(Stock).filter(
+            or_(
+                Stock.history_records_count == 0,
+                Stock.history_records_count == None
+            )
+        ).all()
+
+        # 2. 확인 모드 (confirm=False): 삭제 대상만 반환
+        if not confirm:
+            result = []
+            for stock in stocks_to_delete:
+                signal_count = db.query(StockSignal).filter(
+                    StockSignal.stock_id == stock.id
+                ).count()
+                tag_count = db.query(StockTagAssignment).filter(
+                    StockTagAssignment.stock_id == stock.id
+                ).count()
+                result.append({
+                    "id": stock.id,
+                    "symbol": stock.symbol,
+                    "name": stock.name,
+                    "market": stock.market,
+                    "signal_count": signal_count,
+                    "tag_count": tag_count
+                })
+            return {
+                "mode": "preview",
+                "message": f"{len(result)}개 종목 삭제 예정 (confirm=true로 실제 삭제)",
+                "stocks": result
+            }
+
+        # 3. 삭제 실행 (confirm=True)
+        deleted_count = 0
+        deleted_stocks = []
+
+        for stock in stocks_to_delete:
+            try:
+                stock_info = {"id": stock.id, "symbol": stock.symbol, "name": stock.name, "market": stock.market}
+
+                # 관련 데이터 수동 삭제
+                db.query(StockSignal).filter(StockSignal.stock_id == stock.id).delete()
+                db.query(StockTagAssignment).filter(StockTagAssignment.stock_id == stock.id).delete()
+                db.query(HistoryCollectionLog).filter(HistoryCollectionLog.stock_id == stock.id).delete()
+
+                # 종목 삭제 (나머지는 cascade)
+                db.delete(stock)
+                deleted_count += 1
+                deleted_stocks.append(stock_info)
+
+            except Exception as e:
+                logger.error(f"Failed to delete {stock.symbol}: {str(e)}")
+                continue
+
+        db.commit()
+
+        logger.info(f"Successfully deleted {deleted_count} stocks without history")
+
+        return {
+            "mode": "deleted",
+            "message": f"{deleted_count}개 종목 삭제 완료",
+            "deleted_count": deleted_count,
+            "deleted_stocks": deleted_stocks[:50]  # 처음 50개만 반환
+        }
+
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Error during no-history stocks cleanup: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.delete("/api/stocks/{stock_id}")
 def delete_stock(stock_id: int, db: Session = Depends(get_db)):
     """
@@ -1180,25 +1259,28 @@ def delete_stock(stock_id: int, db: Session = Depends(get_db)):
         if not stock:
             raise HTTPException(status_code=404, detail="Stock not found")
 
+        # 관련 데이터 삭제 (수동 삭제 필요한 것들)
+        signal_count = db.query(StockSignal).filter(StockSignal.stock_id == stock_id).delete()
+        tag_count = db.query(StockTagAssignment).filter(StockTagAssignment.stock_id == stock_id).delete()
+        log_count = db.query(HistoryCollectionLog).filter(HistoryCollectionLog.stock_id == stock_id).delete()
+
         # 해당 종목의 히스토리 데이터 삭제
         history_count = db.query(StockPriceHistory).filter(
             StockPriceHistory.stock_id == stock_id
-        ).count()
-
-        db.query(StockPriceHistory).filter(
-            StockPriceHistory.stock_id == stock_id
         ).delete()
 
-        # 종목 데이터 삭제
+        # 종목 데이터 삭제 (나머지는 cascade)
         db.delete(stock)
         db.commit()
 
-        logger.info(f"Deleted stock {stock.symbol} ({stock.name}) and {history_count} history records")
+        logger.info(f"Deleted stock {stock.symbol} ({stock.name}): {history_count} history, {signal_count} signals, {tag_count} tags")
 
         return {
             "success": True,
             "message": f"종목 '{stock.name}({stock.symbol})'과 관련된 모든 데이터가 삭제되었습니다.",
-            "deleted_history_count": history_count
+            "deleted_history_count": history_count,
+            "deleted_signal_count": signal_count,
+            "deleted_tag_count": tag_count
         }
 
     except Exception as e:

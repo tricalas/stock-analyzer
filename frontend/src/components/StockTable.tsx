@@ -37,6 +37,9 @@ const StockTable = React.memo<StockTableProps>(({ stocks, onStockClick, onShowCh
             <th className="px-3 py-3 text-center text-xs font-medium text-muted-foreground uppercase tracking-wider">
               태그
             </th>
+            <th className="w-10 px-2 py-3">
+              {/* 삭제 버튼 컬럼 (헤더 비움) */}
+            </th>
           </tr>
         </thead>
         <tbody className="bg-card divide-y divide-border/50">
