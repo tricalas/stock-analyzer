@@ -1234,6 +1234,9 @@ def cleanup_stocks_without_history(
 
         db.commit()
 
+        # 캐시 무효화
+        invalidate_cache()
+
         logger.info(f"Successfully deleted {deleted_count} stocks without history")
 
         return {
@@ -1270,14 +1273,19 @@ def delete_stock(stock_id: int, db: Session = Depends(get_db)):
         ).delete()
 
         # 종목 데이터 삭제 (나머지는 cascade)
+        stock_name = stock.name
+        stock_symbol = stock.symbol
         db.delete(stock)
         db.commit()
 
-        logger.info(f"Deleted stock {stock.symbol} ({stock.name}): {history_count} history, {signal_count} signals, {tag_count} tags")
+        # 캐시 무효화
+        invalidate_cache()
+
+        logger.info(f"Deleted stock {stock_symbol} ({stock_name}): {history_count} history, {signal_count} signals, {tag_count} tags")
 
         return {
             "success": True,
-            "message": f"종목 '{stock.name}({stock.symbol})'과 관련된 모든 데이터가 삭제되었습니다.",
+            "message": f"종목 '{stock_name}({stock_symbol})'과 관련된 모든 데이터가 삭제되었습니다.",
             "deleted_history_count": history_count,
             "deleted_signal_count": signal_count,
             "deleted_tag_count": tag_count
