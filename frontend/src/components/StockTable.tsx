@@ -29,6 +29,9 @@ const StockTable = React.memo<StockTableProps>(({ stocks, onStockClick, onShowCh
               등락률
             </th>
             <th className="px-3 py-3 text-right text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+              90일선
+            </th>
+            <th className="px-3 py-3 text-right text-xs font-semibold text-muted-foreground uppercase tracking-wider">
               시총
             </th>
             <th className="px-3 py-3 text-center text-xs font-semibold text-muted-foreground uppercase tracking-wider">
