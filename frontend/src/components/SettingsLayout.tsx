@@ -6,6 +6,9 @@ import Link from 'next/link';
 import { Users, Tag, Database, EyeOff, Shield, TrendingUp, Trash2 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from 'sonner';
+import { Card, CardContent } from '@/components/ui/card';
+import { ScrollArea, ScrollBar } from '@/components/ui/scroll-area';
+import { cn } from '@/lib/utils';
 
 interface SettingsLayoutProps {
   children: React.ReactNode;
@@ -14,7 +17,7 @@ interface SettingsLayoutProps {
 const adminMenuItems = [
   { name: '시그널 분석', href: '/settings/signals', icon: TrendingUp },
   { name: '데이터 수집', href: '/settings/data', icon: Database },
-  { name: '데이터 없는 종목', href: '/settings/no-history', icon: Trash2 },
+  { name: '데이터 없음', href: '/settings/no-history', icon: Trash2 },
   { name: '태그 관리', href: '/settings/tags', icon: Tag },
   { name: '사용자 관리', href: '/settings/users', icon: Users },
   { name: '숨겨진 태그', href: '/settings/hidden-tags', icon: EyeOff },
@@ -32,11 +35,10 @@ export default function SettingsLayout({ children }: SettingsLayoutProps) {
     }
   }, [user, loading, router]);
 
-  // 로딩 중이거나 비관리자인 경우 아무것도 렌더링하지 않음
   if (loading) {
     return (
       <div className="flex items-center justify-center h-full min-h-[400px]">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+        <div className="animate-spin rounded-full h-8 w-8 border-2 border-primary border-t-transparent"></div>
       </div>
     );
   }
@@ -45,22 +47,47 @@ export default function SettingsLayout({ children }: SettingsLayoutProps) {
     return null;
   }
 
-  const isActive = (href: string) => {
-    return pathname === href || pathname?.startsWith(href + '/');
-  };
+  const isActive = (href: string) => pathname === href || pathname?.startsWith(href + '/');
 
   return (
-    <div className="flex h-full min-h-[calc(100vh-3.5rem)] p-4 gap-4">
-      {/* Admin Sidebar - Floating Menu */}
-      <aside className="w-40 flex-shrink-0 hidden md:block">
-        <div className="bg-card border border-border rounded-xl shadow-lg overflow-hidden sticky top-4">
-          <div className="px-3 pt-3 pb-3">
-            <div className="flex items-center gap-1.5">
-              <Shield className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
-              <h2 className="font-semibold text-xs text-amber-600 dark:text-amber-400">관리자</h2>
+    <div className="flex flex-col lg:flex-row h-full min-h-[calc(100vh-3.5rem)] lg:p-4 gap-4">
+      {/* Desktop Sidebar */}
+      <aside className="hidden lg:block w-48 flex-shrink-0">
+        <Card className="sticky top-4">
+          <CardContent className="p-3">
+            <div className="flex items-center gap-2 px-2 py-2 mb-2">
+              <Shield className="w-4 h-4 text-amber-600 dark:text-amber-400" />
+              <span className="font-semibold text-sm text-amber-600 dark:text-amber-400">관리자</span>
             </div>
-          </div>
-          <nav className="px-1.5 pb-2 space-y-0.5">
+            <nav className="space-y-1">
+              {adminMenuItems.map((item) => {
+                const Icon = item.icon;
+                const active = isActive(item.href);
+                return (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    className={cn(
+                      "flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors",
+                      active
+                        ? "bg-primary text-primary-foreground"
+                        : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                    )}
+                  >
+                    <Icon className="w-4 h-4" />
+                    {item.name}
+                  </Link>
+                );
+              })}
+            </nav>
+          </CardContent>
+        </Card>
+      </aside>
+
+      {/* Mobile Tab Navigation */}
+      <div className="lg:hidden sticky top-0 z-10 bg-background border-b">
+        <ScrollArea className="w-full">
+          <div className="flex">
             {adminMenuItems.map((item) => {
               const Icon = item.icon;
               const active = isActive(item.href);
@@ -68,52 +95,30 @@ export default function SettingsLayout({ children }: SettingsLayoutProps) {
                 <Link
                   key={item.href}
                   href={item.href}
-                  className={`
-                    flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs font-medium
-                    transition-all duration-200
-                    ${active
-                      ? 'bg-primary text-primary-foreground shadow-sm'
-                      : 'text-muted-foreground hover:bg-muted hover:text-foreground'
-                    }
-                  `}
+                  className={cn(
+                    "flex flex-col items-center gap-1 px-4 py-3 min-w-[72px] text-center border-b-2 transition-colors",
+                    active
+                      ? "border-primary text-primary bg-primary/5"
+                      : "border-transparent text-muted-foreground hover:text-foreground hover:bg-muted/50"
+                  )}
                 >
-                  <Icon className={`w-3.5 h-3.5 flex-shrink-0 ${active ? 'text-primary-foreground' : ''}`} />
-                  {item.name}
+                  <Icon className="w-5 h-5" />
+                  <span className="text-[10px] font-medium whitespace-nowrap">{item.name}</span>
                 </Link>
               );
             })}
-          </nav>
-        </div>
-      </aside>
-
-      {/* Mobile Menu */}
-      <div className="md:hidden w-full border-b border-border bg-card p-2 flex gap-1 overflow-x-auto absolute top-0 left-0 right-0 z-10">
-        {adminMenuItems.map((item) => {
-          const Icon = item.icon;
-          const active = isActive(item.href);
-          return (
-            <Link
-              key={item.href}
-              href={item.href}
-              className={`
-                flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium whitespace-nowrap
-                transition-colors duration-200
-                ${active
-                  ? 'bg-primary text-primary-foreground'
-                  : 'text-muted-foreground hover:bg-muted hover:text-foreground'
-                }
-              `}
-            >
-              <Icon className={`w-4 h-4 ${active ? 'text-primary-foreground' : ''}`} />
-              <span className="hidden sm:inline">{item.name}</span>
-            </Link>
-          );
-        })}
+          </div>
+          <ScrollBar orientation="horizontal" />
+        </ScrollArea>
       </div>
 
       {/* Main Content */}
-      <main className="flex-1 overflow-auto md:pt-0 pt-14 bg-card border border-border rounded-xl shadow-lg">
-        {children}
+      <main className="flex-1 lg:overflow-auto">
+        <Card className="h-full rounded-none lg:rounded-xl border-0 lg:border">
+          <CardContent className="p-4 lg:p-6">
+            {children}
+          </CardContent>
+        </Card>
       </main>
     </div>
   );

@@ -12,12 +12,10 @@ interface AppLayoutProps {
 export default function AppLayout({ children, favoriteCount, dislikeCount }: AppLayoutProps) {
   return (
     <div className="min-h-screen bg-background">
-      {/* Sidebar */}
       <Sidebar favoriteCount={favoriteCount} dislikeCount={dislikeCount} />
 
       {/* Main Content */}
-      <div className="lg:pl-40 pl-12">
-        {/* Page Content */}
+      <div className="lg:pl-56 pt-14 lg:pt-0 pb-20 lg:pb-0">
         <main className="min-h-screen">
           {children}
         </main>

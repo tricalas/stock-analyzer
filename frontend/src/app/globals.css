@@ -160,3 +160,16 @@
 [data-sonner-toast] {
   z-index: 9999 !important;
 }
+
+/* Safe area inset support for mobile devices */
+.safe-area-inset-bottom {
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+/* Mobile touch target optimization */
+@media (max-width: 1023px) {
+  .touch-target {
+    min-height: 44px;
+    min-width: 44px;
+  }
+}
