@@ -7,7 +7,7 @@ import StockTable from '@/components/StockTable';
 import StockChartModal from '@/components/StockChartModal';
 import AppLayout from '@/components/AppLayout';
 import SearchBar from '@/components/SearchBar';
-import { RefreshCw, TrendingUp, Search, SlidersHorizontal } from 'lucide-react';
+import { RefreshCw, TrendingUp } from 'lucide-react';
 import { openNaverChartPopup } from '@/lib/naverStock';
 import ScrollToTopButton from '@/components/atoms/ScrollToTopButton';
 import SortDropdown, { SortField, SortDirection } from '@/components/SortDropdown';
@@ -17,13 +17,6 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useTimezone } from '@/hooks/useTimezone';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
 
 export default function Home() {
   const queryClient = useQueryClient();
@@ -155,9 +148,9 @@ export default function Home() {
 
   return (
     <AppLayout>
-      <div className="p-4 lg:p-6 space-y-4">
+      <div className="lg:p-4">
         {/* Header */}
-        <div className="sticky top-0 lg:top-0 z-20 -mx-4 lg:-mx-6 px-4 lg:px-6 py-3 bg-background/95 backdrop-blur-sm border-b">
+        <div className="sticky top-0 z-20 px-4 lg:px-0 py-3 bg-background/95 backdrop-blur-sm border-b lg:border-none lg:mb-4">
           {/* Desktop */}
           <div className="hidden lg:flex items-center gap-4">
             <SortDropdown
@@ -205,7 +198,7 @@ export default function Home() {
                   disabled={isRefreshing}
                   variant="outline"
                   size="icon"
-                  className="h-10 w-10"
+                  className="h-9 w-9"
                 >
                   <RefreshCw className={`h-4 w-4 ${isRefreshing ? 'animate-spin' : ''}`} />
                 </Button>
@@ -214,57 +207,70 @@ export default function Home() {
           </div>
         </div>
 
-        {/* Content */}
-        <Card>
-          <CardContent className="p-0">
-            {isLoading ? (
-              <div className="flex flex-col items-center justify-center py-20">
-                <div className="relative">
-                  <div className="animate-spin rounded-full h-10 w-10 border-2 border-primary border-t-transparent"></div>
-                </div>
-                <p className="mt-4 text-sm text-muted-foreground">로딩 중...</p>
-              </div>
-            ) : error ? (
-              <div className="text-center py-20">
-                <div className="inline-flex items-center justify-center w-14 h-14 rounded-full bg-destructive/10 mb-4">
-                  <TrendingUp className="w-6 h-6 text-destructive" />
-                </div>
-                <p className="text-destructive font-medium">로드 실패</p>
-                <p className="text-sm text-muted-foreground mt-1">잠시 후 다시 시도해주세요</p>
-              </div>
-            ) : stocks.length > 0 ? (
-              <>
-                <StockTable
-                  stocks={stocks}
-                  onStockClick={handleStockClick}
-                  onShowChart={handleShowChart}
-                  onStockDeleted={handleStockDeleted}
-                  onFavoriteChanged={handleFavoriteChanged}
-                  onDislikeChanged={handleDislikeChanged}
-                />
+        {/* Content - Desktop with Card, Mobile without */}
+        {isLoading ? (
+          <div className="flex flex-col items-center justify-center py-20">
+            <div className="animate-spin rounded-full h-10 w-10 border-2 border-primary border-t-transparent"></div>
+            <p className="mt-4 text-sm text-muted-foreground">로딩 중...</p>
+          </div>
+        ) : error ? (
+          <div className="text-center py-20">
+            <div className="inline-flex items-center justify-center w-14 h-14 rounded-full bg-destructive/10 mb-4">
+              <TrendingUp className="w-6 h-6 text-destructive" />
+            </div>
+            <p className="text-destructive font-medium">로드 실패</p>
+            <p className="text-sm text-muted-foreground mt-1">잠시 후 다시 시도해주세요</p>
+          </div>
+        ) : stocks.length > 0 ? (
+          <>
+            {/* Desktop: Card wrapper */}
+            <div className="hidden lg:block">
+              <Card>
+                <CardContent className="p-0">
+                  <StockTable
+                    stocks={stocks}
+                    onStockClick={handleStockClick}
+                    onShowChart={handleShowChart}
+                    onStockDeleted={handleStockDeleted}
+                    onFavoriteChanged={handleFavoriteChanged}
+                    onDislikeChanged={handleDislikeChanged}
+                  />
+                </CardContent>
+              </Card>
+            </div>
 
-                <div ref={loadMoreRef} className="py-4 text-center">
-                  {isFetchingNextPage ? (
-                    <div className="inline-flex items-center gap-2 text-muted-foreground">
-                      <div className="animate-spin rounded-full h-4 w-4 border-2 border-primary border-t-transparent"></div>
-                      <span className="text-sm">더 불러오는 중...</span>
-                    </div>
-                  ) : !hasNextPage && (
-                    <span className="text-sm text-muted-foreground">모든 종목 로드 완료</span>
-                  )}
+            {/* Mobile: No card, direct list */}
+            <div className="lg:hidden">
+              <StockTable
+                stocks={stocks}
+                onStockClick={handleStockClick}
+                onShowChart={handleShowChart}
+                onStockDeleted={handleStockDeleted}
+                onFavoriteChanged={handleFavoriteChanged}
+                onDislikeChanged={handleDislikeChanged}
+              />
+            </div>
+
+            <div ref={loadMoreRef} className="py-4 text-center">
+              {isFetchingNextPage ? (
+                <div className="inline-flex items-center gap-2 text-muted-foreground">
+                  <div className="animate-spin rounded-full h-4 w-4 border-2 border-primary border-t-transparent"></div>
+                  <span className="text-sm">더 불러오는 중...</span>
                 </div>
-              </>
-            ) : (
-              <div className="text-center py-20">
-                <div className="inline-flex items-center justify-center w-14 h-14 rounded-full bg-muted mb-4">
-                  <TrendingUp className="w-6 h-6 text-muted-foreground" />
-                </div>
-                <p className="font-medium">종목이 없습니다</p>
-                <p className="text-sm text-muted-foreground mt-1">"최신 데이터" 버튼을 클릭하세요</p>
-              </div>
-            )}
-          </CardContent>
-        </Card>
+              ) : !hasNextPage && (
+                <span className="text-sm text-muted-foreground">모든 종목 로드 완료</span>
+              )}
+            </div>
+          </>
+        ) : (
+          <div className="text-center py-20">
+            <div className="inline-flex items-center justify-center w-14 h-14 rounded-full bg-muted mb-4">
+              <TrendingUp className="w-6 h-6 text-muted-foreground" />
+            </div>
+            <p className="font-medium">종목이 없습니다</p>
+            <p className="text-sm text-muted-foreground mt-1">"최신 데이터" 버튼을 클릭하세요</p>
+          </div>
+        )}
       </div>
 
       <ScrollToTopButton />

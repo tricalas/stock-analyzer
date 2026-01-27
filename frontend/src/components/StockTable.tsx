@@ -3,7 +3,6 @@
 import React from 'react';
 import { Stock } from '@/lib/api';
 import StockItem from './StockItem';
-import { Card, CardContent } from '@/components/ui/card';
 import { ScrollArea, ScrollBar } from '@/components/ui/scroll-area';
 
 interface StockTableProps {
@@ -31,28 +30,28 @@ const StockTable = React.memo<StockTableProps>(({
           <table className="w-full">
             <thead className="bg-muted/50 sticky top-0">
               <tr className="border-b">
-                <th className="h-12 px-4 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                <th className="h-10 px-4 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
                   종목명
                 </th>
-                <th className="h-12 px-4 text-right text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                <th className="h-10 px-4 text-right text-xs font-medium text-muted-foreground uppercase tracking-wider">
                   전일비
                 </th>
-                <th className="h-12 px-4 text-right text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                <th className="h-10 px-4 text-right text-xs font-medium text-muted-foreground uppercase tracking-wider">
                   등락률
                 </th>
-                <th className="h-12 px-4 text-right text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                <th className="h-10 px-4 text-right text-xs font-medium text-muted-foreground uppercase tracking-wider">
                   90일선
                 </th>
-                <th className="h-12 px-4 text-right text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                <th className="h-10 px-4 text-right text-xs font-medium text-muted-foreground uppercase tracking-wider">
                   시총
                 </th>
-                <th className="h-12 px-4 text-center text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                <th className="h-10 px-4 text-center text-xs font-medium text-muted-foreground uppercase tracking-wider">
                   거래소
                 </th>
-                <th className="h-12 px-4 text-center text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                <th className="h-10 px-4 text-center text-xs font-medium text-muted-foreground uppercase tracking-wider">
                   태그
                 </th>
-                <th className="h-12 w-12 px-2"></th>
+                <th className="h-10 w-10 px-2"></th>
               </tr>
             </thead>
             <tbody className="divide-y">
@@ -74,8 +73,8 @@ const StockTable = React.memo<StockTableProps>(({
         </ScrollArea>
       </div>
 
-      {/* Mobile Card View */}
-      <div className="lg:hidden space-y-3 p-4">
+      {/* Mobile List View - Clean dividers */}
+      <div className="lg:hidden divide-y">
         {stocks.map((stock) => (
           <StockItem
             key={stock.id}

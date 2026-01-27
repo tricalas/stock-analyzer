@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { Stock, stockApi, Tag } from '@/lib/api';
-import { ArrowUpIcon, ArrowDownIcon, BarChart3, TrendingUp, TrendingDown, Trash2, Star, ThumbsDown, ShoppingCart, ThumbsUp, Eye, AlertCircle, ExternalLink, RefreshCw } from 'lucide-react';
+import { ArrowUpIcon, ArrowDownIcon, BarChart3, TrendingUp, TrendingDown, Trash2, Star, ThumbsDown, ShoppingCart, ThumbsUp, Eye, AlertCircle, RefreshCw, ChevronRight } from 'lucide-react';
 import { getNaverChartUrl, getNaverInfoUrl } from '@/lib/naverStock';
 import { toast } from 'sonner';
 import { useTags } from '@/contexts/TagContext';
@@ -10,7 +10,6 @@ import { useQueryClient, useQuery } from '@tanstack/react-query';
 import { useTimezone } from '@/hooks/useTimezone';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Card, CardContent } from '@/components/ui/card';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -59,6 +58,7 @@ const StockItem = React.memo<StockItemProps>(({
   const { tags: availableTags } = useTags();
   const [stockTags, setStockTags] = useState<Tag[]>(stock.tags || []);
   const [togglingTags, setTogglingTags] = useState<Set<number>>(new Set());
+  const [showTags, setShowTags] = useState(false);
   const queryClient = useQueryClient();
 
   const { data: signalData } = useQuery({
@@ -157,7 +157,7 @@ const StockItem = React.memo<StockItemProps>(({
   const formatPercent = (num?: number) => num ? `${num > 0 ? '+' : ''}${num.toFixed(2)}%` : '-';
   const formatMarketCap = (num?: number) => {
     if (!num) return '-';
-    if (num >= 1e12) return `${(num / 1e12).toFixed(0)}조`;
+    if (num >= 1e12) return `${(num / 1e12).toFixed(1)}조`;
     if (num >= 1e8) return `${(num / 1e8).toFixed(0)}억`;
     return num.toLocaleString();
   };
@@ -165,144 +165,135 @@ const StockItem = React.memo<StockItemProps>(({
   const changePercent = stock.change_percent || stock.latest_change_percent || 0;
   const changeAmount = stock.change_amount || stock.latest_change || 0;
 
-  const getPriceChangeColor = (percent: number) => {
-    if (percent >= 3) return 'text-green-600 dark:text-green-400 bg-green-500/10';
-    if (percent <= -3) return 'text-red-600 dark:text-red-400 bg-red-500/10';
+  const getTextColor = (percent: number) => {
     if (percent > 0) return 'text-green-600 dark:text-green-400';
     if (percent < 0) return 'text-red-600 dark:text-red-400';
     return 'text-muted-foreground';
   };
 
-  // Mobile Card View
+  // Mobile List View - Clean & Flat
   if (viewMode === 'card') {
+    const activeTags = stockTags.filter(t => availableTags.some(at => at.id === t.id));
+
     return (
-      <Card
-        className="overflow-hidden cursor-pointer hover:shadow-md transition-shadow"
-        onClick={() => onStockClick?.(stock)}
-      >
-        <CardContent className="p-4">
-          {/* Header */}
-          <div className="flex items-start justify-between gap-3 mb-3">
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-2 flex-wrap mb-1">
-                <a
-                  href={getNaverInfoUrl(stock)}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="font-semibold text-base hover:text-primary hover:underline truncate"
-                  onClick={(e) => e.stopPropagation()}
-                >
-                  {stock.name}
-                </a>
-                <Badge variant="secondary" className="text-[10px] px-1.5 py-0 h-5">
-                  {stock.exchange || stock.market}
-                </Badge>
-              </div>
-              <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                <span>{stock.symbol}</span>
-                {signalData?.signals?.length > 0 && (
-                  <Badge
-                    variant="outline"
-                    className={cn(
-                      "text-[10px] px-1.5 py-0 h-5",
-                      signalData.latest_return_pct >= 0
-                        ? "border-green-500/50 text-green-600 dark:text-green-400"
-                        : "border-red-500/50 text-red-600 dark:text-red-400"
-                    )}
-                  >
-                    {signalData.latest_return_pct >= 0 ? <TrendingUp className="h-3 w-3 mr-1" /> : <TrendingDown className="h-3 w-3 mr-1" />}
-                    {signalData.latest_return_pct >= 0 ? '+' : ''}{signalData.latest_return_pct.toFixed(1)}%
-                  </Badge>
-                )}
-              </div>
+      <div className="active:bg-muted/50 transition-colors">
+        {/* Main Row */}
+        <div
+          className="flex items-center gap-3 py-3 px-4"
+          onClick={() => onStockClick?.(stock)}
+        >
+          {/* Left: Stock Info */}
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2 mb-0.5">
+              <span className="font-semibold text-[15px] truncate">{stock.name}</span>
+              {activeTags.length > 0 && (
+                <div className="flex gap-1">
+                  {activeTags.slice(0, 2).map(tag => (
+                    <span
+                      key={tag.id}
+                      className="w-1.5 h-1.5 rounded-full bg-purple-500"
+                    />
+                  ))}
+                </div>
+              )}
             </div>
-            <div className="text-right">
-              <div className={cn("text-lg font-bold px-2 py-0.5 rounded", getPriceChangeColor(changePercent))}>
-                {formatPercent(changePercent)}
-              </div>
-              <div className="text-xs text-muted-foreground mt-0.5">
-                {formatMarketCap(stock.market_cap)}
-              </div>
+            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+              <span>{stock.symbol}</span>
+              <span className="text-muted-foreground/50">·</span>
+              <span>{stock.exchange || stock.market}</span>
+              <span className="text-muted-foreground/50">·</span>
+              <span>{formatMarketCap(stock.market_cap)}</span>
             </div>
           </div>
 
-          {/* Stats Row */}
-          <div className="flex items-center gap-4 py-2 px-3 rounded-lg bg-muted/50 mb-3 text-sm">
-            <div className="flex items-center gap-1.5">
-              <span className="text-muted-foreground text-xs">90일선</span>
-              <span className={cn("font-medium", getPriceChangeColor(stock.ma90_percentage || 0))}>
-                {stock.ma90_percentage != null ? formatPercent(stock.ma90_percentage) : '-'}
-              </span>
+          {/* Right: Price Info */}
+          <div className="text-right shrink-0">
+            <div className={cn("text-[15px] font-semibold tabular-nums", getTextColor(changePercent))}>
+              {formatPercent(changePercent)}
             </div>
-            <div className="flex-1" />
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={handleSyncHistory}
-              disabled={isSyncing}
-              className={cn(
-                "h-7 px-2 text-xs",
-                syncStatus === 'synced' && "text-green-600 dark:text-green-400",
-                syncStatus === 'partial' && "text-yellow-600 dark:text-yellow-400",
-                syncStatus === 'none' && "text-red-600 dark:text-red-400"
-              )}
-            >
-              {isSyncing ? (
-                <RefreshCw className="h-3 w-3 animate-spin" />
-              ) : (
-                <>
-                  {syncStatus === 'synced' && '✓'}
-                  {syncStatus === 'partial' && '⚠'}
-                  {syncStatus === 'none' && '○'}
-                  <span className="ml-1">{recordsCount}일</span>
-                </>
-              )}
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              asChild
-              className="h-7 px-2 text-xs"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <a href={getNaverChartUrl(stock)} target="_blank" rel="noopener noreferrer">
-                <BarChart3 className="h-3 w-3 mr-1" />
-                차트
-              </a>
-            </Button>
+            <div className="text-xs text-muted-foreground tabular-nums">
+              90일 {stock.ma90_percentage != null ? (
+                <span className={getTextColor(stock.ma90_percentage)}>
+                  {formatPercent(stock.ma90_percentage)}
+                </span>
+              ) : '-'}
+            </div>
           </div>
 
-          {/* Tags */}
-          {availableTags.length > 0 && (
-            <div className="flex flex-wrap gap-1.5">
-              {availableTags.map((tag) => {
-                const hasTag = stockTags.some(t => t.id === tag.id);
-                const isToggling = togglingTags.has(tag.id);
-                return (
-                  <Button
-                    key={tag.id}
-                    variant={hasTag ? "default" : "outline"}
-                    size="sm"
-                    onClick={(e) => handleToggleTag(e, tag)}
-                    disabled={isToggling}
-                    className={cn(
-                      "h-8 px-2.5 text-xs gap-1.5",
-                      hasTag && "bg-purple-600 hover:bg-purple-700"
-                    )}
-                  >
-                    {isToggling ? (
-                      <RefreshCw className="h-3 w-3 animate-spin" />
-                    ) : (
-                      getTagIcon(tag.icon)
-                    )}
-                    {tag.display_name}
-                  </Button>
-                );
-              })}
+          {/* Signal Badge */}
+          {signalData?.signals?.length > 0 && (
+            <div className={cn(
+              "shrink-0 text-xs font-medium px-2 py-1 rounded",
+              signalData.latest_return_pct >= 0
+                ? "bg-green-500/10 text-green-600 dark:text-green-400"
+                : "bg-red-500/10 text-red-600 dark:text-red-400"
+            )}>
+              {signalData.latest_return_pct >= 0 ? '+' : ''}{signalData.latest_return_pct.toFixed(1)}%
             </div>
           )}
-        </CardContent>
-      </Card>
+
+          <ChevronRight className="w-4 h-4 text-muted-foreground/50 shrink-0" />
+        </div>
+
+        {/* Quick Actions Row */}
+        <div className="flex items-center gap-1 px-4 pb-3 overflow-x-auto scrollbar-none">
+          {/* Sync Button */}
+          <button
+            onClick={handleSyncHistory}
+            disabled={isSyncing}
+            className={cn(
+              "shrink-0 flex items-center gap-1 text-xs px-2 py-1 rounded-full border transition-colors",
+              syncStatus === 'synced' && "border-green-500/30 text-green-600 dark:text-green-400",
+              syncStatus === 'partial' && "border-yellow-500/30 text-yellow-600 dark:text-yellow-400",
+              syncStatus === 'none' && "border-red-500/30 text-red-600 dark:text-red-400"
+            )}
+          >
+            {isSyncing ? (
+              <RefreshCw className="h-3 w-3 animate-spin" />
+            ) : (
+              <span>{syncStatus === 'synced' ? '✓' : syncStatus === 'partial' ? '⚠' : '○'} {recordsCount}일</span>
+            )}
+          </button>
+
+          {/* Chart Link */}
+          <a
+            href={getNaverChartUrl(stock)}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={(e) => e.stopPropagation()}
+            className="shrink-0 flex items-center gap-1 text-xs px-2 py-1 rounded-full border border-border text-muted-foreground hover:text-foreground transition-colors"
+          >
+            <BarChart3 className="h-3 w-3" />
+            차트
+          </a>
+
+          {/* Tag Buttons */}
+          {availableTags.map((tag) => {
+            const hasTag = stockTags.some(t => t.id === tag.id);
+            const isToggling = togglingTags.has(tag.id);
+            return (
+              <button
+                key={tag.id}
+                onClick={(e) => handleToggleTag(e, tag)}
+                disabled={isToggling}
+                className={cn(
+                  "shrink-0 flex items-center gap-1 text-xs px-2 py-1 rounded-full border transition-colors",
+                  hasTag
+                    ? "border-purple-500 bg-purple-500 text-white"
+                    : "border-border text-muted-foreground hover:text-foreground"
+                )}
+              >
+                {isToggling ? (
+                  <RefreshCw className="h-3 w-3 animate-spin" />
+                ) : (
+                  getTagIcon(tag.icon)
+                )}
+                {tag.display_name}
+              </button>
+            );
+          })}
+        </div>
+      </div>
     );
   }
 
@@ -312,7 +303,7 @@ const StockItem = React.memo<StockItemProps>(({
       className="hover:bg-muted/50 cursor-pointer transition-colors group"
       onClick={() => onStockClick?.(stock)}
     >
-      <td className="px-4 py-4 whitespace-nowrap">
+      <td className="px-4 py-3 whitespace-nowrap">
         <div>
           <div className="flex items-center gap-2">
             <a
@@ -369,59 +360,59 @@ const StockItem = React.memo<StockItemProps>(({
         </div>
       </td>
 
-      <td className="px-4 py-4 whitespace-nowrap text-right">
-        <span className={cn("inline-flex items-center text-sm", getPriceChangeColor(changePercent))}>
+      <td className="px-4 py-3 whitespace-nowrap text-right">
+        <span className={cn("inline-flex items-center text-sm", getTextColor(changePercent))}>
           {changeAmount >= 0 ? <ArrowUpIcon className="w-3 h-3 mr-1" /> : <ArrowDownIcon className="w-3 h-3 mr-1" />}
           {formatNumber(Math.abs(changeAmount))}
         </span>
       </td>
 
-      <td className="px-4 py-4 whitespace-nowrap text-right">
-        <span className={cn("text-sm font-medium px-2 py-0.5 rounded", getPriceChangeColor(changePercent))}>
+      <td className="px-4 py-3 whitespace-nowrap text-right">
+        <span className={cn("text-sm font-medium", getTextColor(changePercent))}>
           {formatPercent(changePercent)}
         </span>
       </td>
 
-      <td className="px-4 py-4 whitespace-nowrap text-right">
-        <span className={cn("text-sm", getPriceChangeColor(stock.ma90_percentage || 0))}>
+      <td className="px-4 py-3 whitespace-nowrap text-right">
+        <span className={cn("text-sm", getTextColor(stock.ma90_percentage || 0))}>
           {stock.ma90_percentage != null ? formatPercent(stock.ma90_percentage) : '-'}
         </span>
       </td>
 
-      <td className="px-4 py-4 whitespace-nowrap text-right text-sm font-mono">
+      <td className="px-4 py-3 whitespace-nowrap text-right text-sm tabular-nums">
         {formatMarketCap(stock.market_cap)}
       </td>
 
-      <td className="px-4 py-4 whitespace-nowrap text-center">
-        <Badge variant="secondary">{stock.exchange || stock.market}</Badge>
+      <td className="px-4 py-3 whitespace-nowrap text-center">
+        <span className="text-xs text-muted-foreground">{stock.exchange || stock.market}</span>
       </td>
 
-      <td className="px-4 py-4">
-        <div className="flex flex-wrap gap-1.5 justify-center">
+      <td className="px-4 py-3">
+        <div className="flex flex-wrap gap-1 justify-center">
           {availableTags.map((tag) => {
             const hasTag = stockTags.some(t => t.id === tag.id);
             const isToggling = togglingTags.has(tag.id);
             return (
-              <Button
+              <button
                 key={tag.id}
-                variant={hasTag ? "default" : "outline"}
-                size="sm"
                 onClick={(e) => handleToggleTag(e, tag)}
                 disabled={isToggling}
                 className={cn(
-                  "h-7 px-2 text-xs gap-1",
-                  hasTag && "bg-purple-600 hover:bg-purple-700"
+                  "inline-flex items-center gap-1 text-xs px-2 py-1 rounded-full border transition-colors",
+                  hasTag
+                    ? "border-purple-500 bg-purple-500 text-white"
+                    : "border-border text-muted-foreground hover:text-foreground hover:border-foreground/50"
                 )}
               >
                 {isToggling ? <RefreshCw className="h-3 w-3 animate-spin" /> : getTagIcon(tag.icon)}
                 {tag.display_name}
-              </Button>
+              </button>
             );
           })}
         </div>
       </td>
 
-      <td className="px-2 py-4 text-center">
+      <td className="px-2 py-3 text-center">
         <AlertDialog>
           <AlertDialogTrigger asChild>
             <Button
