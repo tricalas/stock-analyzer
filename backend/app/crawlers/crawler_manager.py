@@ -49,9 +49,9 @@ class CrawlerManager:
                 logger.info(f"Used Naver crawler: {len(naver_stocks)} stocks found, {etf_count} ETF/Index stocks filtered out, {len(filtered_stocks)} stocks to process")
 
             if market in ["ALL", "US"]:
-                # 미국 주식 크롤링
-                logger.info("Fetching US stocks from Naver API...")
-                us_stocks = self.naver_us_crawler.fetch_all_us_stocks(nasdaq_pages=10, nyse_pages=10)
+                # 미국 주식 크롤링 (전체 페이지 - 각 거래소당 최대 200페이지 = 10,000개)
+                logger.info("Fetching ALL US stocks from Naver API...")
+                us_stocks = self.naver_us_crawler.fetch_all_us_stocks(nasdaq_pages=200, nyse_pages=200)
                 stocks_data.extend(us_stocks)
                 logger.info(f"Fetched {len(us_stocks)} US stocks")
 
