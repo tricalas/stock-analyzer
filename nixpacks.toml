@@ -1,9 +1,7 @@
-[phases.setup]
-nixPkgs = ["python311Full", "gcc"]
-aptPkgs = ["python3-pip"]
+providers = ["python"]
 
-[phases.install]
-cmds = ["cd backend && python -m pip install -r requirements.txt"]
+[phases.setup]
+nixPkgs = ["gcc"]
 
 [start]
 cmd = "cd backend && uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}"
