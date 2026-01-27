@@ -432,7 +432,7 @@ const StockItem = React.memo<StockItemProps>(({ stock, rank, onStockClick, onSho
 
       {/* 90일선 대비 */}
       <td className="px-3 py-4 whitespace-nowrap text-sm text-right">
-        <span className={getChangeColorClass(stock.ma90_percentage, stock.ma90_percentage)}>
+        <span className={getChangeColorClass(stock.ma90_percentage ?? undefined, stock.ma90_percentage ?? undefined)}>
           {stock.ma90_percentage != null ? formatPercent(stock.ma90_percentage) : '-'}
         </span>
       </td>
