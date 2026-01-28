@@ -3259,13 +3259,27 @@ def get_db_stats(db: Session = Depends(get_db)):
         (Stock.history_records_count == None) | (Stock.history_records_count == 0)
     ).scalar()
 
+    # 중복 symbol 체크
+    duplicate_symbols = db.query(
+        Stock.symbol,
+        func.count(Stock.id).label('count')
+    ).group_by(Stock.symbol).having(func.count(Stock.id) > 1).all()
+
+    # 거래소별 종목 수
+    by_exchange = db.query(
+        Stock.exchange,
+        func.count(Stock.id)
+    ).filter(Stock.market == 'US').group_by(Stock.exchange).all()
+
     return {
         "total_stocks": total_stocks,
         "us_stocks": us_stocks,
         "kr_stocks": kr_stocks,
         "active_us_stocks": active_us,
         "us_stocks_with_60_plus_history": stocks_with_history,
-        "us_stocks_no_history": stocks_no_history
+        "us_stocks_no_history": stocks_no_history,
+        "duplicate_symbols_count": len(duplicate_symbols),
+        "us_by_exchange": {ex or "unknown": cnt for ex, cnt in by_exchange}
     }
 
 
