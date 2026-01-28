@@ -96,33 +96,28 @@ export default function TagPage() {
 
   return (
     <AppLayout>
-      <div className="p-4 lg:p-8 space-y-6">
+      <div className="p-4 lg:p-6 space-y-4">
         {/* Header */}
         <div className="flex items-center justify-between">
-          <h2 className="text-xl font-bold text-foreground">
+          <h2 className="text-lg font-bold">
             {tagInfo ? tagInfo.display_name : tagName}
           </h2>
         </div>
 
-        {/* Stocks Table */}
-        <div className="bg-card shadow-lg rounded-xl overflow-hidden border border-border">
+        {/* Content */}
+        <div className="bg-card rounded-xl overflow-hidden border border-border">
           {isLoading ? (
-            <div className="flex flex-col items-center justify-center py-24">
-              <div className="relative">
-                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
-                <div className="absolute inset-0 animate-ping rounded-full h-12 w-12 border border-primary/20"></div>
-              </div>
-              <p className="mt-4 text-sm text-muted-foreground font-medium">Loading stocks...</p>
+            <div className="flex flex-col items-center justify-center py-20">
+              <div className="animate-spin rounded-full h-10 w-10 border-2 border-primary border-t-transparent"></div>
+              <p className="mt-4 text-sm text-muted-foreground">로딩 중...</p>
             </div>
           ) : error ? (
-            <div className="text-center py-24">
-              <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-destructive/10 mb-4">
-                <svg className="w-8 h-8 text-destructive" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
+            <div className="text-center py-20">
+              <div className="inline-flex items-center justify-center w-14 h-14 rounded-full bg-destructive/10 mb-4">
+                <TrendingUp className="w-6 h-6 text-destructive" />
               </div>
-              <p className="text-destructive font-semibold text-lg">Failed to load stocks</p>
-              <p className="text-sm text-muted-foreground mt-2">Please try again later</p>
+              <p className="text-destructive font-medium">로드 실패</p>
+              <p className="text-sm text-muted-foreground mt-1">잠시 후 다시 시도해주세요</p>
             </div>
           ) : allStocks.length > 0 ? (
             <>
@@ -136,51 +131,40 @@ export default function TagPage() {
               />
 
               {/* Infinite scroll trigger */}
-              <div ref={loadMoreRef} className="py-4">
-                {isFetchingNextPage && (
-                  <div className="flex items-center justify-center">
-                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
-                    <p className="ml-3 text-sm text-muted-foreground">Loading more...</p>
+              <div ref={loadMoreRef} className="py-4 text-center border-t">
+                {isFetchingNextPage ? (
+                  <div className="inline-flex items-center gap-2 text-muted-foreground">
+                    <div className="animate-spin rounded-full h-4 w-4 border-2 border-primary border-t-transparent"></div>
+                    <span className="text-sm">더 불러오는 중...</span>
                   </div>
-                )}
-                {!hasNextPage && allStocks.length > 0 && (
-                  <p className="text-center text-sm text-muted-foreground">
-                    All {allStocks.length} stocks loaded
-                  </p>
+                ) : !hasNextPage && (
+                  <span className="text-sm text-muted-foreground">
+                    총 {allStocks.length}개 종목
+                  </span>
                 )}
               </div>
             </>
           ) : (
-            <div className="text-center py-24">
-              <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-muted mb-4">
-                <TrendingUp className="w-8 h-8 text-muted-foreground" />
+            <div className="text-center py-20">
+              <div className="inline-flex items-center justify-center w-14 h-14 rounded-full bg-muted mb-4">
+                <TrendingUp className="w-6 h-6 text-muted-foreground" />
               </div>
-              <p className="text-foreground font-semibold text-lg">No stocks with this tag</p>
-              <p className="text-sm text-muted-foreground mt-2">Add tags to stocks to see them here</p>
+              <p className="font-medium">종목이 없습니다</p>
+              <p className="text-sm text-muted-foreground mt-1">종목에 태그를 추가하면 여기에 표시됩니다</p>
             </div>
           )}
         </div>
       </div>
 
-      {/* 위로가기 버튼 */}
       <ScrollToTopButton />
 
-      {/* 차트 모달 */}
       <StockChartModal
         stock={selectedStock}
         isOpen={isChartModalOpen}
         onClose={handleCloseChart}
       />
 
-      {/* Toaster for notifications */}
-      <Toaster
-        position="top-center"
-        toastOptions={{
-          style: {
-            zIndex: 9999,
-          },
-        }}
-      />
+      <Toaster position="top-center" />
     </AppLayout>
   );
 }

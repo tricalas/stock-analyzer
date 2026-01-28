@@ -6,7 +6,7 @@ import { stockApi, Stock } from '@/lib/api';
 import StockTable from '@/components/StockTable';
 import StockChartModal from '@/components/StockChartModal';
 import AppLayout from '@/components/AppLayout';
-import { TrendingUp } from 'lucide-react';
+import { TrendingUp, Star } from 'lucide-react';
 import ScrollToTopButton from '@/components/atoms/ScrollToTopButton';
 import { getNaverChartUrl } from '@/lib/naverStock';
 import { Toaster } from '@/components/ui/sonner';
@@ -49,37 +49,35 @@ export default function Favorites() {
     queryClient.invalidateQueries({ queryKey: ['stocks', 'DISLIKES'] });
   };
 
+  const stocks = data?.stocks || [];
+
   return (
     <AppLayout>
-      <div className="p-4 lg:p-8 space-y-6">
+      <div className="p-4 lg:p-6 space-y-4">
         {/* Header */}
-        <div className="flex items-center justify-between">
-          <h2 className="text-xl font-bold text-foreground">Watchlist</h2>
+        <div className="flex items-center gap-2">
+          <Star className="w-5 h-5 text-yellow-500" />
+          <h2 className="text-lg font-bold">관심 종목</h2>
         </div>
 
-        {/* Stocks Table */}
-        <div className="bg-card shadow-lg rounded-xl overflow-hidden border border-border">
+        {/* Content */}
+        <div className="bg-card rounded-xl overflow-hidden border border-border">
           {isLoading ? (
-            <div className="flex flex-col items-center justify-center py-24">
-              <div className="relative">
-                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
-                <div className="absolute inset-0 animate-ping rounded-full h-12 w-12 border border-primary/20"></div>
-              </div>
-              <p className="mt-4 text-sm text-muted-foreground font-medium">Loading stocks...</p>
+            <div className="flex flex-col items-center justify-center py-20">
+              <div className="animate-spin rounded-full h-10 w-10 border-2 border-primary border-t-transparent"></div>
+              <p className="mt-4 text-sm text-muted-foreground">로딩 중...</p>
             </div>
           ) : error ? (
-            <div className="text-center py-24">
-              <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-destructive/10 mb-4">
-                <svg className="w-8 h-8 text-destructive" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
+            <div className="text-center py-20">
+              <div className="inline-flex items-center justify-center w-14 h-14 rounded-full bg-destructive/10 mb-4">
+                <TrendingUp className="w-6 h-6 text-destructive" />
               </div>
-              <p className="text-destructive font-semibold text-lg">Failed to load stocks</p>
-              <p className="text-sm text-muted-foreground mt-2">Please try again later</p>
+              <p className="text-destructive font-medium">로드 실패</p>
+              <p className="text-sm text-muted-foreground mt-1">잠시 후 다시 시도해주세요</p>
             </div>
-          ) : data && data.stocks.length > 0 ? (
+          ) : stocks.length > 0 ? (
             <StockTable
-              stocks={data.stocks}
+              stocks={stocks}
               onStockClick={handleStockClick}
               onShowChart={handleShowChart}
               onStockDeleted={handleStockDeleted}
@@ -87,36 +85,26 @@ export default function Favorites() {
               onDislikeChanged={handleDislikeChanged}
             />
           ) : (
-            <div className="text-center py-24">
-              <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-muted mb-4">
-                <TrendingUp className="w-8 h-8 text-muted-foreground" />
+            <div className="text-center py-20">
+              <div className="inline-flex items-center justify-center w-14 h-14 rounded-full bg-muted mb-4">
+                <Star className="w-6 h-6 text-muted-foreground" />
               </div>
-              <p className="text-foreground font-semibold text-lg">No favorite stocks</p>
-              <p className="text-sm text-muted-foreground mt-2">Add stocks to your watchlist to see them here</p>
+              <p className="font-medium">관심 종목이 없습니다</p>
+              <p className="text-sm text-muted-foreground mt-1">종목에서 별 아이콘을 눌러 추가하세요</p>
             </div>
           )}
         </div>
       </div>
 
-      {/* 위로가기 버튼 */}
       <ScrollToTopButton />
 
-      {/* 차트 모달 */}
       <StockChartModal
         stock={selectedStock}
         isOpen={isChartModalOpen}
         onClose={handleCloseChart}
       />
 
-      {/* Toaster for notifications */}
-      <Toaster
-        position="top-center"
-        toastOptions={{
-          style: {
-            zIndex: 9999,
-          },
-        }}
-      />
+      <Toaster position="top-center" />
     </AppLayout>
   );
 }

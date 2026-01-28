@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useInfiniteQuery } from '@tanstack/react-query';
 import AppLayout from '@/components/AppLayout';
-import { TrendingUp, TrendingDown, Activity, Clock, Star, ChevronDown, BarChart3 } from 'lucide-react';
+import { TrendingUp, TrendingDown, Activity, Clock, Star, BarChart3, ChevronRight } from 'lucide-react';
 import { Toaster, toast } from 'sonner';
 import { getNaverChartUrl, getNaverInfoUrl, openNaverChartPopup } from '@/lib/naverStock';
 import { stockApi } from '@/lib/api';
@@ -11,7 +11,6 @@ import ScrollToTopButton from '@/components/atoms/ScrollToTopButton';
 import { useTimezone } from '@/hooks/useTimezone';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Card, CardContent } from '@/components/ui/card';
 import {
   Select,
   SelectContent,
@@ -131,12 +130,12 @@ export default function SignalsPage() {
 
   const getSignalBadge = (strategyName: string) => {
     if (strategyName === 'approaching_breakout') {
-      return <Badge className="bg-yellow-500/20 text-yellow-600 dark:text-yellow-400 hover:bg-yellow-500/30">임박</Badge>;
+      return <Badge className="bg-yellow-500/20 text-yellow-600 dark:text-yellow-400 hover:bg-yellow-500/30 text-[10px] px-1.5 h-5">임박</Badge>;
     }
     if (strategyName === 'pullback_buy') {
-      return <Badge className="bg-purple-500/20 text-purple-600 dark:text-purple-400 hover:bg-purple-500/30">되돌림</Badge>;
+      return <Badge className="bg-purple-500/20 text-purple-600 dark:text-purple-400 hover:bg-purple-500/30 text-[10px] px-1.5 h-5">되돌림</Badge>;
     }
-    return <Badge className="bg-green-500/20 text-green-600 dark:text-green-400 hover:bg-green-500/30">돌파</Badge>;
+    return <Badge className="bg-green-500/20 text-green-600 dark:text-green-400 hover:bg-green-500/30 text-[10px] px-1.5 h-5">돌파</Badge>;
   };
 
   const handleAddToFavorites = async (e: React.MouseEvent, signal: StockSignal) => {
@@ -155,93 +154,87 @@ export default function SignalsPage() {
     <AppLayout>
       <div className="p-4 lg:p-6 space-y-4">
         {/* Header */}
-        <div className="sticky top-0 lg:top-0 z-20 -mx-4 lg:-mx-6 px-4 lg:px-6 py-3 bg-background/95 backdrop-blur-sm border-b">
-          <div className="flex flex-col lg:flex-row lg:items-center gap-3">
-            {/* Filters */}
-            <div className="flex items-center gap-2 flex-1">
-              <Select value={signalFilter} onValueChange={(v) => setSignalFilter(v as SignalFilter)}>
-                <SelectTrigger className="w-[130px]">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">전체 시그널</SelectItem>
-                  <SelectItem value="breakout">돌파</SelectItem>
-                  <SelectItem value="approaching">임박</SelectItem>
-                  <SelectItem value="pullback">되돌림</SelectItem>
-                </SelectContent>
-              </Select>
+        <div className="flex flex-col lg:flex-row lg:items-center gap-3">
+          {/* Filters */}
+          <div className="flex items-center gap-2 flex-1">
+            <Select value={signalFilter} onValueChange={(v) => setSignalFilter(v as SignalFilter)}>
+              <SelectTrigger className="w-[120px] h-9">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">전체 시그널</SelectItem>
+                <SelectItem value="breakout">돌파</SelectItem>
+                <SelectItem value="approaching">임박</SelectItem>
+                <SelectItem value="pullback">되돌림</SelectItem>
+              </SelectContent>
+            </Select>
 
-              <Select value={returnFilter} onValueChange={(v) => setReturnFilter(v as ReturnFilter)}>
-                <SelectTrigger className="w-[120px]">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">전체 수익</SelectItem>
-                  <SelectItem value="positive">수익 중</SelectItem>
-                  <SelectItem value="negative">손실 중</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            {/* Stats */}
-            {stats && (
-              <div className="flex items-center gap-4 text-sm">
-                <div className="flex items-center gap-1.5 text-muted-foreground">
-                  <Activity className="h-4 w-4" />
-                  <span>총 {stats.total_signals || 0}</span>
-                </div>
-                <div className="flex items-center gap-1.5 text-green-600 dark:text-green-400">
-                  <TrendingUp className="h-4 w-4" />
-                  <span>{stats.positive_returns || 0}</span>
-                </div>
-                <div className="flex items-center gap-1.5 text-red-600 dark:text-red-400">
-                  <TrendingDown className="h-4 w-4" />
-                  <span>{stats.negative_returns || 0}</span>
-                </div>
-                {analyzedAt && (
-                  <div className="text-muted-foreground hidden lg:flex items-center gap-1">
-                    <Clock className="h-3.5 w-3.5" />
-                    {formatShortDateTime(analyzedAt)}
-                  </div>
-                )}
-              </div>
-            )}
+            <Select value={returnFilter} onValueChange={(v) => setReturnFilter(v as ReturnFilter)}>
+              <SelectTrigger className="w-[110px] h-9">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">전체 수익</SelectItem>
+                <SelectItem value="positive">수익 중</SelectItem>
+                <SelectItem value="negative">손실 중</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
+
+          {/* Stats */}
+          {stats && (
+            <div className="flex items-center gap-3 text-sm">
+              <div className="flex items-center gap-1 text-muted-foreground">
+                <Activity className="h-4 w-4" />
+                <span>{stats.total_signals || 0}</span>
+              </div>
+              <div className="flex items-center gap-1 text-green-600 dark:text-green-400">
+                <TrendingUp className="h-4 w-4" />
+                <span>{stats.positive_returns || 0}</span>
+              </div>
+              <div className="flex items-center gap-1 text-red-600 dark:text-red-400">
+                <TrendingDown className="h-4 w-4" />
+                <span>{stats.negative_returns || 0}</span>
+              </div>
+              {analyzedAt && (
+                <div className="text-muted-foreground hidden lg:flex items-center gap-1 text-xs">
+                  <Clock className="h-3.5 w-3.5" />
+                  {formatShortDateTime(analyzedAt)}
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Content */}
-        {isLoading ? (
-          <Card>
-            <CardContent className="flex flex-col items-center justify-center py-20">
+        <div className="bg-card rounded-xl overflow-hidden border border-border">
+          {isLoading ? (
+            <div className="flex flex-col items-center justify-center py-20">
               <div className="animate-spin rounded-full h-10 w-10 border-2 border-primary border-t-transparent"></div>
               <p className="mt-4 text-sm text-muted-foreground">시그널 로딩 중...</p>
-            </CardContent>
-          </Card>
-        ) : error ? (
-          <Card>
-            <CardContent className="text-center py-20">
+            </div>
+          ) : error ? (
+            <div className="text-center py-20">
               <div className="inline-flex items-center justify-center w-14 h-14 rounded-full bg-destructive/10 mb-4">
                 <TrendingUp className="w-6 h-6 text-destructive" />
               </div>
               <p className="text-destructive font-medium">로드 실패</p>
-            </CardContent>
-          </Card>
-        ) : filteredSignals.length > 0 ? (
-          <Card>
-            <CardContent className="p-0">
+            </div>
+          ) : filteredSignals.length > 0 ? (
+            <>
               {/* Desktop Table */}
               <div className="hidden lg:block overflow-x-auto">
                 <table className="w-full">
                   <thead className="bg-muted/50 border-b">
                     <tr>
-                      <th className="h-12 px-4 text-center text-xs font-medium text-muted-foreground uppercase">시그널일</th>
-                      <th className="h-12 px-4 text-left text-xs font-medium text-muted-foreground uppercase">종목</th>
-                      <th className="h-12 px-4 text-right text-xs font-medium text-muted-foreground uppercase">시그널가</th>
-                      <th className="h-12 px-4 text-right text-xs font-medium text-muted-foreground uppercase">90일선</th>
-                      <th className="h-12 px-4 text-right text-xs font-medium text-muted-foreground uppercase">현재가</th>
-                      <th className="h-12 px-4 text-right text-xs font-medium text-muted-foreground uppercase">수익률</th>
-                      <th className="h-12 px-4 text-center text-xs font-medium text-muted-foreground uppercase">거래소</th>
-                      <th className="h-12 px-4 text-center text-xs font-medium text-muted-foreground uppercase">관심</th>
+                      <th className="h-10 px-4 text-center text-xs font-medium text-muted-foreground uppercase">시그널일</th>
+                      <th className="h-10 px-4 text-left text-xs font-medium text-muted-foreground uppercase">종목</th>
+                      <th className="h-10 px-4 text-right text-xs font-medium text-muted-foreground uppercase">시그널가</th>
+                      <th className="h-10 px-4 text-right text-xs font-medium text-muted-foreground uppercase">90일선</th>
+                      <th className="h-10 px-4 text-right text-xs font-medium text-muted-foreground uppercase">현재가</th>
+                      <th className="h-10 px-4 text-right text-xs font-medium text-muted-foreground uppercase">수익률</th>
+                      <th className="h-10 px-4 text-center text-xs font-medium text-muted-foreground uppercase">거래소</th>
+                      <th className="h-10 px-4 text-center text-xs font-medium text-muted-foreground uppercase">관심</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y">
@@ -314,7 +307,7 @@ export default function SignalsPage() {
                             ) : '-'}
                           </td>
                           <td className="px-4 py-3 text-center">
-                            <Badge variant="secondary">{signal.stock?.exchange || signal.stock?.market}</Badge>
+                            <span className="text-xs text-muted-foreground">{signal.stock?.exchange || signal.stock?.market}</span>
                           </td>
                           <td className="px-4 py-3 text-center">
                             <Button variant="ghost" size="icon" onClick={(e) => handleAddToFavorites(e, signal)} className="h-8 w-8">
@@ -328,7 +321,7 @@ export default function SignalsPage() {
                 </table>
               </div>
 
-              {/* Mobile Card View */}
+              {/* Mobile List View */}
               <div className="lg:hidden divide-y">
                 {filteredSignals.map((signal) => {
                   const stockInfo = signal.stock ? {
@@ -346,76 +339,77 @@ export default function SignalsPage() {
                   return (
                     <div
                       key={signal.id}
-                      className="p-4 hover:bg-muted/50 cursor-pointer"
-                      onClick={() => stockInfo && openNaverChartPopup(stockInfo)}
+                      className="active:bg-muted/50 transition-colors"
                     >
-                      {/* Header */}
-                      <div className="flex items-start justify-between gap-3 mb-3">
+                      {/* Main Row */}
+                      <div
+                        className="flex items-center gap-3 py-3 px-4"
+                        onClick={() => stockInfo && openNaverChartPopup(stockInfo)}
+                      >
+                        {/* Left: Signal Info */}
                         <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2 flex-wrap mb-1">
-                            <a
-                              href={stockInfo ? getNaverInfoUrl(stockInfo) : '#'}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="font-semibold hover:text-primary truncate"
-                              onClick={(e) => e.stopPropagation()}
-                            >
-                              {signal.stock?.name || '종목명 없음'}
-                            </a>
+                          <div className="flex items-center gap-2 mb-0.5">
+                            <span className="font-semibold text-[15px] truncate">{signal.stock?.name || '종목명 없음'}</span>
                             {getSignalBadge(signal.strategy_name)}
                           </div>
                           <div className="flex items-center gap-2 text-xs text-muted-foreground">
                             <span>{signal.stock?.symbol}</span>
+                            <span className="text-muted-foreground/50">·</span>
+                            <span>{signal.stock?.exchange || signal.stock?.market}</span>
+                            <span className="text-muted-foreground/50">·</span>
                             <span>{formatShortDate(signal.signal_date)}</span>
-                            <Badge variant="secondary" className="text-[10px] h-5">{signal.stock?.exchange}</Badge>
                           </div>
                         </div>
-                        <div className="text-right">
+
+                        {/* Right: Return */}
+                        <div className="text-right shrink-0">
                           {signal.return_percent != null ? (
                             <div className={cn(
-                              "text-lg font-bold",
-                              signal.return_percent >= 0 ? "text-green-600" : "text-red-600"
+                              "text-[15px] font-semibold tabular-nums",
+                              signal.return_percent >= 0 ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"
                             )}>
-                              {signal.return_percent >= 0 ? '+' : ''}{signal.return_percent.toFixed(1)}%
+                              {signal.return_percent >= 0 ? '+' : ''}{signal.return_percent.toFixed(2)}%
                             </div>
                           ) : (
                             <div className="text-muted-foreground">-</div>
                           )}
-                        </div>
-                      </div>
-
-                      {/* Price Info */}
-                      <div className="flex items-center gap-4 py-2 px-3 rounded-lg bg-muted/50 mb-3 text-sm">
-                        <div>
-                          <span className="text-muted-foreground text-xs">시그널가</span>
-                          <span className="ml-1.5 font-mono">{formatPrice(signal.signal_price)}</span>
-                        </div>
-                        <span className="text-muted-foreground">→</span>
-                        <div>
-                          <span className="text-muted-foreground text-xs">현재가</span>
-                          <span className="ml-1.5 font-mono">{signal.current_price ? formatPrice(signal.current_price) : '-'}</span>
-                        </div>
-                        {ma90Diff !== null && (
-                          <div className="ml-auto">
-                            <span className="text-muted-foreground text-xs">90일선</span>
-                            <span className={cn("ml-1.5 font-medium", ma90Diff >= 0 ? "text-green-600" : "text-red-600")}>
-                              {ma90Diff >= 0 ? '+' : ''}{ma90Diff.toFixed(1)}%
-                            </span>
+                          <div className="text-xs text-muted-foreground tabular-nums">
+                            {formatPrice(signal.signal_price)} → {signal.current_price ? formatPrice(signal.current_price) : '-'}
                           </div>
-                        )}
+                        </div>
+
+                        <ChevronRight className="w-4 h-4 text-muted-foreground/50 shrink-0" />
                       </div>
 
-                      {/* Actions */}
-                      <div className="flex items-center gap-2">
-                        <Button variant="outline" size="sm" asChild className="flex-1" onClick={(e) => e.stopPropagation()}>
-                          <a href={stockInfo ? getNaverChartUrl(stockInfo) : '#'} target="_blank" rel="noopener noreferrer">
-                            <BarChart3 className="h-4 w-4 mr-1.5" />
-                            차트 보기
-                          </a>
-                        </Button>
-                        <Button variant="ghost" size="icon" onClick={(e) => handleAddToFavorites(e, signal)} className="h-9 w-9 bg-yellow-500/10">
-                          <Star className="h-4 w-4 text-yellow-500" />
-                        </Button>
+                      {/* Quick Actions Row */}
+                      <div className="flex items-center gap-1 px-4 pb-3 overflow-x-auto scrollbar-none">
+                        {ma90Diff !== null && (
+                          <span className={cn(
+                            "shrink-0 text-xs px-2 py-1 rounded-full border",
+                            ma90Diff >= 0
+                              ? "border-green-500/30 text-green-600 dark:text-green-400"
+                              : "border-red-500/30 text-red-600 dark:text-red-400"
+                          )}>
+                            90일선 {ma90Diff >= 0 ? '+' : ''}{ma90Diff.toFixed(1)}%
+                          </span>
+                        )}
+                        <a
+                          href={stockInfo ? getNaverChartUrl(stockInfo) : '#'}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          onClick={(e) => e.stopPropagation()}
+                          className="shrink-0 flex items-center gap-1 text-xs px-2 py-1 rounded-full border border-border text-muted-foreground hover:text-foreground transition-colors"
+                        >
+                          <BarChart3 className="h-3 w-3" />
+                          차트
+                        </a>
+                        <button
+                          onClick={(e) => handleAddToFavorites(e, signal)}
+                          className="shrink-0 flex items-center gap-1 text-xs px-2 py-1 rounded-full border border-yellow-500/30 text-yellow-600 dark:text-yellow-400 hover:bg-yellow-500/10 transition-colors"
+                        >
+                          <Star className="h-3 w-3" />
+                          관심
+                        </button>
                       </div>
                     </div>
                   );
@@ -423,7 +417,7 @@ export default function SignalsPage() {
               </div>
 
               {/* Load More */}
-              <div ref={loadMoreRef} className="py-4 text-center">
+              <div ref={loadMoreRef} className="py-4 text-center border-t">
                 {isFetchingNextPage ? (
                   <div className="inline-flex items-center gap-2 text-muted-foreground">
                     <div className="animate-spin rounded-full h-4 w-4 border-2 border-primary border-t-transparent"></div>
@@ -439,11 +433,9 @@ export default function SignalsPage() {
                   </span>
                 )}
               </div>
-            </CardContent>
-          </Card>
-        ) : (
-          <Card>
-            <CardContent className="text-center py-20">
+            </>
+          ) : (
+            <div className="text-center py-20">
               <div className="inline-flex items-center justify-center w-14 h-14 rounded-full bg-muted mb-4">
                 <TrendingUp className="w-6 h-6 text-muted-foreground" />
               </div>
@@ -453,9 +445,9 @@ export default function SignalsPage() {
               <p className="text-sm text-muted-foreground mt-1">
                 {signalFilter !== 'all' || returnFilter !== 'all' ? '다른 필터를 선택해보세요' : '설정에서 시그널 분석을 실행하세요'}
               </p>
-            </CardContent>
-          </Card>
-        )}
+            </div>
+          )}
+        </div>
       </div>
 
       <ScrollToTopButton />

@@ -73,7 +73,7 @@ const StockTable = React.memo<StockTableProps>(({
         </ScrollArea>
       </div>
 
-      {/* Mobile List View - Clean dividers */}
+      {/* Mobile List View */}
       <div className="lg:hidden divide-y">
         {stocks.map((stock) => (
           <StockItem
