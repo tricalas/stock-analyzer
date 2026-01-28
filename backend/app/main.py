@@ -737,7 +737,13 @@ def cleanup_low_market_cap_stocks_get(
                 continue
 
         invalidate_cache()
-        result = {"success": True, "kept": len(top_stock_ids), "deleted": deleted_total}
+        result = {
+            "success": True,
+            "kept": len(top_stock_ids),
+            "deleted": deleted_total,
+            "target_count": delete_count,
+            "batches_processed": (delete_count + batch_size - 1) // batch_size if delete_count > 0 else 0
+        }
         if errors:
             result["errors"] = errors[:5]  # 처음 5개 오류만 반환
         return result
