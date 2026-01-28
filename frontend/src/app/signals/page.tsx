@@ -275,11 +275,16 @@ export default function SignalsPage() {
                             </a>
                             <div className="flex items-center gap-1.5 text-xs text-muted-foreground mt-0.5">
                               <span>{signal.stock?.symbol}</span>
-                              <Button variant="ghost" size="sm" asChild className="h-5 px-1.5" onClick={(e) => e.stopPropagation()}>
-                                <a href={stockInfo ? getNaverChartUrl(stockInfo) : '#'} target="_blank" rel="noopener noreferrer">
-                                  차트
-                                </a>
-                              </Button>
+                              <a
+                                href={stockInfo ? getNaverChartUrl(stockInfo) : '#'}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                onClick={(e) => e.stopPropagation()}
+                                className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full border border-border text-muted-foreground hover:text-foreground transition-colors"
+                              >
+                                <BarChart3 className="h-3 w-3" />
+                                차트
+                              </a>
                             </div>
                           </td>
                           <td className="px-4 py-3 text-right font-mono text-sm">{formatPrice(signal.signal_price)}</td>

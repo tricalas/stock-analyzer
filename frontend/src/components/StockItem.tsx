@@ -315,12 +315,16 @@ const StockItem = React.memo<StockItemProps>(({
             >
               {stock.name}
             </a>
-            <Button variant="ghost" size="sm" asChild className="h-6 px-2" onClick={(e) => e.stopPropagation()}>
-              <a href={getNaverChartUrl(stock)} target="_blank" rel="noopener noreferrer">
-                <BarChart3 className="h-3 w-3 mr-1" />
-                차트
-              </a>
-            </Button>
+            <a
+              href={getNaverChartUrl(stock)}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={(e) => e.stopPropagation()}
+              className="inline-flex items-center gap-1 text-xs px-2 py-1 rounded-full border border-border text-muted-foreground hover:text-foreground transition-colors"
+            >
+              <BarChart3 className="h-3 w-3" />
+              차트
+            </a>
             {signalData?.signals?.length > 0 && (
               <Badge
                 variant="outline"

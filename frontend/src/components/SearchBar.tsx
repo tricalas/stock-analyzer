@@ -377,10 +377,10 @@ const SearchBar: React.FC<SearchBarProps> = ({ onStockSelect }) => {
                       </span>
                       <button
                         onClick={(e) => handleOpenChart(e, stock)}
-                        className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-primary/10 text-primary hover:bg-primary/20 cursor-pointer transition-colors flex-shrink-0"
+                        className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs border border-border text-muted-foreground hover:text-foreground cursor-pointer transition-colors flex-shrink-0"
                         title="차트 보기"
                       >
-                        <BarChart3 className="h-3 w-3 mr-1" />
+                        <BarChart3 className="h-3 w-3" />
                         차트
                       </button>
                     </div>

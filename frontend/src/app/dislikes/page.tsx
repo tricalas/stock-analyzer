@@ -49,18 +49,15 @@ export default function Dislikes() {
       <div className="p-4 lg:p-8 space-y-6">
         {/* Header */}
         <div className="flex items-center justify-between">
-          <h2 className="text-xl font-bold text-foreground">Dislikes</h2>
+          <h2 className="text-xl font-bold text-foreground">관심 없음</h2>
         </div>
 
         {/* Stocks Table */}
         <div className="bg-card shadow-lg rounded-xl overflow-hidden border border-border">
           {isLoading ? (
             <div className="flex flex-col items-center justify-center py-24">
-              <div className="relative">
-                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
-                <div className="absolute inset-0 animate-ping rounded-full h-12 w-12 border border-primary/20"></div>
-              </div>
-              <p className="mt-4 text-sm text-muted-foreground font-medium">Loading stocks...</p>
+              <div className="animate-spin rounded-full h-8 w-8 border-2 border-primary border-t-transparent"></div>
+              <p className="mt-4 text-sm text-muted-foreground">종목을 불러오는 중...</p>
             </div>
           ) : error ? (
             <div className="text-center py-24">
@@ -69,8 +66,8 @@ export default function Dislikes() {
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                 </svg>
               </div>
-              <p className="text-destructive font-semibold text-lg">Failed to load stocks</p>
-              <p className="text-sm text-muted-foreground mt-2">Please try again later</p>
+              <p className="text-destructive font-semibold text-lg">불러오기 실패</p>
+              <p className="text-sm text-muted-foreground mt-2">잠시 후 다시 시도해주세요</p>
             </div>
           ) : data && data.stocks.length > 0 ? (
             <StockTable
@@ -85,8 +82,8 @@ export default function Dislikes() {
               <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-muted mb-4">
                 <TrendingUp className="w-8 h-8 text-muted-foreground" />
               </div>
-              <p className="text-foreground font-semibold text-lg">No disliked stocks</p>
-              <p className="text-sm text-muted-foreground mt-2">Mark stocks you want to avoid</p>
+              <p className="text-foreground font-semibold text-lg">관심 없는 종목이 없습니다</p>
+              <p className="text-sm text-muted-foreground mt-2">피하고 싶은 종목을 표시하세요</p>
             </div>
           )}
         </div>
