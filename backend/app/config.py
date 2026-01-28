@@ -25,6 +25,9 @@ class Settings(BaseSettings):
     HISTORY_COLLECTION_LIMIT: int = 500  # "top" 모드일 때 상위 몇 개 종목만 수집할지 (시총 기준)
     HISTORY_COLLECTION_WORKERS: int = 5  # 병렬 수집 워커 수 (1~20, 기본 5)
 
+    # 종목 크롤링 설정
+    US_STOCK_CRAWL_LIMIT: int = 1000  # 미국 주식 크롤링 시 시총 상위 몇 개까지 (기본: 1000, 0=전체)
+
     @field_validator('CORS_ORIGINS', mode='before')
     @classmethod
     def parse_cors_origins(cls, v):

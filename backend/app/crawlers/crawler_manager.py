@@ -7,6 +7,7 @@ from app.crawlers.naver_us_crawler import NaverUSStockCrawler
 from app.models import Stock, StockPrice, StockDailyData, CrawlingLog
 from app.database import SessionLocal
 from app.constants import ETF_KEYWORDS
+from app.config import settings
 import time
 
 logger = logging.getLogger(__name__)
@@ -49,9 +50,20 @@ class CrawlerManager:
                 logger.info(f"Used Naver crawler: {len(naver_stocks)} stocks found, {etf_count} ETF/Index stocks filtered out, {len(filtered_stocks)} stocks to process")
 
             if market in ["ALL", "US"]:
-                # 미국 주식 크롤링 (전체 페이지 - 각 거래소당 최대 200페이지 = 10,000개)
-                logger.info("Fetching ALL US stocks from Naver API...")
-                us_stocks = self.naver_us_crawler.fetch_all_us_stocks(nasdaq_pages=200, nyse_pages=200)
+                # 미국 주식 크롤링 (설정된 제한에 따라)
+                limit = settings.US_STOCK_CRAWL_LIMIT
+                if limit > 0:
+                    # 페이지당 50개, 거래소 2개로 나눔
+                    pages_per_exchange = max(1, (limit // 2) // 50 + 1)
+                    logger.info(f"Fetching top {limit} US stocks ({pages_per_exchange} pages per exchange)...")
+                    us_stocks = self.naver_us_crawler.fetch_all_us_stocks(
+                        nasdaq_pages=pages_per_exchange,
+                        nyse_pages=pages_per_exchange
+                    )
+                else:
+                    # 제한 없음 - 전체 크롤링
+                    logger.info("Fetching ALL US stocks from Naver API...")
+                    us_stocks = self.naver_us_crawler.fetch_all_us_stocks(nasdaq_pages=200, nyse_pages=200)
                 stocks_data.extend(us_stocks)
                 logger.info(f"Fetched {len(us_stocks)} US stocks")
 

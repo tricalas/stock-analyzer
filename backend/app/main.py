@@ -1185,6 +1185,83 @@ def cleanup_etf_stocks(db: Session = Depends(get_db)):
         logger.error(f"Error during ETF cleanup: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.delete("/api/stocks/cleanup-low-cap")
+def cleanup_low_market_cap_stocks(
+    keep_top: int = Query(1000, ge=100, le=5000, description="상위 몇 개를 유지할지"),
+    confirm: bool = Query(False, description="true로 설정해야 실제 삭제"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """시총 상위 N개를 제외한 나머지 US 종목 삭제"""
+    if not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Admin access required")
+
+    try:
+        # 시총 상위 N개 종목 ID 조회
+        top_stocks = db.query(Stock.id).filter(
+            Stock.market == 'US',
+            Stock.is_active == True
+        ).order_by(Stock.market_cap.desc().nullslast()).limit(keep_top).all()
+        top_stock_ids = {s.id for s in top_stocks}
+
+        # 삭제 대상 종목 조회
+        stocks_to_delete = db.query(Stock).filter(
+            Stock.market == 'US',
+            ~Stock.id.in_(top_stock_ids)
+        ).all()
+
+        logger.info(f"Top {keep_top} stocks to keep, {len(stocks_to_delete)} stocks to delete")
+
+        if not confirm:
+            # 미리보기만 반환
+            sample = [{"id": s.id, "symbol": s.symbol, "name": s.name, "market_cap": s.market_cap}
+                      for s in stocks_to_delete[:20]]
+            return {
+                "preview": True,
+                "keep_count": len(top_stock_ids),
+                "delete_count": len(stocks_to_delete),
+                "sample_to_delete": sample,
+                "message": f"confirm=true 파라미터를 추가하면 {len(stocks_to_delete)}개 종목이 삭제됩니다"
+            }
+
+        # 실제 삭제 실행
+        deleted_count = 0
+        for stock in stocks_to_delete:
+            try:
+                # 관련 데이터 삭제
+                db.query(StockPriceHistory).filter(StockPriceHistory.stock_id == stock.id).delete()
+                db.query(StockSignal).filter(StockSignal.stock_id == stock.id).delete()
+                db.query(StockTagAssignment).filter(StockTagAssignment.stock_id == stock.id).delete()
+                db.delete(stock)
+                deleted_count += 1
+
+                if deleted_count % 100 == 0:
+                    db.commit()
+                    logger.info(f"Deleted {deleted_count}/{len(stocks_to_delete)} stocks...")
+
+            except Exception as e:
+                db.rollback()
+                logger.error(f"Failed to delete {stock.symbol}: {str(e)}")
+                continue
+
+        db.commit()
+
+        # 캐시 무효화
+        invalidate_cache()
+
+        return {
+            "success": True,
+            "kept_count": len(top_stock_ids),
+            "deleted_count": deleted_count,
+            "message": f"시총 상위 {keep_top}개 유지, {deleted_count}개 종목 삭제 완료"
+        }
+
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Error during low market cap cleanup: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.delete("/api/stocks/cleanup-kr")
 def cleanup_korean_stocks(db: Session = Depends(get_db)):
     """한국 주식 종목들을 데이터베이스에서 완전히 삭제"""
