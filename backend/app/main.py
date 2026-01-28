@@ -712,28 +712,35 @@ def cleanup_low_market_cap_stocks_get(
                 "sample": sample
             }
 
-        # 배치 삭제 (500개씩)
-        batch_size = 500
+        # 배치 삭제 (100개씩, 더 작은 배치로)
+        batch_size = 100
         deleted_total = 0
+        errors = []
 
         for i in range(0, len(delete_ids), batch_size):
             batch_ids = delete_ids[i:i+batch_size]
             try:
-                # 관련 테이블 먼저 삭제
-                db.query(StockPriceHistory).filter(StockPriceHistory.stock_id.in_(batch_ids)).delete(synchronize_session=False)
-                db.query(StockSignal).filter(StockSignal.stock_id.in_(batch_ids)).delete(synchronize_session=False)
-                db.query(StockTagAssignment).filter(StockTagAssignment.stock_id.in_(batch_ids)).delete(synchronize_session=False)
+                # 관련 테이블 먼저 삭제 (하나씩)
+                h_del = db.query(StockPriceHistory).filter(StockPriceHistory.stock_id.in_(batch_ids)).delete(synchronize_session=False)
+                s_del = db.query(StockSignal).filter(StockSignal.stock_id.in_(batch_ids)).delete(synchronize_session=False)
+                t_del = db.query(StockTagAssignment).filter(StockTagAssignment.stock_id.in_(batch_ids)).delete(synchronize_session=False)
                 # 종목 삭제
-                db.query(Stock).filter(Stock.id.in_(batch_ids)).delete(synchronize_session=False)
+                stock_del = db.query(Stock).filter(Stock.id.in_(batch_ids)).delete(synchronize_session=False)
                 db.commit()
-                deleted_total += len(batch_ids)
+                deleted_total += stock_del
+                logger.info(f"Batch {i//batch_size + 1}: deleted {stock_del} stocks, {h_del} history, {s_del} signals, {t_del} tags")
             except Exception as batch_error:
                 db.rollback()
-                logger.error(f"Batch delete error: {batch_error}")
+                error_msg = f"Batch {i//batch_size + 1} error: {str(batch_error)}"
+                logger.error(error_msg)
+                errors.append(error_msg)
                 continue
 
         invalidate_cache()
-        return {"success": True, "kept": len(top_stock_ids), "deleted": deleted_total}
+        result = {"success": True, "kept": len(top_stock_ids), "deleted": deleted_total}
+        if errors:
+            result["errors"] = errors[:5]  # 처음 5개 오류만 반환
+        return result
 
     except Exception as e:
         db.rollback()
