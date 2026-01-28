@@ -680,49 +680,60 @@ def cleanup_low_market_cap_stocks_get(
     secret: str = Query(..., description="비밀키 필수"),
     db: Session = Depends(get_db)
 ):
-    """시총 상위 N개를 제외한 나머지 US 종목 삭제 (GET 버전)"""
+    """시총 상위 N개를 제외한 나머지 US 종목 삭제 (GET 버전) - 배치 최적화"""
     if secret != "clean1000":
         raise HTTPException(status_code=403, detail="Invalid secret key")
 
     try:
-        top_stocks = db.query(Stock.id).filter(
+        # 상위 N개 stock_id 조회
+        top_stock_ids_query = db.query(Stock.id).filter(
             Stock.market == 'US',
             Stock.is_active == True
-        ).order_by(Stock.market_cap.desc().nullslast()).limit(keep_top).all()
-        top_stock_ids = {s.id for s in top_stocks}
+        ).order_by(Stock.market_cap.desc().nullslast()).limit(keep_top)
+        top_stock_ids = {s.id for s in top_stock_ids_query.all()}
 
-        stocks_to_delete = db.query(Stock).filter(
+        # 삭제 대상 stock_id 조회 (ID만)
+        delete_ids_query = db.query(Stock.id).filter(
             Stock.market == 'US',
             ~Stock.id.in_(top_stock_ids)
-        ).all()
+        )
+        delete_ids = [s.id for s in delete_ids_query.all()]
+        delete_count = len(delete_ids)
 
         if not confirm:
-            sample = [{"symbol": s.symbol, "name": s.name[:20], "market_cap": s.market_cap}
-                      for s in stocks_to_delete[:10]]
+            # 프리뷰: 샘플 조회
+            sample_stocks = db.query(Stock).filter(Stock.id.in_(delete_ids[:10])).all()
+            sample = [{"symbol": s.symbol, "name": s.name[:20] if s.name else "", "market_cap": s.market_cap}
+                      for s in sample_stocks]
             return {
                 "preview": True,
                 "keep_count": len(top_stock_ids),
-                "delete_count": len(stocks_to_delete),
+                "delete_count": delete_count,
                 "sample": sample
             }
 
-        deleted_count = 0
-        for stock in stocks_to_delete:
+        # 배치 삭제 (500개씩)
+        batch_size = 500
+        deleted_total = 0
+
+        for i in range(0, len(delete_ids), batch_size):
+            batch_ids = delete_ids[i:i+batch_size]
             try:
-                db.query(StockPriceHistory).filter(StockPriceHistory.stock_id == stock.id).delete()
-                db.query(StockSignal).filter(StockSignal.stock_id == stock.id).delete()
-                db.query(StockTagAssignment).filter(StockTagAssignment.stock_id == stock.id).delete()
-                db.delete(stock)
-                deleted_count += 1
-                if deleted_count % 100 == 0:
-                    db.commit()
-            except:
+                # 관련 테이블 먼저 삭제
+                db.query(StockPriceHistory).filter(StockPriceHistory.stock_id.in_(batch_ids)).delete(synchronize_session=False)
+                db.query(StockSignal).filter(StockSignal.stock_id.in_(batch_ids)).delete(synchronize_session=False)
+                db.query(StockTagAssignment).filter(StockTagAssignment.stock_id.in_(batch_ids)).delete(synchronize_session=False)
+                # 종목 삭제
+                db.query(Stock).filter(Stock.id.in_(batch_ids)).delete(synchronize_session=False)
+                db.commit()
+                deleted_total += len(batch_ids)
+            except Exception as batch_error:
                 db.rollback()
+                logger.error(f"Batch delete error: {batch_error}")
                 continue
 
-        db.commit()
         invalidate_cache()
-        return {"success": True, "kept": len(top_stock_ids), "deleted": deleted_count}
+        return {"success": True, "kept": len(top_stock_ids), "deleted": deleted_total}
 
     except Exception as e:
         db.rollback()
