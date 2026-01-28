@@ -1,10 +1,22 @@
 'use client';
 
 import { useState } from 'react';
-import { Plus, Edit2, Trash2, Save, X } from 'lucide-react';
+import { Plus, Edit2, Trash2, Save, X, Loader2 } from 'lucide-react';
 import { stockApi, Tag } from '@/lib/api';
 import { toast } from 'sonner';
 import { useTags } from '@/contexts/TagContext';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import { cn } from '@/lib/utils';
 
 export default function TagsManagement() {
   const { tags, loading: isLoading, refetchTags } = useTags();
@@ -122,228 +134,218 @@ export default function TagsManagement() {
   };
 
   return (
-    <div className="p-6">
-      <div className="max-w-4xl mx-auto">
-        {/* Header */}
-        <div className="flex items-center justify-between mb-6">
-          <div>
-            <h1 className="text-2xl font-bold text-foreground">태그 관리</h1>
-            <p className="text-sm text-muted-foreground mt-1">
-              종목을 분류하기 위한 태그를 관리합니다.
-            </p>
-          </div>
-          <button
-            onClick={() => setIsAdding(true)}
-            className="inline-flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors"
-          >
-            <Plus className="h-4 w-4" />
-            태그 추가
-          </button>
+    <div className="space-y-6">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold">태그 관리</h1>
+          <p className="text-sm text-muted-foreground mt-1">
+            종목을 분류하기 위한 태그를 관리합니다.
+          </p>
         </div>
-
-        {/* Tags List */}
-        <div className="bg-card shadow-lg rounded-xl overflow-hidden border border-border">
-          {isLoading ? (
-            <div className="text-center py-24">
-              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto"></div>
-              <p className="mt-4 text-sm text-muted-foreground">Loading tags...</p>
-            </div>
-          ) : (
-            <div className="divide-y divide-border">
-              {/* Add New Tag Form */}
-              {isAdding && (
-                <div className="p-6 bg-muted/30">
-                  <h3 className="text-lg font-semibold mb-4">새 태그 추가</h3>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-sm font-medium mb-2">태그 이름 (영문)</label>
-                      <input
-                        type="text"
-                        value={newTag.name}
-                        onChange={(e) => setNewTag({ ...newTag, name: e.target.value })}
-                        className="w-full px-3 py-2 border border-border rounded-lg bg-card"
-                        placeholder="예: my_tag"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium mb-2">표시 이름</label>
-                      <input
-                        type="text"
-                        value={newTag.display_name}
-                        onChange={(e) => setNewTag({ ...newTag, display_name: e.target.value })}
-                        className="w-full px-3 py-2 border border-border rounded-lg bg-card"
-                        placeholder="예: 내 태그"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium mb-2">색상</label>
-                      <select
-                        value={newTag.color}
-                        onChange={(e) => setNewTag({ ...newTag, color: e.target.value })}
-                        className="w-full px-3 py-2 border border-border rounded-lg bg-card"
-                      >
-                        {colorOptions.map((opt) => (
-                          <option key={opt.value} value={opt.value}>{opt.label}</option>
-                        ))}
-                      </select>
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium mb-2">아이콘</label>
-                      <select
-                        value={newTag.icon}
-                        onChange={(e) => setNewTag({ ...newTag, icon: e.target.value })}
-                        className="w-full px-3 py-2 border border-border rounded-lg bg-card"
-                      >
-                        {iconOptions.map((icon) => (
-                          <option key={icon} value={icon}>{icon}</option>
-                        ))}
-                      </select>
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium mb-2">순서</label>
-                      <input
-                        type="number"
-                        value={newTag.order}
-                        onChange={(e) => setNewTag({ ...newTag, order: parseInt(e.target.value) })}
-                        className="w-full px-3 py-2 border border-border rounded-lg bg-card"
-                      />
-                    </div>
-                  </div>
-                  <div className="flex gap-2 mt-4">
-                    <button
-                      onClick={handleAddTag}
-                      className="inline-flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90"
-                    >
-                      <Save className="h-4 w-4" />
-                      저장
-                    </button>
-                    <button
-                      onClick={handleCancelAdd}
-                      className="inline-flex items-center gap-2 px-4 py-2 bg-muted text-foreground rounded-lg hover:bg-muted/80"
-                    >
-                      <X className="h-4 w-4" />
-                      취소
-                    </button>
-                  </div>
-                </div>
-              )}
-
-              {/* Tags List */}
-              {tags.map((tag) => (
-                <div key={tag.id} className="p-6 hover:bg-muted/30 transition-colors">
-                  {editingTag?.id === tag.id ? (
-                    /* Edit Form */
-                    <div>
-                      <h3 className="text-lg font-semibold mb-4">태그 수정</h3>
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div>
-                          <label className="block text-sm font-medium mb-2">태그 이름 (영문)</label>
-                          <input
-                            type="text"
-                            value={editForm.name}
-                            onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
-                            className="w-full px-3 py-2 border border-border rounded-lg bg-card"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-sm font-medium mb-2">표시 이름</label>
-                          <input
-                            type="text"
-                            value={editForm.display_name}
-                            onChange={(e) => setEditForm({ ...editForm, display_name: e.target.value })}
-                            className="w-full px-3 py-2 border border-border rounded-lg bg-card"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-sm font-medium mb-2">색상</label>
-                          <select
-                            value={editForm.color}
-                            onChange={(e) => setEditForm({ ...editForm, color: e.target.value })}
-                            className="w-full px-3 py-2 border border-border rounded-lg bg-card"
-                          >
-                            {colorOptions.map((opt) => (
-                              <option key={opt.value} value={opt.value}>{opt.label}</option>
-                            ))}
-                          </select>
-                        </div>
-                        <div>
-                          <label className="block text-sm font-medium mb-2">아이콘</label>
-                          <select
-                            value={editForm.icon}
-                            onChange={(e) => setEditForm({ ...editForm, icon: e.target.value })}
-                            className="w-full px-3 py-2 border border-border rounded-lg bg-card"
-                          >
-                            {iconOptions.map((icon) => (
-                              <option key={icon} value={icon}>{icon}</option>
-                            ))}
-                          </select>
-                        </div>
-                        <div>
-                          <label className="block text-sm font-medium mb-2">순서</label>
-                          <input
-                            type="number"
-                            value={editForm.order}
-                            onChange={(e) => setEditForm({ ...editForm, order: parseInt(e.target.value) })}
-                            className="w-full px-3 py-2 border border-border rounded-lg bg-card"
-                          />
-                        </div>
-                      </div>
-                      <div className="flex gap-2 mt-4">
-                        <button
-                          onClick={handleUpdateTag}
-                          className="inline-flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90"
-                        >
-                          <Save className="h-4 w-4" />
-                          저장
-                        </button>
-                        <button
-                          onClick={handleCancelEdit}
-                          className="inline-flex items-center gap-2 px-4 py-2 bg-muted text-foreground rounded-lg hover:bg-muted/80"
-                        >
-                          <X className="h-4 w-4" />
-                          취소
-                        </button>
-                      </div>
-                    </div>
-                  ) : (
-                    /* Normal View */
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-4">
-                        <span className={`px-3 py-1.5 rounded-lg font-semibold ${getColorClass(tag.color)}`}>
-                          {tag.display_name}
-                        </span>
-                        <div className="text-sm text-muted-foreground">
-                          <span className="font-mono">{tag.name}</span>
-                          <span className="mx-2">|</span>
-                          <span>아이콘: {tag.icon}</span>
-                          <span className="mx-2">|</span>
-                          <span>순서: {tag.order}</span>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <button
-                          onClick={() => handleEdit(tag)}
-                          className="p-2 hover:bg-muted rounded-lg transition-colors"
-                          title="편집"
-                        >
-                          <Edit2 className="h-4 w-4 text-muted-foreground" />
-                        </button>
-                        <button
-                          onClick={() => handleDeleteTag(tag)}
-                          className="p-2 hover:bg-destructive/10 rounded-lg transition-colors"
-                          title="삭제"
-                        >
-                          <Trash2 className="h-4 w-4 text-destructive" />
-                        </button>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
+        <Button onClick={() => setIsAdding(true)}>
+          <Plus className="h-4 w-4 mr-2" />
+          태그 추가
+        </Button>
       </div>
+
+      {/* Tags List */}
+      <Card>
+        {isLoading ? (
+          <CardContent className="flex items-center justify-center py-24">
+            <Loader2 className="h-8 w-8 animate-spin text-primary" />
+            <span className="ml-2 text-muted-foreground">로딩 중...</span>
+          </CardContent>
+        ) : (
+          <div className="divide-y divide-border">
+            {/* Add New Tag Form */}
+            {isAdding && (
+              <CardContent className="pt-6 bg-muted/30">
+                <h3 className="text-lg font-semibold mb-4">새 태그 추가</h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label>태그 이름 (영문)</Label>
+                    <Input
+                      value={newTag.name}
+                      onChange={(e) => setNewTag({ ...newTag, name: e.target.value })}
+                      placeholder="예: my_tag"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>표시 이름</Label>
+                    <Input
+                      value={newTag.display_name}
+                      onChange={(e) => setNewTag({ ...newTag, display_name: e.target.value })}
+                      placeholder="예: 내 태그"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>색상</Label>
+                    <Select
+                      value={newTag.color}
+                      onValueChange={(value) => setNewTag({ ...newTag, color: value })}
+                    >
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {colorOptions.map((opt) => (
+                          <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>아이콘</Label>
+                    <Select
+                      value={newTag.icon}
+                      onValueChange={(value) => setNewTag({ ...newTag, icon: value })}
+                    >
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {iconOptions.map((icon) => (
+                          <SelectItem key={icon} value={icon}>{icon}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>순서</Label>
+                    <Input
+                      type="number"
+                      value={newTag.order}
+                      onChange={(e) => setNewTag({ ...newTag, order: parseInt(e.target.value) })}
+                    />
+                  </div>
+                </div>
+                <div className="flex gap-2 mt-4">
+                  <Button onClick={handleAddTag}>
+                    <Save className="h-4 w-4 mr-2" />
+                    저장
+                  </Button>
+                  <Button variant="outline" onClick={handleCancelAdd}>
+                    <X className="h-4 w-4 mr-2" />
+                    취소
+                  </Button>
+                </div>
+              </CardContent>
+            )}
+
+            {/* Tags List */}
+            {tags.map((tag) => (
+              <div key={tag.id} className="p-6 hover:bg-muted/30 transition-colors">
+                {editingTag?.id === tag.id ? (
+                  /* Edit Form */
+                  <div>
+                    <h3 className="text-lg font-semibold mb-4">태그 수정</h3>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <Label>태그 이름 (영문)</Label>
+                        <Input
+                          value={editForm.name}
+                          onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label>표시 이름</Label>
+                        <Input
+                          value={editForm.display_name}
+                          onChange={(e) => setEditForm({ ...editForm, display_name: e.target.value })}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label>색상</Label>
+                        <Select
+                          value={editForm.color}
+                          onValueChange={(value) => setEditForm({ ...editForm, color: value })}
+                        >
+                          <SelectTrigger>
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {colorOptions.map((opt) => (
+                              <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="space-y-2">
+                        <Label>아이콘</Label>
+                        <Select
+                          value={editForm.icon}
+                          onValueChange={(value) => setEditForm({ ...editForm, icon: value })}
+                        >
+                          <SelectTrigger>
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {iconOptions.map((icon) => (
+                              <SelectItem key={icon} value={icon}>{icon}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="space-y-2">
+                        <Label>순서</Label>
+                        <Input
+                          type="number"
+                          value={editForm.order}
+                          onChange={(e) => setEditForm({ ...editForm, order: parseInt(e.target.value) })}
+                        />
+                      </div>
+                    </div>
+                    <div className="flex gap-2 mt-4">
+                      <Button onClick={handleUpdateTag}>
+                        <Save className="h-4 w-4 mr-2" />
+                        저장
+                      </Button>
+                      <Button variant="outline" onClick={handleCancelEdit}>
+                        <X className="h-4 w-4 mr-2" />
+                        취소
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  /* Normal View */
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-4">
+                      <span className={cn("px-3 py-1.5 rounded-lg font-semibold", getColorClass(tag.color))}>
+                        {tag.display_name}
+                      </span>
+                      <div className="text-sm text-muted-foreground">
+                        <span className="font-mono">{tag.name}</span>
+                        <span className="mx-2">|</span>
+                        <span>아이콘: {tag.icon}</span>
+                        <span className="mx-2">|</span>
+                        <span>순서: {tag.order}</span>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => handleEdit(tag)}
+                      >
+                        <Edit2 className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => handleDeleteTag(tag)}
+                        className="text-destructive hover:text-destructive"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </Card>
     </div>
   );
 }

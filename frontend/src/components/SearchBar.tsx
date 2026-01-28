@@ -2,11 +2,16 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { stockApi, Stock, Tag } from '@/lib/api';
-import { Search, X, TrendingUp, TrendingDown, Star, ThumbsDown, ShoppingCart, ThumbsUp, Eye, AlertCircle, Trash2, BarChart3 } from 'lucide-react';
+import { Search, X, TrendingUp, TrendingDown, Star, ThumbsDown, ShoppingCart, ThumbsUp, Eye, AlertCircle, Trash2, BarChart3, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useTags } from '@/contexts/TagContext';
 import { getNaverChartUrl } from '@/lib/naverStock';
 import { useQueryClient } from '@tanstack/react-query';
+import { Input } from '@/components/ui/input';
+import { Button } from '@/components/ui/button';
+import { Card } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import { cn } from '@/lib/utils';
 
 interface SearchBarProps {
   onStockSelect?: (stock: Stock) => void;
@@ -318,8 +323,8 @@ const SearchBar: React.FC<SearchBarProps> = ({ onStockSelect }) => {
     <div ref={searchRef} className="relative w-full max-w-2xl">
       {/* 검색 입력창 */}
       <div className="relative">
-        <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
-        <input
+        <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground pointer-events-none" />
+        <Input
           ref={inputRef}
           type="text"
           value={searchQuery}
@@ -331,36 +336,37 @@ const SearchBar: React.FC<SearchBarProps> = ({ onStockSelect }) => {
             }
           }}
           placeholder="종목명 또는 심볼 검색..."
-          className="w-full pl-12 pr-12 py-3 bg-card border border-border rounded-lg text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all"
+          className="pl-12 pr-12 h-12"
         />
         {searchQuery && (
-          <button
+          <Button
+            variant="ghost"
+            size="icon"
             onClick={handleClear}
-            className="absolute right-4 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+            className="absolute right-2 top-1/2 -translate-y-1/2 h-8 w-8"
           >
-            <X className="h-5 w-5" />
-          </button>
+            <X className="h-4 w-4" />
+          </Button>
         )}
         {isSearching && (
           <div className="absolute right-12 top-1/2 -translate-y-1/2">
-            <div className="h-4 w-4 animate-spin rounded-full border-2 border-primary border-t-transparent"></div>
+            <Loader2 className="h-4 w-4 animate-spin text-primary" />
           </div>
         )}
       </div>
 
       {/* 검색 결과 드롭다운 */}
       {showResults && searchResults.length > 0 && (
-        <div className="absolute z-50 w-full mt-2 bg-card border border-border rounded-lg shadow-2xl max-h-[600px] overflow-y-auto">
+        <Card className="absolute z-50 w-full mt-2 shadow-lg max-h-[600px] overflow-y-auto">
           {searchResults.map((stock, index) => {
             const stockTogglingTags = togglingTags.get(stock.id) || new Set();
             return (
               <div
                 key={stock.id}
-                className={`px-4 py-3 border-b border-border/50 last:border-b-0 transition-colors ${
-                  index === selectedIndex
-                    ? 'bg-primary/10'
-                    : 'hover:bg-muted/50'
-                }`}
+                className={cn(
+                  "px-4 py-3 border-b border-border/50 last:border-b-0 transition-colors",
+                  index === selectedIndex ? "bg-accent" : "hover:bg-muted/50"
+                )}
               >
                 <div className="flex items-start justify-between gap-4">
                   <div className="flex-1 min-w-0">
@@ -387,9 +393,9 @@ const SearchBar: React.FC<SearchBarProps> = ({ onStockSelect }) => {
 
                     {/* 거래소 & 시가총액 */}
                     <div className="flex items-center gap-2 text-xs text-muted-foreground mb-2">
-                      <span className="px-2 py-0.5 rounded text-xs font-medium bg-secondary/10 text-secondary-foreground">
+                      <Badge variant="secondary" className="font-medium">
                         {stock.exchange || stock.market}
-                      </span>
+                      </Badge>
                       {stock.market_cap && (
                         <span className="font-mono">
                           시총 {formatMarketCap(stock.market_cap)}
@@ -453,16 +459,16 @@ const SearchBar: React.FC<SearchBarProps> = ({ onStockSelect }) => {
               </div>
             );
           })}
-        </div>
+        </Card>
       )}
 
       {/* 검색 결과 없음 */}
       {showResults && !isSearching && searchQuery && searchResults.length === 0 && (
-        <div className="absolute z-50 w-full mt-2 bg-card border border-border rounded-lg shadow-2xl px-4 py-8 text-center">
+        <Card className="absolute z-50 w-full mt-2 shadow-lg px-4 py-8 text-center">
           <p className="text-muted-foreground">
             '<span className="font-semibold">{searchQuery}</span>' 검색 결과가 없습니다.
           </p>
-        </div>
+        </Card>
       )}
     </div>
   );
