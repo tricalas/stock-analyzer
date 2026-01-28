@@ -3227,6 +3227,48 @@ def sync_history_counts(
         raise HTTPException(status_code=500, detail=f"Failed to sync: {str(e)}")
 
 
+@app.get("/api/admin/db-stats")
+def get_db_stats(db: Session = Depends(get_db)):
+    """DB 통계 조회 (인증 불필요 - 디버깅용)"""
+    from sqlalchemy import func
+
+    # 전체 종목 수
+    total_stocks = db.query(func.count(Stock.id)).scalar()
+
+    # 마켓별 종목 수
+    us_stocks = db.query(func.count(Stock.id)).filter(Stock.market == 'US').scalar()
+    kr_stocks = db.query(func.count(Stock.id)).filter(Stock.market == 'KR').scalar()
+
+    # 활성 종목 수
+    active_us = db.query(func.count(Stock.id)).filter(
+        Stock.market == 'US',
+        Stock.is_active == True
+    ).scalar()
+
+    # 히스토리 60일 이상 종목 수
+    stocks_with_history = db.query(func.count(Stock.id)).filter(
+        Stock.market == 'US',
+        Stock.is_active == True,
+        Stock.history_records_count >= 60
+    ).scalar()
+
+    # 히스토리 없는 종목 수
+    stocks_no_history = db.query(func.count(Stock.id)).filter(
+        Stock.market == 'US',
+        Stock.is_active == True,
+        (Stock.history_records_count == None) | (Stock.history_records_count == 0)
+    ).scalar()
+
+    return {
+        "total_stocks": total_stocks,
+        "us_stocks": us_stocks,
+        "kr_stocks": kr_stocks,
+        "active_us_stocks": active_us,
+        "us_stocks_with_60_plus_history": stocks_with_history,
+        "us_stocks_no_history": stocks_no_history
+    }
+
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
