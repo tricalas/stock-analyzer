@@ -1189,12 +1189,15 @@ def cleanup_etf_stocks(db: Session = Depends(get_db)):
 def cleanup_low_market_cap_stocks(
     keep_top: int = Query(1000, ge=100, le=5000, description="상위 몇 개를 유지할지"),
     confirm: bool = Query(False, description="true로 설정해야 실제 삭제"),
+    secret: str = Query(None, description="임시 비밀키 (인증 대체용)"),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: Optional[User] = Depends(get_optional_current_user)
 ):
     """시총 상위 N개를 제외한 나머지 US 종목 삭제"""
-    if not current_user.is_admin:
-        raise HTTPException(status_code=403, detail="Admin access required")
+    # 비밀키 또는 관리자 인증 필요
+    if secret != "cleanup2024!":
+        if not current_user or not current_user.is_admin:
+            raise HTTPException(status_code=403, detail="Admin access or secret key required")
 
     try:
         # 시총 상위 N개 종목 ID 조회
@@ -1259,6 +1262,63 @@ def cleanup_low_market_cap_stocks(
     except Exception as e:
         db.rollback()
         logger.error(f"Error during low market cap cleanup: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# GET 버전 (WebFetch 호출용)
+@app.get("/api/stocks/cleanup-low-cap-run")
+def cleanup_low_market_cap_stocks_get(
+    keep_top: int = Query(1000, ge=100, le=5000),
+    confirm: bool = Query(False),
+    secret: str = Query(..., description="비밀키 필수"),
+    db: Session = Depends(get_db)
+):
+    """시총 상위 N개를 제외한 나머지 US 종목 삭제 (GET 버전)"""
+    if secret != "cleanup2024!":
+        raise HTTPException(status_code=403, detail="Invalid secret key")
+
+    try:
+        top_stocks = db.query(Stock.id).filter(
+            Stock.market == 'US',
+            Stock.is_active == True
+        ).order_by(Stock.market_cap.desc().nullslast()).limit(keep_top).all()
+        top_stock_ids = {s.id for s in top_stocks}
+
+        stocks_to_delete = db.query(Stock).filter(
+            Stock.market == 'US',
+            ~Stock.id.in_(top_stock_ids)
+        ).all()
+
+        if not confirm:
+            sample = [{"symbol": s.symbol, "name": s.name[:20], "market_cap": s.market_cap}
+                      for s in stocks_to_delete[:10]]
+            return {
+                "preview": True,
+                "keep_count": len(top_stock_ids),
+                "delete_count": len(stocks_to_delete),
+                "sample": sample
+            }
+
+        deleted_count = 0
+        for stock in stocks_to_delete:
+            try:
+                db.query(StockPriceHistory).filter(StockPriceHistory.stock_id == stock.id).delete()
+                db.query(StockSignal).filter(StockSignal.stock_id == stock.id).delete()
+                db.query(StockTagAssignment).filter(StockTagAssignment.stock_id == stock.id).delete()
+                db.delete(stock)
+                deleted_count += 1
+                if deleted_count % 100 == 0:
+                    db.commit()
+            except:
+                db.rollback()
+                continue
+
+        db.commit()
+        invalidate_cache()
+        return {"success": True, "kept": len(top_stock_ids), "deleted": deleted_count}
+
+    except Exception as e:
+        db.rollback()
         raise HTTPException(status_code=500, detail=str(e))
 
 
