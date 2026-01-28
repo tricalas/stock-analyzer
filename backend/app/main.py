@@ -1195,7 +1195,7 @@ def cleanup_low_market_cap_stocks(
 ):
     """시총 상위 N개를 제외한 나머지 US 종목 삭제"""
     # 비밀키 또는 관리자 인증 필요
-    if secret != "cleanup2024!":
+    if secret != "clean1000":
         if not current_user or not current_user.is_admin:
             raise HTTPException(status_code=403, detail="Admin access or secret key required")
 
@@ -1274,7 +1274,7 @@ def cleanup_low_market_cap_stocks_get(
     db: Session = Depends(get_db)
 ):
     """시총 상위 N개를 제외한 나머지 US 종목 삭제 (GET 버전)"""
-    if secret != "cleanup2024!":
+    if secret != "clean1000":
         raise HTTPException(status_code=403, detail="Invalid secret key")
 
     try:
