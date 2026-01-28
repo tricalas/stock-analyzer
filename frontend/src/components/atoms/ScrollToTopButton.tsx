@@ -2,13 +2,14 @@
 
 import React, { useState, useEffect } from 'react';
 import { ChevronUp } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
 
 const ScrollToTopButton = React.memo(() => {
   const [isVisible, setIsVisible] = useState(false);
 
   useEffect(() => {
     const toggleVisibility = () => {
-      // 페이지를 300px 이상 스크롤했을 때 버튼 표시
       if (window.pageYOffset > 300) {
         setIsVisible(true);
       } else {
@@ -30,18 +31,23 @@ const ScrollToTopButton = React.memo(() => {
     });
   };
 
-  if (!isVisible) {
-    return null;
-  }
-
   return (
-    <button
+    <Button
       onClick={scrollToTop}
-      className="fixed bottom-6 right-6 z-50 bg-primary text-primary-foreground p-3 rounded-full shadow-lg transition-all duration-300 ease-in-out hover:shadow-2xl hover:scale-110 cursor-pointer"
+      size="icon"
+      variant="outline"
+      className={cn(
+        "fixed bottom-24 lg:bottom-6 right-4 lg:right-6 z-40 h-10 w-10 rounded-full shadow-lg",
+        "bg-background/80 backdrop-blur-sm border-border",
+        "transition-all duration-300",
+        isVisible
+          ? "opacity-100 translate-y-0"
+          : "opacity-0 translate-y-4 pointer-events-none"
+      )}
       aria-label="맨 위로 이동"
     >
-      <ChevronUp className="h-6 w-6" />
-    </button>
+      <ChevronUp className="h-5 w-5" />
+    </Button>
   );
 });
 
