@@ -2299,13 +2299,26 @@ def get_stored_signals(
     if signal_type:
         query = query.filter(StockSignal.signal_type == signal_type)
 
-    # 전체 카운트 (페이지네이션용)
-    total = query.count()
+    # 최신 시그널부터 정렬된 쿼리
+    ordered_query = query.order_by(desc(StockSignal.signal_date))
 
-    # 최신 시그널부터 (페이지네이션 적용)
-    signals = query.order_by(
-        desc(StockSignal.signal_date)
-    ).offset(skip).limit(limit).all()
+    # 첫 페이지에서는 전체 조회 후 슬라이싱 (중복 쿼리 방지)
+    if skip == 0:
+        all_signals = ordered_query.all()
+        total = len(all_signals)
+        signals = all_signals[:limit]
+        # 통계 계산 (전체 데이터 기준)
+        stats = {
+            "total_signals": total,
+            "positive_returns": len([s for s in all_signals if s.return_percent and s.return_percent > 0]),
+            "negative_returns": len([s for s in all_signals if s.return_percent and s.return_percent < 0]),
+            "avg_return": sum([s.return_percent or 0 for s in all_signals]) / total if total > 0 else 0
+        }
+    else:
+        # 이후 페이지에서는 개별 쿼리
+        total = query.count()
+        signals = ordered_query.offset(skip).limit(limit).all()
+        stats = None
 
     # 종목 정보 로드
     stock_ids = [s.stock_id for s in signals]
@@ -2333,19 +2346,6 @@ def get_stored_signals(
             "stock": stocks_map.get(signal.stock_id)
         }
         signal_responses.append(signal_dict)
-
-    # 통계 계산 (전체 데이터 기준 - 첫 페이지에서만 계산)
-    if skip == 0:
-        all_signals = query.all()
-        stats = {
-            "total_signals": total,
-            "positive_returns": len([s for s in all_signals if s.return_percent and s.return_percent > 0]),
-            "negative_returns": len([s for s in all_signals if s.return_percent and s.return_percent < 0]),
-            "avg_return": sum([s.return_percent or 0 for s in all_signals]) / total if total > 0 else 0
-        }
-    else:
-        # 이후 페이지에서는 통계 생략
-        stats = None
 
     # 마지막 분석 시간
     latest_analyzed = db.query(StockSignal).order_by(

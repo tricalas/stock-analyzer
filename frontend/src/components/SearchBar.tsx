@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { stockApi, Stock, Tag } from '@/lib/api';
 import { Search, X, TrendingUp, TrendingDown, Star, ThumbsDown, ShoppingCart, ThumbsUp, Eye, AlertCircle, Trash2, BarChart3, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -17,7 +17,52 @@ interface SearchBarProps {
   onStockSelect?: (stock: Stock) => void;
 }
 
-const SearchBar: React.FC<SearchBarProps> = ({ onStockSelect }) => {
+// Helper functions moved outside component (never recreated)
+const formatChange = (changePercent?: number) => {
+  if (!changePercent) return '';
+  const sign = changePercent > 0 ? '+' : '';
+  return `${sign}${changePercent.toFixed(2)}%`;
+};
+
+const getChangeColor = (changePercent?: number) => {
+  if (!changePercent) return 'text-muted-foreground';
+  if (changePercent > 0) return 'text-gain';
+  if (changePercent < 0) return 'text-loss';
+  return 'text-muted-foreground';
+};
+
+const formatMarketCap = (num?: number) => {
+  if (!num) return '';
+  if (num >= 1e12) return `${(num / 1e12).toFixed(0)}조`;
+  if (num >= 1e8) return `${(num / 1e8).toFixed(0)}억`;
+  return '';
+};
+
+const getTagColorClass = (color?: string, isActive?: boolean) => {
+  if (!isActive) {
+    return 'bg-card text-foreground border-border hover:bg-muted/50';
+  }
+  return 'bg-purple-600 text-white border-purple-600 hover:bg-purple-700';
+};
+
+const getTagIcon = (iconName?: string) => {
+  const iconProps = { className: "h-3.5 w-3.5" };
+  switch (iconName) {
+    case 'Star': return <Star {...iconProps} />;
+    case 'ThumbsDown': return <ThumbsDown {...iconProps} />;
+    case 'ShoppingCart': return <ShoppingCart {...iconProps} />;
+    case 'ThumbsUp': return <ThumbsUp {...iconProps} />;
+    case 'Eye': return <Eye {...iconProps} />;
+    case 'TrendingUp': return <TrendingUp {...iconProps} />;
+    case 'AlertCircle': return <AlertCircle {...iconProps} />;
+    case 'Trash2': return <Trash2 {...iconProps} />;
+    default: return null;
+  }
+};
+
+const escapeRegex = (str: string) => str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+const SearchBar = React.memo<SearchBarProps>(({ onStockSelect }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<Stock[]>([]);
   const [isSearching, setIsSearching] = useState(false);
@@ -160,14 +205,14 @@ const SearchBar: React.FC<SearchBarProps> = ({ onStockSelect }) => {
   };
 
   // 검색 초기화
-  const handleClear = () => {
+  const handleClear = useCallback(() => {
     setSearchQuery('');
     setSearchResults([]);
     setShowResults(false);
     setSelectedIndex(-1);
     lastSearchQueryRef.current = '';
     inputRef.current?.focus();
-  };
+  }, []);
 
   // 태그 토글 핸들러
   const handleToggleTag = async (e: React.MouseEvent, stock: Stock, tag: Tag) => {
@@ -239,85 +284,31 @@ const SearchBar: React.FC<SearchBarProps> = ({ onStockSelect }) => {
     }
   };
 
-  // 태그 아이콘 가져오기
-  const getTagIcon = (iconName?: string) => {
-    const iconProps = { className: "h-3.5 w-3.5" };
-    switch (iconName) {
-      case 'Star':
-        return <Star {...iconProps} />;
-      case 'ThumbsDown':
-        return <ThumbsDown {...iconProps} />;
-      case 'ShoppingCart':
-        return <ShoppingCart {...iconProps} />;
-      case 'ThumbsUp':
-        return <ThumbsUp {...iconProps} />;
-      case 'Eye':
-        return <Eye {...iconProps} />;
-      case 'TrendingUp':
-        return <TrendingUp {...iconProps} />;
-      case 'AlertCircle':
-        return <AlertCircle {...iconProps} />;
-      case 'Trash2':
-        return <Trash2 {...iconProps} />;
-      default:
-        return null;
-    }
-  };
-
-  // 태그 색상 클래스
-  const getTagColorClass = (color?: string, isActive?: boolean) => {
-    if (!isActive) {
-      return 'bg-card text-foreground border-border hover:bg-muted/50';
-    }
-    return 'bg-purple-600 text-white border-purple-600 hover:bg-purple-700';
-  };
-
   // 네이버 차트 열기
-  const handleOpenChart = (e: React.MouseEvent, stock: Stock) => {
+  const handleOpenChart = useCallback((e: React.MouseEvent, stock: Stock) => {
     e.stopPropagation();
     window.open(getNaverChartUrl(stock), '_blank');
-  };
+  }, []);
 
-  // 가격 변동 포맷
-  const formatChange = (changePercent?: number) => {
-    if (!changePercent) return '';
-    const sign = changePercent > 0 ? '+' : '';
-    return `${sign}${changePercent.toFixed(2)}%`;
-  };
+  // 검색어 하이라이트 처리 (useMemo로 캐싱)
+  const highlightMatch = useMemo(() => {
+    const query = searchQuery.trim();
+    if (!query) return (text: string) => text;
 
-  // 가격 변동 색상
-  const getChangeColor = (changePercent?: number) => {
-    if (!changePercent) return 'text-muted-foreground';
-    if (changePercent > 0) return 'text-gain';
-    if (changePercent < 0) return 'text-loss';
-    return 'text-muted-foreground';
-  };
-
-  // 시가총액 포맷
-  const formatMarketCap = (num?: number) => {
-    if (!num) return '';
-    if (num >= 1e12) return `${(num / 1e12).toFixed(0)}조`;
-    if (num >= 1e8) return `${(num / 1e8).toFixed(0)}억`;
-    return '';
-  };
-
-  // 검색어 하이라이트 처리
-  const highlightMatch = (text: string, query: string) => {
-    if (!query.trim()) return text;
-
-    const regex = new RegExp(`(${query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi');
-    const parts = text.split(regex);
-
-    return parts.map((part, index) =>
-      regex.test(part) ? (
-        <mark key={index} className="bg-yellow-300/80 dark:bg-yellow-500/50 text-foreground px-0.5 rounded-sm">
-          {part}
-        </mark>
-      ) : (
-        part
-      )
-    );
-  };
+    const regex = new RegExp(`(${escapeRegex(query)})`, 'gi');
+    return (text: string) => {
+      const parts = text.split(regex);
+      return parts.map((part, index) =>
+        regex.test(part) ? (
+          <mark key={index} className="bg-yellow-300/80 dark:bg-yellow-500/50 text-foreground px-0.5 rounded-sm">
+            {part}
+          </mark>
+        ) : (
+          part
+        )
+      );
+    };
+  }, [searchQuery]);
 
   return (
     <div ref={searchRef} className="relative w-full max-w-2xl">
@@ -376,10 +367,10 @@ const SearchBar: React.FC<SearchBarProps> = ({ onStockSelect }) => {
                         onClick={(e) => handleOpenChart(e, stock)}
                         className="font-semibold text-foreground hover:text-primary hover:underline cursor-pointer transition-colors text-left truncate"
                       >
-                        {highlightMatch(stock.name, searchQuery)}
+                        {highlightMatch(stock.name)}
                       </button>
                       <span className="text-sm text-muted-foreground font-mono flex-shrink-0">
-                        {highlightMatch(stock.symbol, searchQuery)}
+                        {highlightMatch(stock.symbol)}
                       </span>
                       <button
                         onClick={(e) => handleOpenChart(e, stock)}
@@ -472,6 +463,8 @@ const SearchBar: React.FC<SearchBarProps> = ({ onStockSelect }) => {
       )}
     </div>
   );
-};
+});
+
+SearchBar.displayName = 'SearchBar';
 
 export default SearchBar;

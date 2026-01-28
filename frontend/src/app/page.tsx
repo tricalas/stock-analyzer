@@ -1,13 +1,26 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
+import dynamic from 'next/dynamic';
 import { stockApi, Stock } from '@/lib/api';
 import StockTable from '@/components/StockTable';
-import StockChartModal from '@/components/StockChartModal';
 import AppLayout from '@/components/AppLayout';
 import SearchBar from '@/components/SearchBar';
-import { RefreshCw, TrendingUp } from 'lucide-react';
+import { RefreshCw, TrendingUp, Loader2 } from 'lucide-react';
+
+// Lazy load modal component to reduce initial bundle
+const StockChartModal = dynamic(
+  () => import('@/components/StockChartModal'),
+  {
+    loading: () => (
+      <div className="fixed inset-0 flex items-center justify-center bg-background/80 backdrop-blur-sm z-50">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      </div>
+    ),
+    ssr: false,
+  }
+);
 import { openNaverChartPopup } from '@/lib/naverStock';
 import ScrollToTopButton from '@/components/atoms/ScrollToTopButton';
 import SortDropdown, { SortField, SortDirection } from '@/components/SortDropdown';
@@ -89,7 +102,7 @@ export default function Home() {
     return () => observer.disconnect();
   }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
 
-  const handleRefreshStocks = async () => {
+  const handleRefreshStocks = useCallback(async () => {
     setIsRefreshing(true);
     toast.info('데이터를 가져오는 중입니다...');
     try {
@@ -112,36 +125,38 @@ export default function Home() {
         toast.error('업데이트 실패');
       }
     }
-  };
+  }, [refetch]);
 
-  const handleShowChart = (stock: Stock) => {
+  const handleShowChart = useCallback((stock: Stock) => {
     setSelectedStock(stock);
     setIsChartModalOpen(true);
-  };
+  }, []);
 
-  const handleCloseChart = () => {
+  const handleCloseChart = useCallback(() => {
     setIsChartModalOpen(false);
     setSelectedStock(null);
-  };
+  }, []);
 
-  const handleStockDeleted = async () => await refetch();
+  const handleStockDeleted = useCallback(async () => {
+    await refetch();
+  }, [refetch]);
 
-  const handleFavoriteChanged = async () => {
+  const handleFavoriteChanged = useCallback(async () => {
     await refetch();
     queryClient.invalidateQueries({ queryKey: ['stocks', 'FAVORITES'] });
-  };
+  }, [refetch, queryClient]);
 
-  const handleDislikeChanged = async () => {
+  const handleDislikeChanged = useCallback(async () => {
     await refetch();
     queryClient.invalidateQueries({ queryKey: ['stocks', 'DISLIKES'] });
-  };
+  }, [refetch, queryClient]);
 
-  const handleSortChange = (field: SortField, direction: SortDirection) => {
+  const handleSortChange = useCallback((field: SortField, direction: SortDirection) => {
     setSortField(field);
     setSortDirection(direction);
-  };
+  }, []);
 
-  const handleStockClick = (stock: Stock) => openNaverChartPopup(stock);
+  const handleStockClick = useCallback((stock: Stock) => openNaverChartPopup(stock), []);
 
   const stocks = data?.pages.flatMap(page => page.stocks || []) || [];
 

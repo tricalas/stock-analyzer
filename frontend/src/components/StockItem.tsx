@@ -23,6 +23,37 @@ import {
 } from "@/components/ui/alert-dialog";
 import { cn } from '@/lib/utils';
 
+// Helper functions moved outside component to prevent recreation on each render
+const formatNumber = (num?: number) => num ? num.toLocaleString() : '-';
+const formatPercent = (num?: number) => num ? `${num > 0 ? '+' : ''}${num.toFixed(2)}%` : '-';
+const formatMarketCap = (num?: number) => {
+  if (!num) return '-';
+  if (num >= 1e12) return `${(num / 1e12).toFixed(1)}조`;
+  if (num >= 1e8) return `${(num / 1e8).toFixed(0)}억`;
+  return num.toLocaleString();
+};
+
+const getTextColor = (percent: number) => {
+  if (percent > 0) return 'text-green-600 dark:text-green-400';
+  if (percent < 0) return 'text-red-600 dark:text-red-400';
+  return 'text-muted-foreground';
+};
+
+const TAG_ICON_PROPS = { className: "h-3 w-3" };
+const getTagIcon = (iconName?: string) => {
+  switch (iconName) {
+    case 'Star': return <Star {...TAG_ICON_PROPS} />;
+    case 'ThumbsDown': return <ThumbsDown {...TAG_ICON_PROPS} />;
+    case 'ShoppingCart': return <ShoppingCart {...TAG_ICON_PROPS} />;
+    case 'ThumbsUp': return <ThumbsUp {...TAG_ICON_PROPS} />;
+    case 'Eye': return <Eye {...TAG_ICON_PROPS} />;
+    case 'TrendingUp': return <TrendingUp {...TAG_ICON_PROPS} />;
+    case 'AlertCircle': return <AlertCircle {...TAG_ICON_PROPS} />;
+    case 'Trash2': return <Trash2 {...TAG_ICON_PROPS} />;
+    default: return null;
+  }
+};
+
 interface StockItemProps {
   stock: Stock;
   rank?: number;
@@ -138,38 +169,8 @@ const StockItem = React.memo<StockItemProps>(({
     }
   };
 
-  const getTagIcon = (iconName?: string) => {
-    const props = { className: "h-3 w-3" };
-    switch (iconName) {
-      case 'Star': return <Star {...props} />;
-      case 'ThumbsDown': return <ThumbsDown {...props} />;
-      case 'ShoppingCart': return <ShoppingCart {...props} />;
-      case 'ThumbsUp': return <ThumbsUp {...props} />;
-      case 'Eye': return <Eye {...props} />;
-      case 'TrendingUp': return <TrendingUp {...props} />;
-      case 'AlertCircle': return <AlertCircle {...props} />;
-      case 'Trash2': return <Trash2 {...props} />;
-      default: return null;
-    }
-  };
-
-  const formatNumber = (num?: number) => num ? num.toLocaleString() : '-';
-  const formatPercent = (num?: number) => num ? `${num > 0 ? '+' : ''}${num.toFixed(2)}%` : '-';
-  const formatMarketCap = (num?: number) => {
-    if (!num) return '-';
-    if (num >= 1e12) return `${(num / 1e12).toFixed(1)}조`;
-    if (num >= 1e8) return `${(num / 1e8).toFixed(0)}억`;
-    return num.toLocaleString();
-  };
-
   const changePercent = stock.change_percent || stock.latest_change_percent || 0;
   const changeAmount = stock.change_amount || stock.latest_change || 0;
-
-  const getTextColor = (percent: number) => {
-    if (percent > 0) return 'text-green-600 dark:text-green-400';
-    if (percent < 0) return 'text-red-600 dark:text-red-400';
-    return 'text-muted-foreground';
-  };
 
   // Mobile List View - Clean & Flat
   if (viewMode === 'card') {

@@ -9,7 +9,15 @@ from celery.exceptions import SoftTimeLimitExceeded
 logger = logging.getLogger(__name__)
 
 
-@shared_task(bind=True, name="collect_history_task")
+@shared_task(
+    bind=True,
+    name="collect_history_task",
+    autoretry_for=(Exception,),
+    dont_autoretry_for=(SoftTimeLimitExceeded,),
+    retry_backoff=60,
+    retry_backoff_max=600,
+    max_retries=3
+)
 def collect_history_task(self, days: int, task_id: str, mode: str = "all", max_workers: int = 5):
     """
     히스토리 수집 Celery 태스크
@@ -54,7 +62,15 @@ def collect_history_task(self, days: int, task_id: str, mode: str = "all", max_w
         raise
 
 
-@shared_task(bind=True, name="analyze_signals_task")
+@shared_task(
+    bind=True,
+    name="analyze_signals_task",
+    autoretry_for=(Exception,),
+    dont_autoretry_for=(SoftTimeLimitExceeded,),
+    retry_backoff=60,
+    retry_backoff_max=600,
+    max_retries=3
+)
 def analyze_signals_task(
     self,
     task_id: str,
@@ -102,7 +118,15 @@ def analyze_signals_task(
         raise
 
 
-@shared_task(bind=True, name="retry_failed_stocks_task")
+@shared_task(
+    bind=True,
+    name="retry_failed_stocks_task",
+    autoretry_for=(Exception,),
+    dont_autoretry_for=(SoftTimeLimitExceeded,),
+    retry_backoff=60,
+    retry_backoff_max=600,
+    max_retries=3
+)
 def retry_failed_stocks_task(self, task_id: str, stock_ids: list, days: int = 120, max_workers: int = 5):
     """
     실패한 종목만 재시도하는 Celery 태스크

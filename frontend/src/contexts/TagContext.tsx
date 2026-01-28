@@ -1,6 +1,7 @@
 'use client';
 
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import React, { createContext, useContext, ReactNode, useCallback } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Tag, stockApi } from '@/lib/api';
 
 interface TagContextType {
@@ -13,34 +14,31 @@ interface TagContextType {
 const TagContext = createContext<TagContextType | undefined>(undefined);
 
 export function TagProvider({ children }: { children: ReactNode }) {
-  const [tags, setTags] = useState<Tag[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const queryClient = useQueryClient();
 
-  const fetchTags = async () => {
-    try {
-      setLoading(true);
-      setError(null);
-      const { tags: fetchedTags } = await stockApi.getTags();
-      setTags(fetchedTags);
-    } catch (err) {
-      console.error('Error fetching tags:', err);
-      setError('Failed to fetch tags');
-    } finally {
-      setLoading(false);
-    }
-  };
+  const { data, isLoading, error } = useQuery({
+    queryKey: ['tags'],
+    queryFn: async () => {
+      const { tags } = await stockApi.getTags();
+      return tags;
+    },
+    staleTime: 5 * 60 * 1000,  // 5 minutes
+    gcTime: 30 * 60 * 1000,    // 30 minutes (garbage collection time)
+  });
 
-  useEffect(() => {
-    fetchTags();
-  }, []);
-
-  const refetchTags = async () => {
-    await fetchTags();
-  };
+  const refetchTags = useCallback(async () => {
+    await queryClient.invalidateQueries({ queryKey: ['tags'] });
+  }, [queryClient]);
 
   return (
-    <TagContext.Provider value={{ tags, loading, error, refetchTags }}>
+    <TagContext.Provider
+      value={{
+        tags: data || [],
+        loading: isLoading,
+        error: error ? 'Failed to fetch tags' : null,
+        refetchTags,
+      }}
+    >
       {children}
     </TagContext.Provider>
   );
