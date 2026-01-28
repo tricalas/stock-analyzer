@@ -720,15 +720,16 @@ def cleanup_low_market_cap_stocks_get(
         for i in range(0, len(delete_ids), batch_size):
             batch_ids = delete_ids[i:i+batch_size]
             try:
-                # 관련 테이블 먼저 삭제 (하나씩)
+                # 관련 테이블 먼저 삭제 (모든 FK 관계)
                 h_del = db.query(StockPriceHistory).filter(StockPriceHistory.stock_id.in_(batch_ids)).delete(synchronize_session=False)
                 s_del = db.query(StockSignal).filter(StockSignal.stock_id.in_(batch_ids)).delete(synchronize_session=False)
                 t_del = db.query(StockTagAssignment).filter(StockTagAssignment.stock_id.in_(batch_ids)).delete(synchronize_session=False)
+                log_del = db.query(HistoryCollectionLog).filter(HistoryCollectionLog.stock_id.in_(batch_ids)).delete(synchronize_session=False)
                 # 종목 삭제
                 stock_del = db.query(Stock).filter(Stock.id.in_(batch_ids)).delete(synchronize_session=False)
                 db.commit()
                 deleted_total += stock_del
-                logger.info(f"Batch {i//batch_size + 1}: deleted {stock_del} stocks, {h_del} history, {s_del} signals, {t_del} tags")
+                logger.info(f"Batch {i//batch_size + 1}: deleted {stock_del} stocks, {h_del} history, {s_del} signals, {t_del} tags, {log_del} logs")
             except Exception as batch_error:
                 db.rollback()
                 error_msg = f"Batch {i//batch_size + 1} error: {str(batch_error)}"
