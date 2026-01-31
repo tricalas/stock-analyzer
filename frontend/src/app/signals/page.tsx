@@ -38,10 +38,15 @@ interface StockSignal {
   strategy_name: string;
   current_price?: number;
   return_percent?: number;
-  details?: string;
+  details?: string | Record<string, unknown>;
   is_active: boolean;
   analyzed_at: string;
   updated_at: string;
+  // MA API returns flat structure
+  symbol?: string;
+  name?: string;
+  exchange?: string;
+  // Trendline API returns nested stock object
   stock?: Stock;
 }
 
@@ -201,7 +206,8 @@ export default function SignalsPage() {
     if (signal.stock_id) {
       try {
         await stockApi.addToFavorites(signal.stock_id);
-        toast.success(`${signal.stock?.name || '종목'} 관심종목 추가`);
+        const stockName = signal.name || signal.stock?.name || '종목';
+        toast.success(`${stockName} 관심종목 추가`);
       } catch {
         toast.error('추가 실패');
       }
@@ -324,15 +330,20 @@ export default function SignalsPage() {
                   </thead>
                   <tbody className="divide-y">
                     {filteredSignals.map((signal) => {
-                      const stockInfo = signal.stock ? {
-                        symbol: signal.stock.symbol,
-                        market: signal.stock.market,
-                        exchange: signal.stock.exchange
+                      // MA API는 flat structure, Trendline API는 nested stock object
+                      const stockName = signal.name || signal.stock?.name || '종목명 없음';
+                      const stockSymbol = signal.symbol || signal.stock?.symbol || '';
+                      const stockExchange = signal.exchange || signal.stock?.exchange || signal.stock?.market || '';
+
+                      const stockInfo = stockSymbol ? {
+                        symbol: stockSymbol,
+                        market: signal.stock?.market || 'US',
+                        exchange: stockExchange
                       } : null;
 
                       let ma90Diff: number | null = null;
                       try {
-                        const details = signal.details ? JSON.parse(signal.details) : null;
+                        const details = typeof signal.details === 'string' ? JSON.parse(signal.details) : signal.details;
                         if (details?.sma_90_ratio) ma90Diff = details.sma_90_ratio - 100;
                       } catch {}
 
@@ -356,10 +367,10 @@ export default function SignalsPage() {
                               className="font-semibold hover:text-primary hover:underline"
                               onClick={(e) => e.stopPropagation()}
                             >
-                              {signal.stock?.name || '종목명 없음'}
+                              {stockName}
                             </a>
                             <div className="flex items-center gap-1.5 text-xs text-muted-foreground mt-0.5">
-                              <span>{signal.stock?.symbol}</span>
+                              <span>{stockSymbol}</span>
                               <a
                                 href={stockInfo ? getNaverChartUrl(stockInfo) : '#'}
                                 target="_blank"
@@ -397,7 +408,7 @@ export default function SignalsPage() {
                             ) : '-'}
                           </td>
                           <td className="px-4 py-3 text-center">
-                            <span className="text-xs text-muted-foreground">{signal.stock?.exchange || signal.stock?.market}</span>
+                            <span className="text-xs text-muted-foreground">{stockExchange}</span>
                           </td>
                           <td className="px-4 py-3 text-center">
                             <Button variant="ghost" size="icon" onClick={(e) => handleAddToFavorites(e, signal)} className="h-8 w-8">
@@ -414,15 +425,20 @@ export default function SignalsPage() {
               {/* Mobile List View */}
               <div className="lg:hidden divide-y">
                 {filteredSignals.map((signal) => {
-                  const stockInfo = signal.stock ? {
-                    symbol: signal.stock.symbol,
-                    market: signal.stock.market,
-                    exchange: signal.stock.exchange
+                  // MA API는 flat structure, Trendline API는 nested stock object
+                  const stockName = signal.name || signal.stock?.name || '종목명 없음';
+                  const stockSymbol = signal.symbol || signal.stock?.symbol || '';
+                  const stockExchange = signal.exchange || signal.stock?.exchange || signal.stock?.market || '';
+
+                  const stockInfo = stockSymbol ? {
+                    symbol: stockSymbol,
+                    market: signal.stock?.market || 'US',
+                    exchange: stockExchange
                   } : null;
 
                   let ma90Diff: number | null = null;
                   try {
-                    const details = signal.details ? JSON.parse(signal.details) : null;
+                    const details = typeof signal.details === 'string' ? JSON.parse(signal.details) : signal.details;
                     if (details?.sma_90_ratio) ma90Diff = details.sma_90_ratio - 100;
                   } catch {}
 
@@ -439,13 +455,13 @@ export default function SignalsPage() {
                         {/* Left: Signal Info */}
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2 mb-0.5">
-                            <span className="font-semibold text-[15px] truncate">{signal.stock?.name || '종목명 없음'}</span>
+                            <span className="font-semibold text-[15px] truncate">{stockName}</span>
                             {getSignalBadge(signal.strategy_name)}
                           </div>
                           <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                            <span>{signal.stock?.symbol}</span>
+                            <span>{stockSymbol}</span>
                             <span className="text-muted-foreground/50">·</span>
-                            <span>{signal.stock?.exchange || signal.stock?.market}</span>
+                            <span>{stockExchange}</span>
                             <span className="text-muted-foreground/50">·</span>
                             <span>{formatShortDate(signal.signal_date)}</span>
                           </div>
