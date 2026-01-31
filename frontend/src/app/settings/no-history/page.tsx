@@ -4,6 +4,10 @@ import { useState } from 'react';
 import { Trash2, AlertTriangle, RefreshCw, Search, ChevronLeft, ChevronRight } from 'lucide-react';
 import { toast } from 'sonner';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import { Badge } from '@/components/ui/badge';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -127,94 +131,96 @@ export default function NoHistoryStocksPage() {
     : stocks;
 
   return (
-    <div className="p-6">
-      <div className="max-w-4xl mx-auto space-y-6">
-        {/* Header */}
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-bold text-foreground">데이터 없는 종목</h1>
-            <p className="text-sm text-muted-foreground mt-1">
-              히스토리 데이터가 수집되지 않은 종목 목록입니다.
-            </p>
-          </div>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => refetch()}
-              disabled={isLoading}
-              className="flex items-center gap-2 px-3 py-2 text-sm border border-border rounded-lg hover:bg-muted transition-colors"
-            >
-              <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
-              새로고침
-            </button>
-            {totalCount > 0 && (
-              <AlertDialog>
-                <AlertDialogTrigger asChild>
-                  <button
-                    disabled={isDeleting}
-                    className="flex items-center gap-2 px-4 py-2 bg-destructive text-destructive-foreground rounded-lg hover:bg-destructive/90 transition-colors disabled:opacity-50"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                    전체 삭제 ({totalCount}개)
-                  </button>
-                </AlertDialogTrigger>
-                <AlertDialogContent>
-                  <AlertDialogHeader>
-                    <AlertDialogTitle className="flex items-center gap-2">
-                      <AlertTriangle className="w-5 h-5 text-destructive" />
-                      전체 삭제 확인
-                    </AlertDialogTitle>
-                    <AlertDialogDescription>
-                      <span className="font-semibold text-foreground">{totalCount}개</span> 종목을 모두 삭제하시겠습니까?
-                      <br /><br />
-                      이 작업은 되돌릴 수 없으며, 다음 데이터가 함께 삭제됩니다:
-                      <ul className="list-disc list-inside mt-2 text-sm">
-                        <li>시그널 분석 데이터</li>
-                        <li>태그 지정 내역</li>
-                        <li>수집 로그</li>
-                      </ul>
-                    </AlertDialogDescription>
-                  </AlertDialogHeader>
-                  <AlertDialogFooter>
-                    <AlertDialogCancel>취소</AlertDialogCancel>
-                    <AlertDialogAction
-                      onClick={handleDeleteAll}
-                      className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                    >
-                      {isDeleting ? '삭제 중...' : '전체 삭제'}
-                    </AlertDialogAction>
-                  </AlertDialogFooter>
-                </AlertDialogContent>
-              </AlertDialog>
-            )}
-          </div>
+    <div className="space-y-6">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-foreground">데이터 없는 종목</h1>
+          <p className="text-sm text-muted-foreground mt-1">
+            히스토리 데이터가 수집되지 않은 종목 목록입니다.
+          </p>
         </div>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => refetch()}
+            disabled={isLoading}
+          >
+            <RefreshCw className={`w-4 h-4 mr-2 ${isLoading ? 'animate-spin' : ''}`} />
+            새로고침
+          </Button>
+          {totalCount > 0 && (
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button variant="destructive" size="sm" disabled={isDeleting}>
+                  <Trash2 className="w-4 h-4 mr-2" />
+                  전체 삭제 ({totalCount}개)
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle className="flex items-center gap-2">
+                    <AlertTriangle className="w-5 h-5 text-destructive" />
+                    전체 삭제 확인
+                  </AlertDialogTitle>
+                  <AlertDialogDescription>
+                    <span className="font-semibold text-foreground">{totalCount}개</span> 종목을 모두 삭제하시겠습니까?
+                    <br /><br />
+                    이 작업은 되돌릴 수 없으며, 다음 데이터가 함께 삭제됩니다:
+                    <ul className="list-disc list-inside mt-2 text-sm">
+                      <li>시그널 분석 데이터</li>
+                      <li>태그 지정 내역</li>
+                      <li>수집 로그</li>
+                    </ul>
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>취소</AlertDialogCancel>
+                  <AlertDialogAction
+                    onClick={handleDeleteAll}
+                    className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                  >
+                    {isDeleting ? '삭제 중...' : '전체 삭제'}
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+          )}
+        </div>
+      </div>
 
-        {/* 통계 */}
-        <div className="grid grid-cols-2 gap-4">
-          <div className="bg-card border border-border rounded-lg p-4">
+      {/* 통계 */}
+      <div className="grid grid-cols-2 gap-4">
+        <Card>
+          <CardContent className="p-4">
             <p className="text-sm text-muted-foreground">총 종목 수</p>
             <p className="text-2xl font-bold text-foreground">{totalCount}</p>
-          </div>
-          <div className="bg-card border border-border rounded-lg p-4">
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-4">
             <p className="text-sm text-muted-foreground">현재 페이지</p>
             <p className="text-2xl font-bold text-foreground">{page} / {totalPages}</p>
-          </div>
-        </div>
+          </CardContent>
+        </Card>
+      </div>
 
-        {/* 검색 */}
-        <div className="relative">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-          <input
-            type="text"
-            placeholder="현재 페이지에서 검색..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-10 pr-4 py-2 bg-card border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50"
-          />
-        </div>
+      {/* 검색 */}
+      <div className="relative">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+        <Input
+          type="text"
+          placeholder="현재 페이지에서 검색..."
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          className="pl-10"
+        />
+      </div>
 
-        {/* 종목 목록 */}
-        <div className="bg-card border border-border rounded-lg overflow-hidden">
+      {/* 종목 목록 */}
+      <Card>
+        <CardContent className="p-0">
           {isLoading ? (
             <div className="flex items-center justify-center py-12">
               <RefreshCw className="w-6 h-6 animate-spin text-muted-foreground" />
@@ -246,24 +252,22 @@ export default function NoHistoryStocksPage() {
                         {stock.symbol}
                       </td>
                       <td className="px-4 py-3 text-center">
-                        <span className="px-2 py-1 rounded-full text-xs font-medium bg-secondary text-secondary-foreground">
-                          {stock.market}
-                        </span>
+                        <Badge variant="secondary">{stock.market}</Badge>
                       </td>
                       <td className="px-4 py-3 text-center">
                         {stock.signal_count > 0 ? (
-                          <span className="text-orange-600 dark:text-orange-400 font-medium">
+                          <Badge variant="outline" className="bg-orange-500/10 text-orange-600 dark:text-orange-400 border-orange-500/30">
                             {stock.signal_count}
-                          </span>
+                          </Badge>
                         ) : (
                           <span className="text-muted-foreground">-</span>
                         )}
                       </td>
                       <td className="px-4 py-3 text-center">
                         {stock.tag_count > 0 ? (
-                          <span className="text-purple-600 dark:text-purple-400 font-medium">
+                          <Badge variant="outline" className="bg-purple-500/10 text-purple-600 dark:text-purple-400 border-purple-500/30">
                             {stock.tag_count}
-                          </span>
+                          </Badge>
                         ) : (
                           <span className="text-muted-foreground">-</span>
                         )}
@@ -271,12 +275,13 @@ export default function NoHistoryStocksPage() {
                       <td className="px-4 py-3 text-center">
                         <AlertDialog>
                           <AlertDialogTrigger asChild>
-                            <button
-                              className="p-1.5 rounded-md text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
-                              title="삭제"
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-8 w-8 p-0 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
                             >
                               <Trash2 className="w-4 h-4" />
-                            </button>
+                            </Button>
                           </AlertDialogTrigger>
                           <AlertDialogContent>
                             <AlertDialogHeader>
@@ -303,57 +308,57 @@ export default function NoHistoryStocksPage() {
               </table>
             </div>
           )}
-        </div>
+        </CardContent>
+      </Card>
 
-        {/* 페이지네이션 */}
-        {totalPages > 1 && (
-          <div className="flex items-center justify-center gap-2">
-            <button
-              onClick={() => setPage(p => Math.max(1, p - 1))}
-              disabled={page === 1}
-              className="flex items-center gap-1 px-3 py-2 text-sm border border-border rounded-lg hover:bg-muted transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              <ChevronLeft className="w-4 h-4" />
-              이전
-            </button>
-            <div className="flex items-center gap-1">
-              {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
-                let pageNum;
-                if (totalPages <= 5) {
-                  pageNum = i + 1;
-                } else if (page <= 3) {
-                  pageNum = i + 1;
-                } else if (page >= totalPages - 2) {
-                  pageNum = totalPages - 4 + i;
-                } else {
-                  pageNum = page - 2 + i;
-                }
-                return (
-                  <button
-                    key={pageNum}
-                    onClick={() => setPage(pageNum)}
-                    className={`w-10 h-10 text-sm rounded-lg transition-colors ${
-                      page === pageNum
-                        ? 'bg-primary text-primary-foreground'
-                        : 'border border-border hover:bg-muted'
-                    }`}
-                  >
-                    {pageNum}
-                  </button>
-                );
-              })}
-            </div>
-            <button
-              onClick={() => setPage(p => Math.min(totalPages, p + 1))}
-              disabled={page === totalPages}
-              className="flex items-center gap-1 px-3 py-2 text-sm border border-border rounded-lg hover:bg-muted transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              다음
-              <ChevronRight className="w-4 h-4" />
-            </button>
+      {/* 페이지네이션 */}
+      {totalPages > 1 && (
+        <div className="flex items-center justify-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setPage(p => Math.max(1, p - 1))}
+            disabled={page === 1}
+          >
+            <ChevronLeft className="w-4 h-4 mr-1" />
+            이전
+          </Button>
+          <div className="flex items-center gap-1">
+            {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+              let pageNum;
+              if (totalPages <= 5) {
+                pageNum = i + 1;
+              } else if (page <= 3) {
+                pageNum = i + 1;
+              } else if (page >= totalPages - 2) {
+                pageNum = totalPages - 4 + i;
+              } else {
+                pageNum = page - 2 + i;
+              }
+              return (
+                <Button
+                  key={pageNum}
+                  variant={page === pageNum ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => setPage(pageNum)}
+                  className="w-10"
+                >
+                  {pageNum}
+                </Button>
+              );
+            })}
           </div>
-        )}
-      </div>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+            disabled={page === totalPages}
+          >
+            다음
+            <ChevronRight className="w-4 h-4 ml-1" />
+          </Button>
+        </div>
+      )}
     </div>
   );
 }

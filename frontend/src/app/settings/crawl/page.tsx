@@ -6,6 +6,9 @@ import { toast } from 'sonner';
 import { useAuth } from '@/contexts/AuthContext';
 import { useQuery } from '@tanstack/react-query';
 import { useTimezone } from '@/hooks/useTimezone';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
 
 interface TaskProgress {
   task_id: string;
@@ -207,148 +210,156 @@ export default function StockCrawlPage() {
 
       {/* 진행 상황 */}
       {showProgress && progress && (
-        <div className={`border rounded-lg p-4 ${
+        <Card className={
           progress.status === 'completed'
-            ? 'bg-green-500/10 border-green-500/30'
+            ? 'border-green-500/30 bg-green-500/10'
             : progress.status === 'failed' || progress.status === 'cancelled'
-            ? 'bg-red-500/10 border-red-500/30'
-            : 'bg-primary/10 border-primary/30'
-        }`}>
-          <div className="space-y-3">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                {progress.status === 'running' ? (
-                  <RefreshCw className="h-4 w-4 text-primary animate-spin" />
-                ) : progress.status === 'completed' ? (
-                  <div className="h-4 w-4 rounded-full bg-green-500 flex items-center justify-center">
-                    <span className="text-white text-[10px]">✓</span>
-                  </div>
-                ) : (
-                  <StopCircle className="h-4 w-4 text-red-500" />
-                )}
-                <div>
-                  <h4 className="text-sm font-semibold text-foreground">
-                    {progress.status === 'running' ? '수집 진행 중' :
-                     progress.status === 'completed' ? '수집 완료' :
-                     progress.status === 'cancelled' ? '수집 취소됨' : '수집 실패'}
-                  </h4>
-                  <p className="text-xs text-muted-foreground">{progress.message}</p>
-                </div>
-              </div>
-              <div className="flex items-center gap-3">
-                {progress.status === 'running' && (
-                  <button
-                    onClick={handleCancel}
-                    className="flex items-center gap-1 px-2 py-1 text-xs bg-red-500/10 hover:bg-red-500/20 text-red-600 dark:text-red-400 rounded transition-colors"
-                  >
-                    <StopCircle className="w-3 h-3" />
-                    취소
-                  </button>
-                )}
-                {progress.status === 'completed' && (
-                  <div className="text-right text-sm">
-                    <span className="text-green-600 dark:text-green-400 font-medium">
-                      {progress.success_count}개 성공
-                    </span>
-                    {progress.failed_count > 0 && (
-                      <span className="text-red-600 dark:text-red-400 ml-2">
-                        {progress.failed_count}개 실패
-                      </span>
-                    )}
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {progress.status === 'running' && (
-              <div className="flex items-center gap-1.5 text-xs text-blue-600 dark:text-blue-400 bg-blue-500/10 px-2 py-1 rounded w-fit">
-                <CloudOff className="w-3 h-3" />
-                브라우저를 닫아도 작업이 계속 실행됩니다
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* 실행 카드 */}
-      <div className="bg-card border border-border rounded-lg p-6">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <RefreshCw className="w-5 h-5 text-primary" />
-            <div>
-              <h2 className="font-semibold text-foreground">주식 목록 업데이트</h2>
-              <p className="text-sm text-muted-foreground">
-                약 20초 소요 · 10분 쿨타임
-              </p>
-            </div>
-          </div>
-          <button
-            onClick={handleStart}
-            disabled={isRunning}
-            className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {isRunning ? (
-              <RefreshCw className="w-4 h-4 animate-spin" />
-            ) : (
-              <Play className="w-4 h-4" />
-            )}
-            {isRunning ? '수집 중...' : '수집 시작'}
-          </button>
-        </div>
-      </div>
-
-      {/* 히스토리 */}
-      {logs && logs.length > 0 && (
-        <div className="bg-card border border-border rounded-lg p-6">
-          <h3 className="text-sm font-semibold text-foreground mb-4 flex items-center gap-2">
-            <Clock className="w-4 h-4" />
-            수집 기록
-          </h3>
-          <div className="space-y-2">
-            {logs.map((log) => (
-              <div
-                key={log.id}
-                className={`flex items-center justify-between text-sm px-4 py-3 rounded-lg ${
-                  log.status === 'completed'
-                    ? 'bg-green-500/5'
-                    : log.status === 'running'
-                    ? 'bg-blue-500/5'
-                    : log.status === 'cancelled'
-                    ? 'bg-yellow-500/5'
-                    : 'bg-red-500/5'
-                }`}
-              >
-                <div className="flex items-center gap-3">
-                  <span className={`text-lg ${
-                    log.status === 'completed' ? 'text-green-500' :
-                    log.status === 'running' ? 'text-blue-500' :
-                    log.status === 'cancelled' ? 'text-yellow-500' : 'text-red-500'
-                  }`}>
-                    {log.status === 'completed' ? '✓' :
-                     log.status === 'running' ? '⟳' :
-                     log.status === 'cancelled' ? '⊘' : '✗'}
-                  </span>
-                  <span className="text-foreground">
-                    {formatTableDateTime(log.started_at)}
-                  </span>
-                </div>
-                <div>
-                  {log.status === 'completed' ? (
-                    <span className="text-green-600 dark:text-green-400 font-medium">
-                      {log.success_count}개 종목
-                    </span>
-                  ) : log.status === 'running' ? (
-                    <span className="text-blue-500">진행 중...</span>
-                  ) : log.status === 'cancelled' ? (
-                    <span className="text-yellow-600 dark:text-yellow-400">취소됨</span>
+            ? 'border-red-500/30 bg-red-500/10'
+            : 'border-primary/30 bg-primary/10'
+        }>
+          <CardContent className="pt-4">
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  {progress.status === 'running' ? (
+                    <RefreshCw className="h-4 w-4 text-primary animate-spin" />
+                  ) : progress.status === 'completed' ? (
+                    <div className="h-4 w-4 rounded-full bg-green-500 flex items-center justify-center">
+                      <span className="text-white text-[10px]">✓</span>
+                    </div>
                   ) : (
-                    <span className="text-red-500">실패</span>
+                    <StopCircle className="h-4 w-4 text-red-500" />
+                  )}
+                  <div>
+                    <h4 className="text-sm font-semibold text-foreground">
+                      {progress.status === 'running' ? '수집 진행 중' :
+                       progress.status === 'completed' ? '수집 완료' :
+                       progress.status === 'cancelled' ? '수집 취소됨' : '수집 실패'}
+                    </h4>
+                    <p className="text-xs text-muted-foreground">{progress.message}</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-3">
+                  {progress.status === 'running' && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={handleCancel}
+                      className="h-7 text-xs text-red-600 dark:text-red-400 hover:bg-red-500/20"
+                    >
+                      <StopCircle className="w-3 h-3 mr-1" />
+                      취소
+                    </Button>
+                  )}
+                  {progress.status === 'completed' && (
+                    <div className="text-right text-sm">
+                      <Badge variant="outline" className="bg-green-500/10 text-green-600 dark:text-green-400 border-green-500/30">
+                        {progress.success_count}개 성공
+                      </Badge>
+                      {progress.failed_count > 0 && (
+                        <Badge variant="outline" className="ml-2 bg-red-500/10 text-red-600 dark:text-red-400 border-red-500/30">
+                          {progress.failed_count}개 실패
+                        </Badge>
+                      )}
+                    </div>
                   )}
                 </div>
               </div>
-            ))}
+
+              {progress.status === 'running' && (
+                <Badge variant="outline" className="bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/30">
+                  <CloudOff className="w-3 h-3 mr-1" />
+                  브라우저를 닫아도 작업이 계속 실행됩니다
+                </Badge>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* 실행 카드 */}
+      <Card>
+        <CardHeader className="pb-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <RefreshCw className="w-5 h-5 text-primary" />
+              <div>
+                <CardTitle className="text-base">주식 목록 업데이트</CardTitle>
+                <CardDescription>약 20초 소요 · 10분 쿨타임</CardDescription>
+              </div>
+            </div>
+            <Button onClick={handleStart} disabled={isRunning}>
+              {isRunning ? (
+                <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
+              ) : (
+                <Play className="w-4 h-4 mr-2" />
+              )}
+              {isRunning ? '수집 중...' : '수집 시작'}
+            </Button>
           </div>
-        </div>
+        </CardHeader>
+      </Card>
+
+      {/* 히스토리 */}
+      {logs && logs.length > 0 && (
+        <Card>
+          <CardHeader className="pb-4">
+            <CardTitle className="text-sm flex items-center gap-2">
+              <Clock className="w-4 h-4" />
+              수집 기록
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="pt-0">
+            <div className="space-y-2">
+              {logs.map((log) => (
+                <div
+                  key={log.id}
+                  className={`flex items-center justify-between text-sm px-4 py-3 rounded-lg ${
+                    log.status === 'completed'
+                      ? 'bg-green-500/5'
+                      : log.status === 'running'
+                      ? 'bg-blue-500/5'
+                      : log.status === 'cancelled'
+                      ? 'bg-yellow-500/5'
+                      : 'bg-red-500/5'
+                  }`}
+                >
+                  <div className="flex items-center gap-3">
+                    <span className={`text-lg ${
+                      log.status === 'completed' ? 'text-green-500' :
+                      log.status === 'running' ? 'text-blue-500' :
+                      log.status === 'cancelled' ? 'text-yellow-500' : 'text-red-500'
+                    }`}>
+                      {log.status === 'completed' ? '✓' :
+                       log.status === 'running' ? '⟳' :
+                       log.status === 'cancelled' ? '⊘' : '✗'}
+                    </span>
+                    <span className="text-foreground">
+                      {formatTableDateTime(log.started_at)}
+                    </span>
+                  </div>
+                  <div>
+                    {log.status === 'completed' ? (
+                      <Badge variant="outline" className="bg-green-500/10 text-green-600 dark:text-green-400 border-green-500/30">
+                        {log.success_count}개 종목
+                      </Badge>
+                    ) : log.status === 'running' ? (
+                      <Badge variant="outline" className="bg-blue-500/10 text-blue-500 border-blue-500/30">
+                        진행 중...
+                      </Badge>
+                    ) : log.status === 'cancelled' ? (
+                      <Badge variant="outline" className="bg-yellow-500/10 text-yellow-600 dark:text-yellow-400 border-yellow-500/30">
+                        취소됨
+                      </Badge>
+                    ) : (
+                      <Badge variant="destructive">실패</Badge>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
       )}
     </div>
   );

@@ -1,11 +1,14 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { TrendingUp, RefreshCw, Clock, StopCircle, CloudOff, Play, Settings2, Target, BarChart3, Trash2, Activity } from 'lucide-react';
+import { TrendingUp, RefreshCw, StopCircle, CloudOff, Target, BarChart3, Trash2, Activity } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '@/contexts/AuthContext';
 import { useQuery } from '@tanstack/react-query';
 import { useTimezone } from '@/hooks/useTimezone';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
 
 interface TaskProgress {
   task_id: string;
@@ -195,172 +198,184 @@ export default function SignalAnalysisPage() {
 
       {/* 진행 상황 */}
       {showProgress && progress && (
-        <div className={`border rounded-lg p-4 ${
+        <Card className={
           progress.status === 'completed'
-            ? 'bg-green-500/10 border-green-500/30'
+            ? 'border-green-500/30 bg-green-500/10'
             : progress.status === 'failed' || progress.status === 'cancelled'
-            ? 'bg-red-500/10 border-red-500/30'
-            : 'bg-primary/10 border-primary/30'
-        }`}>
-          <div className="space-y-3">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                {progress.status === 'running' ? (
-                  <RefreshCw className="h-4 w-4 text-primary animate-spin" />
-                ) : progress.status === 'completed' ? (
-                  <div className="h-4 w-4 rounded-full bg-green-500 flex items-center justify-center">
-                    <span className="text-white text-[10px]">✓</span>
+            ? 'border-red-500/30 bg-red-500/10'
+            : 'border-primary/30 bg-primary/10'
+        }>
+          <CardContent className="pt-4">
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  {progress.status === 'running' ? (
+                    <RefreshCw className="h-4 w-4 text-primary animate-spin" />
+                  ) : progress.status === 'completed' ? (
+                    <div className="h-4 w-4 rounded-full bg-green-500 flex items-center justify-center">
+                      <span className="text-white text-[10px]">✓</span>
+                    </div>
+                  ) : (
+                    <StopCircle className="h-4 w-4 text-red-500" />
+                  )}
+                  <div>
+                    <h4 className="text-sm font-semibold text-foreground">
+                      {progress.status === 'running' ? '분석 진행 중' :
+                       progress.status === 'completed' ? '분석 완료' :
+                       progress.status === 'cancelled' ? '분석 취소됨' : '분석 실패'}
+                    </h4>
+                    <p className="text-xs text-muted-foreground">{progress.message}</p>
                   </div>
-                ) : (
-                  <StopCircle className="h-4 w-4 text-red-500" />
-                )}
-                <div>
-                  <h4 className="text-sm font-semibold text-foreground">
-                    {progress.status === 'running' ? '분석 진행 중' :
-                     progress.status === 'completed' ? '분석 완료' : '분석 중단'}
-                  </h4>
-                  <p className="text-xs text-muted-foreground">{progress.message}</p>
+                </div>
+                <div className="flex items-center gap-3">
+                  {progress.status === 'running' && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={handleCancel}
+                      className="h-7 text-xs text-red-600 dark:text-red-400 hover:bg-red-500/20"
+                    >
+                      <StopCircle className="w-3 h-3 mr-1" />
+                      취소
+                    </Button>
+                  )}
+                  <div className="text-right">
+                    <p className="text-sm font-medium text-foreground">
+                      {progress.current_item} / {progress.total_items}
+                    </p>
+                    <p className="text-xs text-muted-foreground">{progressPercent}%</p>
+                  </div>
                 </div>
               </div>
-              <div className="flex items-center gap-3">
-                {progress.status === 'running' && (
-                  <button
-                    onClick={handleCancel}
-                    className="flex items-center gap-1 px-2 py-1 text-xs bg-red-500/10 hover:bg-red-500/20 text-red-600 dark:text-red-400 rounded transition-colors"
-                  >
-                    <StopCircle className="w-3 h-3" />
-                    취소
-                  </button>
-                )}
-                <div className="text-right">
-                  <p className="text-sm font-medium text-foreground">
-                    {progress.current_item} / {progress.total_items}
-                  </p>
-                  <p className="text-xs text-muted-foreground">{progressPercent}%</p>
-                </div>
+
+              {progress.status === 'running' && (
+                <Badge variant="outline" className="bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/30">
+                  <CloudOff className="w-3 h-3 mr-1" />
+                  브라우저를 닫아도 작업이 계속 실행됩니다
+                </Badge>
+              )}
+
+              {/* 프로그레스 바 */}
+              <div className="w-full bg-muted rounded-full h-2">
+                <div
+                  className={`rounded-full h-2 transition-all duration-300 ${
+                    progress.status === 'completed' ? 'bg-green-500' :
+                    progress.status === 'failed' || progress.status === 'cancelled' ? 'bg-red-500' : 'bg-primary'
+                  }`}
+                  style={{ width: `${progressPercent}%` }}
+                />
               </div>
+
+              {progress.status === 'running' && progress.current_stock_name && (
+                <p className="text-xs text-muted-foreground">
+                  분석 중: <span className="font-medium text-foreground">{progress.current_stock_name}</span>
+                </p>
+              )}
             </div>
-
-            {progress.status === 'running' && (
-              <div className="flex items-center gap-1.5 text-xs text-blue-600 dark:text-blue-400 bg-blue-500/10 px-2 py-1 rounded w-fit">
-                <CloudOff className="w-3 h-3" />
-                브라우저를 닫아도 작업이 계속 실행됩니다
-              </div>
-            )}
-
-            {/* 프로그레스 바 */}
-            <div className="w-full bg-muted rounded-full h-2">
-              <div
-                className={`rounded-full h-2 transition-all duration-300 ${
-                  progress.status === 'completed' ? 'bg-green-500' :
-                  progress.status === 'failed' || progress.status === 'cancelled' ? 'bg-red-500' : 'bg-primary'
-                }`}
-                style={{ width: `${progressPercent}%` }}
-              />
-            </div>
-
-            {progress.status === 'running' && progress.current_stock_name && (
-              <p className="text-xs text-muted-foreground">
-                분석 중: <span className="font-medium text-foreground">{progress.current_stock_name}</span>
-              </p>
-            )}
-          </div>
-        </div>
+          </CardContent>
+        </Card>
       )}
 
       {/* 실행 카드 */}
-      <div className="bg-card border border-border rounded-lg p-6">
-        <div className="flex items-center gap-3 mb-4">
-          <TrendingUp className="w-5 h-5 text-primary" />
-          <div>
-            <h2 className="font-semibold text-foreground">시그널 분석 실행</h2>
-            <p className="text-sm text-muted-foreground">
-              히스토리 데이터 기반 매수 시그널 생성
-            </p>
+      <Card>
+        <CardHeader className="pb-4">
+          <div className="flex items-center gap-3">
+            <TrendingUp className="w-5 h-5 text-primary" />
+            <div>
+              <CardTitle className="text-base">시그널 분석 실행</CardTitle>
+              <CardDescription>히스토리 데이터 기반 매수 시그널 생성</CardDescription>
+            </div>
           </div>
-        </div>
+        </CardHeader>
+        <CardContent className="pt-0">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <Button
+              onClick={() => handleStart('tagged')}
+              disabled={isRunning}
+              className="h-auto py-4 flex-col items-start gap-1"
+            >
+              <div className="flex items-center gap-2 w-full">
+                <Target className="w-5 h-5" />
+                <span className="font-medium">관심 종목 분석</span>
+                {isRunning && analysisMode === 'tagged' && (
+                  <RefreshCw className="w-4 h-4 ml-auto animate-spin" />
+                )}
+              </div>
+              <span className="text-xs opacity-80 pl-7">태그된 종목만 빠르게</span>
+            </Button>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          <button
-            onClick={() => handleStart('tagged')}
-            disabled={isRunning}
-            className="flex items-center gap-3 p-4 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            <Target className="w-5 h-5" />
-            <div className="text-left flex-1">
-              <p className="font-medium">관심 종목 분석</p>
-              <p className="text-xs opacity-80">태그된 종목만 빠르게</p>
-            </div>
-            {isRunning && analysisMode === 'tagged' && (
-              <RefreshCw className="w-4 h-4 animate-spin" />
-            )}
-          </button>
-
-          <button
-            onClick={() => handleStart('all')}
-            disabled={isRunning}
-            className="flex items-center gap-3 p-4 bg-muted hover:bg-muted/80 border border-border rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            <BarChart3 className="w-5 h-5 text-muted-foreground" />
-            <div className="text-left flex-1">
-              <p className="font-medium text-foreground">전체 종목 분석</p>
-              <p className="text-xs text-muted-foreground">모든 종목 대상</p>
-            </div>
-            {isRunning && analysisMode === 'all' && (
-              <RefreshCw className="w-4 h-4 animate-spin text-foreground" />
-            )}
-          </button>
-        </div>
-      </div>
+            <Button
+              variant="outline"
+              onClick={() => handleStart('all')}
+              disabled={isRunning}
+              className="h-auto py-4 flex-col items-start gap-1"
+            >
+              <div className="flex items-center gap-2 w-full">
+                <BarChart3 className="w-5 h-5" />
+                <span className="font-medium">전체 종목 분석</span>
+                {isRunning && analysisMode === 'all' && (
+                  <RefreshCw className="w-4 h-4 ml-auto animate-spin" />
+                )}
+              </div>
+              <span className="text-xs opacity-80 pl-7">모든 종목 대상</span>
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
 
       {/* 현재 상태 카드 */}
-      <div className="bg-card border border-border rounded-lg p-6">
-        <div className="flex items-center justify-between mb-4">
-          <div className="flex items-center gap-3">
-            <Activity className="w-5 h-5 text-muted-foreground" />
-            <h2 className="font-semibold text-foreground">현재 시그널 현황</h2>
+      <Card>
+        <CardHeader className="pb-4">
+          <div className="flex items-center justify-between">
+            <CardTitle className="text-sm flex items-center gap-2">
+              <Activity className="w-4 h-4" />
+              현재 시그널 현황
+            </CardTitle>
+            {(signalData?.total ?? 0) > 0 && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={handleDelete}
+                disabled={isDeleting}
+                className="h-7 text-xs text-red-600 dark:text-red-400 hover:bg-red-500/10"
+              >
+                <Trash2 className="w-3 h-3 mr-1" />
+                {isDeleting ? '삭제 중...' : '전체 삭제'}
+              </Button>
+            )}
           </div>
-          {(signalData?.total ?? 0) > 0 && (
-            <button
-              onClick={handleDelete}
-              disabled={isDeleting}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-red-600 dark:text-red-400 hover:bg-red-500/10 rounded transition-colors disabled:opacity-50"
-            >
-              <Trash2 className="w-3 h-3" />
-              {isDeleting ? '삭제 중...' : '전체 삭제'}
-            </button>
+        </CardHeader>
+        <CardContent className="pt-0">
+          {signalData?.stats ? (
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              <div className="bg-muted/50 rounded-lg p-4 text-center">
+                <p className="text-2xl font-bold text-foreground">{signalData.stats.total_signals}</p>
+                <p className="text-xs text-muted-foreground mt-1">총 시그널</p>
+              </div>
+              <div className="bg-green-500/10 rounded-lg p-4 text-center">
+                <p className="text-2xl font-bold text-green-600 dark:text-green-400">{signalData.stats.positive_returns}</p>
+                <p className="text-xs text-muted-foreground mt-1">수익 중</p>
+              </div>
+              <div className="bg-red-500/10 rounded-lg p-4 text-center">
+                <p className="text-2xl font-bold text-red-600 dark:text-red-400">{signalData.stats.negative_returns}</p>
+                <p className="text-xs text-muted-foreground mt-1">손실 중</p>
+              </div>
+              <div className="bg-muted/50 rounded-lg p-4 text-center">
+                <p className="text-sm font-medium text-foreground">
+                  {signalData.analyzed_at ? formatTableDateTime(signalData.analyzed_at) : '-'}
+                </p>
+                <p className="text-xs text-muted-foreground mt-1">마지막 분석</p>
+              </div>
+            </div>
+          ) : (
+            <div className="text-center py-8 text-muted-foreground">
+              <Activity className="w-8 h-8 mx-auto mb-2 opacity-50" />
+              <p className="text-sm">분석된 시그널이 없습니다</p>
+              <p className="text-xs mt-1">위에서 분석을 실행해주세요</p>
+            </div>
           )}
-        </div>
-
-        {signalData?.stats ? (
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            <div className="bg-muted/50 rounded-lg p-4 text-center">
-              <p className="text-2xl font-bold text-foreground">{signalData.stats.total_signals}</p>
-              <p className="text-xs text-muted-foreground mt-1">총 시그널</p>
-            </div>
-            <div className="bg-green-500/10 rounded-lg p-4 text-center">
-              <p className="text-2xl font-bold text-green-600 dark:text-green-400">{signalData.stats.positive_returns}</p>
-              <p className="text-xs text-muted-foreground mt-1">수익 중</p>
-            </div>
-            <div className="bg-red-500/10 rounded-lg p-4 text-center">
-              <p className="text-2xl font-bold text-red-600 dark:text-red-400">{signalData.stats.negative_returns}</p>
-              <p className="text-xs text-muted-foreground mt-1">손실 중</p>
-            </div>
-            <div className="bg-muted/50 rounded-lg p-4 text-center">
-              <p className="text-sm font-medium text-foreground">
-                {signalData.analyzed_at ? formatTableDateTime(signalData.analyzed_at) : '-'}
-              </p>
-              <p className="text-xs text-muted-foreground mt-1">마지막 분석</p>
-            </div>
-          </div>
-        ) : (
-          <div className="text-center py-8 text-muted-foreground">
-            <Activity className="w-8 h-8 mx-auto mb-2 opacity-50" />
-            <p className="text-sm">분석된 시그널이 없습니다</p>
-            <p className="text-xs mt-1">위에서 분석을 실행해주세요</p>
-          </div>
-        )}
-      </div>
+        </CardContent>
+      </Card>
     </div>
   );
 }
