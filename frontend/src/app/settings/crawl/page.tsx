@@ -272,6 +272,19 @@ export default function StockCrawlPage() {
                   브라우저를 닫아도 작업이 계속 실행됩니다
                 </Badge>
               )}
+
+              {/* 프로그레스 바 */}
+              {progress.total_items > 0 && (
+                <div className="w-full bg-muted rounded-full h-2">
+                  <div
+                    className={`rounded-full h-2 transition-all duration-300 ${
+                      progress.status === 'completed' ? 'bg-green-500' :
+                      progress.status === 'failed' || progress.status === 'cancelled' ? 'bg-red-500' : 'bg-primary'
+                    }`}
+                    style={{ width: `${Math.round((progress.current_item / Math.max(progress.total_items, 1)) * 100)}%` }}
+                  />
+                </div>
+              )}
             </div>
           </CardContent>
         </Card>

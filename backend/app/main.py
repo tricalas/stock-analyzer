@@ -819,11 +819,22 @@ def run_background_crawl(market: str, task_id: str = None):
         # TaskProgress 업데이트: 시작
         if task_id:
             db.query(TaskProgress).filter(TaskProgress.task_id == task_id).update({
-                "message": f"{market} 시장 크롤링 중..."
+                "message": f"Naver Finance API에서 {market} 종목 가져오는 중... (약 20초 소요)",
+                "current_item": 0,
+                "total_items": 100  # 예상치
             })
             db.commit()
 
         result = crawler_manager.update_stock_list(market)
+
+        # 처리 완료 후
+        if task_id:
+            db.query(TaskProgress).filter(TaskProgress.task_id == task_id).update({
+                "message": "데이터베이스 저장 중...",
+                "current_item": 50,
+                "total_items": 100
+            })
+            db.commit()
 
         # ETF 필터링 정보 포함한 메시지 생성
         etf_info = ""
