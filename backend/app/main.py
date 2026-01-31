@@ -2879,10 +2879,42 @@ def get_ma_signals(
         "signals": result_signals,
         "total": total,
         "stats": {
-            "positive_count": positive_count,
-            "negative_count": negative_count,
+            "total_signals": total,
+            "positive_returns": positive_count,
+            "negative_returns": negative_count,
             "avg_return": round(avg_return, 2)
-        }
+        },
+        "analyzed_at": max((s.analyzed_at for s in all_signals if s.analyzed_at), default=None)
+    }
+
+
+@app.delete("/api/signals/ma")
+def delete_ma_signals(
+    db: Session = Depends(get_db),
+    current_user: Optional[User] = Depends(get_optional_current_user)
+):
+    """
+    모든 MA 시그널 삭제
+    """
+    ma_strategies = [
+        'golden_cross', 'death_cross',
+        'ma_support', 'ma_resistance',
+        'ma_breakout_up', 'ma_breakout_down',
+        'ma_bullish_alignment', 'ma_bearish_alignment'
+    ]
+
+    deleted_count = db.query(StockSignal).filter(
+        StockSignal.strategy_name.in_(ma_strategies)
+    ).delete(synchronize_session=False)
+
+    db.commit()
+
+    logger.info(f"Deleted {deleted_count} MA signals")
+
+    return {
+        "success": True,
+        "message": f"{deleted_count}개 MA 시그널이 삭제되었습니다",
+        "deleted_count": deleted_count
     }
 
 
