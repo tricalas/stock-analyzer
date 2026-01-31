@@ -1,6 +1,6 @@
 from pydantic import BaseModel, Field, field_validator
 from datetime import datetime, date
-from typing import Optional, List
+from typing import Optional, List, Dict
 import re
 
 class StockBase(BaseModel):
