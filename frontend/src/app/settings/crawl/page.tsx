@@ -125,6 +125,7 @@ export default function StockCrawlPage() {
         setTaskId(null);
       }, 3000);
     } else if (progress?.status === 'cancelled') {
+      refetchLogs();
       toast.info('수집이 취소되었습니다');
       setTimeout(() => {
         setShowProgress(false);
@@ -312,15 +313,20 @@ export default function StockCrawlPage() {
                     ? 'bg-green-500/5'
                     : log.status === 'running'
                     ? 'bg-blue-500/5'
+                    : log.status === 'cancelled'
+                    ? 'bg-yellow-500/5'
                     : 'bg-red-500/5'
                 }`}
               >
                 <div className="flex items-center gap-3">
                   <span className={`text-lg ${
                     log.status === 'completed' ? 'text-green-500' :
-                    log.status === 'running' ? 'text-blue-500' : 'text-red-500'
+                    log.status === 'running' ? 'text-blue-500' :
+                    log.status === 'cancelled' ? 'text-yellow-500' : 'text-red-500'
                   }`}>
-                    {log.status === 'completed' ? '✓' : log.status === 'running' ? '⟳' : '✗'}
+                    {log.status === 'completed' ? '✓' :
+                     log.status === 'running' ? '⟳' :
+                     log.status === 'cancelled' ? '⊘' : '✗'}
                   </span>
                   <span className="text-foreground">
                     {formatTableDateTime(log.started_at)}
@@ -333,6 +339,8 @@ export default function StockCrawlPage() {
                     </span>
                   ) : log.status === 'running' ? (
                     <span className="text-blue-500">진행 중...</span>
+                  ) : log.status === 'cancelled' ? (
+                    <span className="text-yellow-600 dark:text-yellow-400">취소됨</span>
                   ) : (
                     <span className="text-red-500">실패</span>
                   )}
