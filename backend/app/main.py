@@ -428,13 +428,21 @@ def get_stocks(
 
     # DB 전체 종목 수 (첫 페이지에서만 계산)
     total_in_db = None
+    market_counts = None
     if skip == 0:
         total_in_db = db.query(Stock).filter(Stock.is_active == True).count()
+        # 마켓별 종목 수
+        from sqlalchemy import func
+        market_count_query = db.query(
+            Stock.market, func.count(Stock.id)
+        ).filter(Stock.is_active == True).group_by(Stock.market).all()
+        market_counts = {m: c for m, c in market_count_query}
 
     # 결과 생성 및 캐시에 저장
     result = {
         "total": total,
         "total_in_db": total_in_db,
+        "market_counts": market_counts,
         "stocks": stock_list,
         "page": skip // limit + 1,
         "page_size": limit

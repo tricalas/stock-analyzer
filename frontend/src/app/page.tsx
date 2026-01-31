@@ -160,6 +160,7 @@ export default function Home() {
 
   const stocks = data?.pages.flatMap(page => page.stocks || []) || [];
   const totalInDb = data?.pages[0]?.total_in_db;
+  const marketCounts = data?.pages[0]?.market_counts;
 
   return (
     <AppLayout>
@@ -178,8 +179,13 @@ export default function Home() {
             </div>
             <div className="flex items-center gap-3">
               {totalInDb && (
-                <span className="text-sm font-medium text-primary">
-                  전체 {totalInDb.toLocaleString()}종목
+                <span className="text-sm font-medium">
+                  <span className="text-primary">{totalInDb.toLocaleString()}종목</span>
+                  {marketCounts && (
+                    <span className="text-muted-foreground ml-1">
+                      (US {marketCounts.US?.toLocaleString() || 0} / KR {marketCounts.KR?.toLocaleString() || 0})
+                    </span>
+                  )}
                 </span>
               )}
               {lastUpdateTime && (
@@ -209,8 +215,13 @@ export default function Home() {
                   onSortChange={handleSortChange}
                 />
                 {totalInDb && (
-                  <span className="text-xs font-medium text-primary">
-                    {totalInDb.toLocaleString()}종목
+                  <span className="text-xs font-medium">
+                    <span className="text-primary">{totalInDb.toLocaleString()}</span>
+                    {marketCounts && (
+                      <span className="text-muted-foreground">
+                        ({marketCounts.US || 0}/{marketCounts.KR || 0})
+                      </span>
+                    )}
                   </span>
                 )}
               </div>

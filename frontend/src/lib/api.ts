@@ -110,6 +110,7 @@ export interface Tag {
 export interface StockListResponse {
   total: number;
   total_in_db?: number;  // DB 전체 종목 수
+  market_counts?: Record<string, number>;  // 마켓별 종목 수 (US, KR)
   stocks: Stock[];
   page: number;
   page_size: number;

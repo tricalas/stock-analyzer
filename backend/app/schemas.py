@@ -155,6 +155,7 @@ class PaginationParams(BaseModel):
 class StockListResponse(BaseModel):
     total: int
     total_in_db: Optional[int] = None  # DB 전체 종목 수
+    market_counts: Optional[Dict[str, int]] = None  # 마켓별 종목 수 (US, KR)
     stocks: List[StockWithLatestPrice]
     page: int
     page_size: int
