@@ -23,6 +23,42 @@ class KISHistoryCrawler:
     def __init__(self):
         self.kis_client = get_kis_client()
 
+    def _calculate_and_update_ma90(self, stock_id: int, db: Session) -> Optional[float]:
+        """
+        StockPriceHistory에서 90일 이동평균 계산 후 Stock.ma90_price 업데이트
+
+        Args:
+            stock_id: 종목 ID
+            db: 데이터베이스 세션
+
+        Returns:
+            계산된 MA90 가격 (60일 미만 데이터면 None)
+        """
+        # 최근 90일 종가 조회 (최신순)
+        prices = db.query(StockPriceHistory.close_price).filter(
+            StockPriceHistory.stock_id == stock_id
+        ).order_by(StockPriceHistory.date.desc()).limit(90).all()
+
+        if len(prices) < 60:  # 최소 60일 데이터 필요
+            logger.debug(f"Stock {stock_id}: Not enough data for MA90 ({len(prices)} days)")
+            return None
+
+        # 평균 계산
+        close_prices = [p.close_price for p in prices if p.close_price is not None]
+        if not close_prices:
+            return None
+
+        ma90 = sum(close_prices) / len(close_prices)
+
+        # Stock 테이블 업데이트
+        db.query(Stock).filter(Stock.id == stock_id).update(
+            {"ma90_price": ma90},
+            synchronize_session=False
+        )
+
+        logger.debug(f"Stock {stock_id}: MA90 updated to {ma90:.2f}")
+        return ma90
+
     def _get_last_trading_day(self) -> date:
         """
         가장 최근 거래일 반환 (미국 주식 기준)
@@ -158,6 +194,9 @@ class KISHistoryCrawler:
                 StockPriceHistory.stock_id == stock.id
             ).count()
 
+            # MA90 계산 (히스토리 저장 후)
+            ma90 = self._calculate_and_update_ma90(stock.id, db)
+
             # 직접 UPDATE 쿼리로 확실하게 업데이트 (history_updated_at 포함)
             db.query(Stock).filter(Stock.id == stock.id).update(
                 {
@@ -168,7 +207,8 @@ class KISHistoryCrawler:
             )
             db.commit()
 
-            logger.info(f"Saved {saved_count} records for {stock.symbol} (total: {total_records}, count updated)")
+            ma90_info = f", MA90: {ma90:.2f}" if ma90 else ""
+            logger.info(f"Saved {saved_count} records for {stock.symbol} (total: {total_records}{ma90_info})")
 
             return {
                 "success": True,

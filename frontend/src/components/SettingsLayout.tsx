@@ -3,7 +3,7 @@
 import { useEffect } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { Users, Tag, Database, EyeOff, Shield, TrendingUp, Trash2 } from 'lucide-react';
+import { Users, Tag, Database, EyeOff, Shield, TrendingUp, Trash2, RefreshCw } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from 'sonner';
 import { Card, CardContent } from '@/components/ui/card';
@@ -16,7 +16,8 @@ interface SettingsLayoutProps {
 
 const adminMenuItems = [
   { name: '시그널 분석', href: '/settings/signals', icon: TrendingUp },
-  { name: '데이터 수집', href: '/settings/data', icon: Database },
+  { name: '종목 수집', href: '/settings/crawl', icon: RefreshCw },
+  { name: '히스토리 수집', href: '/settings/data', icon: Database },
   { name: '데이터 없음', href: '/settings/no-history', icon: Trash2 },
   { name: '태그 관리', href: '/settings/tags', icon: Tag },
   { name: '사용자 관리', href: '/settings/users', icon: Users },
