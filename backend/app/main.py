@@ -3077,6 +3077,14 @@ def cancel_task(
     task.status = "cancelled"
     task.message = "사용자에 의해 취소됨"
     task.completed_at = datetime.utcnow()
+
+    # StockCrawlLog도 업데이트 (stock_crawl 타입인 경우)
+    if task.task_type == "stock_crawl":
+        db.query(StockCrawlLog).filter(StockCrawlLog.task_id == task_id).update({
+            "status": "cancelled",
+            "completed_at": datetime.utcnow()
+        })
+
     db.commit()
 
     logger.info(f"🛑 Task {task_id} cancelled by user")
