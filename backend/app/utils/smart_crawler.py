@@ -77,11 +77,11 @@ class SmartCrawler:
         }
 
     def _smart_delay(self):
-        """인간적인 지연 패턴"""
+        """인간적인 지연 패턴 (최적화)"""
         current_time = time.time()
 
-        # 최소 간격 확보 (1-3초)
-        min_interval = random.uniform(1.0, 3.0)
+        # 최소 간격 확보 (0.3-0.8초)
+        min_interval = random.uniform(0.3, 0.8)
         time_since_last = current_time - self.last_request_time
 
         if time_since_last < min_interval:
@@ -90,21 +90,11 @@ class SmartCrawler:
 
         # 요청 횟수에 따른 추가 지연
         if self.request_count > 0:
-            if self.request_count % 10 == 0:
-                # 10회마다 긴 휴식 (5-15초)
-                long_break = random.uniform(5.0, 15.0)
-                logger.info(f"Taking a long break: {long_break:.1f}s after {self.request_count} requests")
-                time.sleep(long_break)
-            elif self.request_count % 5 == 0:
-                # 5회마다 중간 휴식 (2-5초)
-                medium_break = random.uniform(2.0, 5.0)
-                time.sleep(medium_break)
-
-        # 시간대별 조절 (점심시간, 퇴근시간 등에 더 느리게)
-        current_hour = datetime.now().hour
-        if current_hour in [12, 13, 18, 19]:  # 점심시간, 퇴근시간
-            extra_delay = random.uniform(1.0, 3.0)
-            time.sleep(extra_delay)
+            if self.request_count % 20 == 0:
+                # 20회마다 짧은 휴식 (2-4초)
+                short_break = random.uniform(2.0, 4.0)
+                logger.info(f"Taking a short break: {short_break:.1f}s after {self.request_count} requests")
+                time.sleep(short_break)
 
         self.last_request_time = time.time()
 
@@ -125,10 +115,10 @@ class SmartCrawler:
             logger.warning("Daily request limit reached. Stopping for today.")
             raise Exception("Daily request limit exceeded")
 
-        # 연속 요청 제한 (50회 후 긴 휴식)
-        if self.request_count >= 50:
-            logger.info("Taking extended break after 50 continuous requests")
-            time.sleep(random.uniform(300, 600))  # 5-10분 휴식
+        # 연속 요청 제한 (100회 후 짧은 휴식)
+        if self.request_count >= 100:
+            logger.info("Taking short break after 100 continuous requests")
+            time.sleep(random.uniform(10, 20))  # 10-20초 휴식
             self.request_count = 0
 
     def safe_request(self, url: str, timeout: int = 10) -> Optional[requests.Response]:
@@ -152,8 +142,8 @@ class SmartCrawler:
 
             # 응답 상태 확인
             if response.status_code == 429:
-                logger.warning("Rate limited. Taking extended break.")
-                time.sleep(random.uniform(60, 120))  # 1-2분 대기
+                logger.warning("Rate limited. Taking short break.")
+                time.sleep(random.uniform(10, 20))  # 10-20초 대기
                 return None
 
             response.raise_for_status()
@@ -190,9 +180,9 @@ class SmartCrawler:
 
             results.extend(batch_results)
 
-            # 배치 간 긴 휴식
+            # 배치 간 짧은 휴식
             if i + batch_size < len(urls):
-                batch_break = random.uniform(10.0, 30.0)
+                batch_break = random.uniform(2.0, 5.0)
                 logger.info(f"Taking batch break: {batch_break:.1f}s")
                 time.sleep(batch_break)
 
