@@ -17,16 +17,16 @@
 |------|------|
 | strategy_name | `golden_cross`, `death_cross` |
 | signal_type | buy (골든), sell (데드) |
-| 조건 | 50일 MA가 200일 MA를 상향/하향 돌파 |
-| 의미 | 중장기 추세 전환 신호 |
+| 조건 | 20일 MA가 60일 MA를 상향/하향 돌파 |
+| 의미 | 중단기 추세 전환 신호 |
 
 **감지 로직:**
 ```python
-# 골든크로스: 50일선이 200일선 위로 교차
-golden_cross = (ma50[i-1] < ma200[i-1]) and (ma50[i] > ma200[i])
+# 골든크로스: 20일선이 60일선 위로 교차
+golden_cross = (ma20[i-1] < ma60[i-1]) and (ma20[i] > ma60[i])
 
-# 데드크로스: 50일선이 200일선 아래로 교차
-death_cross = (ma50[i-1] > ma200[i-1]) and (ma50[i] < ma200[i])
+# 데드크로스: 20일선이 60일선 아래로 교차
+death_cross = (ma20[i-1] > ma60[i-1]) and (ma20[i] < ma60[i])
 ```
 
 ---
@@ -37,7 +37,7 @@ death_cross = (ma50[i-1] > ma200[i-1]) and (ma50[i] < ma200[i])
 |------|------|
 | strategy_name | `ma_support`, `ma_resistance` |
 | signal_type | buy (지지), sell (저항) |
-| 대상 MA | 20일, 50일, 200일 |
+| 대상 MA | 20일, 60일, 90일 |
 | 허용 오차 | MA 값의 1~2% |
 
 **감지 로직:**
@@ -63,7 +63,7 @@ resistance = (abs(high - ma) / ma < 0.02) and (close < ma) and (close < open)
 |------|------|
 | strategy_name | `ma_breakout_up`, `ma_breakout_down` |
 | signal_type | buy (상향), sell (하향) |
-| 대상 MA | 20일, 50일, 200일 |
+| 대상 MA | 20일, 60일, 90일 |
 
 **감지 로직:**
 ```python
@@ -86,11 +86,11 @@ breakout_down = (close[i-1] > ma[i-1]) and (close[i] < ma[i])
 
 **감지 로직:**
 ```python
-# 정배열 (강세): 20일 > 50일 > 200일
-bullish = (ma20 > ma50) and (ma50 > ma200)
+# 정배열 (강세): 20일 > 60일 > 90일
+bullish = (ma20 > ma60) and (ma60 > ma90)
 
-# 역배열 (약세): 200일 > 50일 > 20일
-bearish = (ma200 > ma50) and (ma50 > ma20)
+# 역배열 (약세): 90일 > 60일 > 20일
+bearish = (ma90 > ma60) and (ma60 > ma20)
 ```
 
 **배열 전환 시그널:**
@@ -118,10 +118,10 @@ bearish = (ma200 > ma50) and (ma50 > ma20)
 ```json
 {
   "ma_20": 150.5,
-  "ma_50": 148.0,
-  "ma_200": 145.0,
+  "ma_60": 148.0,
+  "ma_90": 145.0,
   "alignment": "bullish",
-  "trigger_ma": 50,
+  "trigger_ma": 60,
   "distance_pct": 1.2
 }
 ```
@@ -139,7 +139,7 @@ MA 시그널 분석 시작 (백그라운드 워커)
 {
   "mode": "tagged",  // "tagged" | "all" | "top"
   "limit": 500,      // top 모드일 때
-  "days": 250,       // 분석 기간 (MA 200일 계산용)
+  "days": 150,       // 분석 기간 (MA 90일 계산용)
   "force_full": false
 }
 ```
@@ -195,8 +195,8 @@ MA 시그널 목록 조회 (페이지네이션)
   "current_price": 185.5,
   "ma_values": {
     "20": 183.2,
-    "50": 180.5,
-    "200": 175.0
+    "60": 180.5,
+    "90": 175.0
   },
   "alignment": "bullish",
   "chart_data": [
@@ -208,8 +208,8 @@ MA 시그널 목록 조회 (페이지네이션)
       "close": 185.5,
       "volume": 50000000,
       "ma_20": 183.2,
-      "ma_50": 180.5,
-      "ma_200": 175.0
+      "ma_60": 180.5,
+      "ma_90": 175.0
     }
   ],
   "recent_signals": [...]
@@ -298,7 +298,7 @@ MA 시그널 목록 조회 (페이지네이션)
 - 최근 시그널 요약
 
 ### 3. 종목 상세 (`/signals/[stockId]`) - 신규
-- 가격 차트 + MA 라인 (20, 50, 200일)
+- 가격 차트 + MA 라인 (20, 60, 90일)
 - 시그널 마커 표시
 - Recharts 사용
 

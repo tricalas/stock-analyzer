@@ -132,7 +132,7 @@ def analyze_ma_signals_task(
     task_id: str,
     mode: str = "all",
     limit: int = 500,
-    days: int = 250,
+    days: int = 150,
     force_full: bool = False
 ):
     """
@@ -142,7 +142,7 @@ def analyze_ma_signals_task(
         task_id: TaskProgress에 사용할 task_id
         mode: 분석 모드 ("tagged", "all", "top")
         limit: top 모드일 때 상위 몇 개
-        days: 분석할 일수 (MA 200일 계산용)
+        days: 분석할 일수 (MA 90일 계산용)
         force_full: True면 델타 무시하고 전체 스캔
 
     Returns:

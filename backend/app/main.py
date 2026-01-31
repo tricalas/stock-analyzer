@@ -2720,7 +2720,7 @@ def refresh_signals(
 def refresh_ma_signals(
     mode: str = Query("all", pattern="^(tagged|all|top)$"),
     limit: int = Query(500, ge=10, le=2000),
-    days: int = Query(250, ge=200, le=500),
+    days: int = Query(150, ge=90, le=500),
     force_full: bool = Query(False, description="True면 델타 무시하고 전체 스캔"),
     current_user: Optional[User] = Depends(get_optional_current_user)
 ):
@@ -2732,7 +2732,7 @@ def refresh_ma_signals(
     Args:
         mode: 분석 모드 (tagged, all, top)
         limit: top 모드일 때 상위 몇 개
-        days: 분석할 일수 (MA 200일 계산에 최소 200일 필요)
+        days: 분석할 일수 (MA 90일 계산에 최소 90일 필요)
         force_full: True면 델타 무시하고 전체 스캔
 
     Returns:

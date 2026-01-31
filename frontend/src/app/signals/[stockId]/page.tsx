@@ -26,8 +26,8 @@ interface MAAnalysisResponse {
     close: number | null;
     volume: number;
     ma_20: number | null;
-    ma_50: number | null;
-    ma_200: number | null;
+    ma_60: number | null;
+    ma_90: number | null;
   }>;
   recent_signals: Array<{
     id: number;
@@ -172,7 +172,7 @@ export default function StockMAAnalysisPage() {
           <>
             {/* MA Values Cards */}
             <div className="grid grid-cols-3 gap-3">
-              {[20, 50, 200].map((period) => {
+              {[20, 60, 90].map((period) => {
                 const maValue = data.ma_values[period];
                 const currentPrice = data.current_price;
                 const diff = maValue && currentPrice ? ((currentPrice - maValue) / maValue) * 100 : null;
@@ -214,8 +214,8 @@ export default function StockMAAnalysisPage() {
                   chartData={data.chart_data}
                   signals={data.recent_signals}
                   showMA20={true}
-                  showMA50={true}
-                  showMA200={true}
+                  showMA60={true}
+                  showMA90={true}
                   height={400}
                 />
               </CardContent>

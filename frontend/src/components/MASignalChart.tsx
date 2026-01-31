@@ -22,8 +22,8 @@ interface ChartDataPoint {
   close: number | null;
   volume: number;
   ma_20: number | null;
-  ma_50: number | null;
-  ma_200: number | null;
+  ma_60: number | null;
+  ma_90: number | null;
 }
 
 interface Signal {
@@ -40,16 +40,16 @@ interface MASignalChartProps {
   chartData: ChartDataPoint[];
   signals?: Signal[];
   showMA20?: boolean;
-  showMA50?: boolean;
-  showMA200?: boolean;
+  showMA60?: boolean;
+  showMA90?: boolean;
   height?: number;
 }
 
 const COLORS = {
   price: '#3b82f6',      // blue
   ma20: '#f59e0b',       // amber
-  ma50: '#10b981',       // emerald
-  ma200: '#ef4444',      // red
+  ma60: '#10b981',       // emerald
+  ma90: '#ef4444',       // red
   buySignal: '#22c55e',  // green
   sellSignal: '#ef4444', // red
 };
@@ -58,8 +58,8 @@ export default function MASignalChart({
   chartData,
   signals = [],
   showMA20 = true,
-  showMA50 = true,
-  showMA200 = true,
+  showMA60 = true,
+  showMA90 = true,
   height = 400,
 }: MASignalChartProps) {
   // 시그널을 날짜별로 매핑
@@ -78,7 +78,7 @@ export default function MASignalChart({
     let min = Infinity;
     let max = -Infinity;
     chartData.forEach((d) => {
-      const values = [d.close, d.ma_20, d.ma_50, d.ma_200].filter(
+      const values = [d.close, d.ma_20, d.ma_60, d.ma_90].filter(
         (v) => v !== null && v !== undefined
       ) as number[];
       values.forEach((v) => {
@@ -207,24 +207,24 @@ export default function MASignalChart({
               connectNulls
             />
           )}
-          {showMA50 && (
+          {showMA60 && (
             <Line
               type="monotone"
-              dataKey="ma_50"
-              name="MA 50"
-              stroke={COLORS.ma50}
+              dataKey="ma_60"
+              name="MA 60"
+              stroke={COLORS.ma60}
               strokeWidth={1.5}
               dot={false}
               strokeDasharray="5 5"
               connectNulls
             />
           )}
-          {showMA200 && (
+          {showMA90 && (
             <Line
               type="monotone"
-              dataKey="ma_200"
-              name="MA 200"
-              stroke={COLORS.ma200}
+              dataKey="ma_90"
+              name="MA 90"
+              stroke={COLORS.ma90}
               strokeWidth={1.5}
               dot={false}
               strokeDasharray="5 5"

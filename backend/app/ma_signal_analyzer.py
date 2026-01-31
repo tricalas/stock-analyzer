@@ -2,10 +2,10 @@
 이동평균(MA) 기반 시그널 분석 모듈
 
 전략:
-1. 골든크로스 / 데드크로스 (50일/200일 MA 교차)
-2. 이평선 지지/저항 (20, 50, 200일 MA에서 반등/저항)
+1. 골든크로스 / 데드크로스 (20일/60일 MA 교차)
+2. 이평선 지지/저항 (20, 60, 90일 MA에서 반등/저항)
 3. 이평선 돌파 (MA 상향/하향 돌파)
-4. 이평선 배열 (정배열/역배열)
+4. 이평선 배열 (정배열/역배열) - 20, 60, 90일 사용
 """
 import logging
 import json
@@ -27,7 +27,7 @@ class MASignalAnalyzer:
     """이동평균 기반 시그널 분석기"""
 
     # MA 기간 설정
-    MA_PERIODS = [20, 50, 200]
+    MA_PERIODS = [20, 60, 90]
 
     # 지지/저항 감지 허용 오차 (%)
     SUPPORT_RESISTANCE_THRESHOLD = 2.0
@@ -48,7 +48,7 @@ class MASignalAnalyzer:
         self,
         mode: str = "all",
         limit: Optional[int] = None,
-        days: int = 250,  # MA 200일 계산을 위해 더 긴 기간
+        days: int = 150,  # MA 90일 계산을 위한 기간
         db: Optional[Session] = None,
         force_full: bool = False,
         task_id: Optional[str] = None
@@ -59,7 +59,7 @@ class MASignalAnalyzer:
         Args:
             mode: 분석 모드 ("tagged", "all", "top")
             limit: top 모드일 때 상위 몇 개 종목
-            days: 분석할 일수 (MA 200일 계산에 최소 200일 필요)
+            days: 분석할 일수 (MA 90일 계산에 최소 90일 필요)
             db: DB 세션 (없으면 자동 생성)
             force_full: True면 델타 무시하고 전체 스캔
             task_id: TaskProgress에 사용할 task_id
@@ -204,18 +204,18 @@ class MASignalAnalyzer:
             ).all()
             stock_ids = set(s.id for s in all_stocks)
 
-        # MA 200일 계산을 위해 최소 200일 히스토리 필요
+        # MA 90일 계산을 위해 최소 90일 히스토리 필요
         history_counts = db.query(
             StockPriceHistory.stock_id
         ).group_by(StockPriceHistory.stock_id).having(
-            func.count(StockPriceHistory.id) >= 200
+            func.count(StockPriceHistory.id) >= 90
         ).all()
         stocks_with_history = set(row.stock_id for row in history_counts)
 
         filtered_ids = list(stock_ids & stocks_with_history)
         total_with_history = len(filtered_ids)
 
-        logger.info(f"Mode: {mode}, Total stocks: {len(stock_ids)}, With 200+ history: {total_with_history}")
+        logger.info(f"Mode: {mode}, Total stocks: {len(stock_ids)}, With 90+ history: {total_with_history}")
 
         # 델타 필터링 (ma_signal_analyzed_at 컬럼이 없으므로 signal_analyzed_at 재사용)
         # TODO: 별도 컬럼 추가 고려
@@ -246,8 +246,8 @@ class MASignalAnalyzer:
             StockPriceHistory.date >= start_date
         ).order_by(StockPriceHistory.date.asc()).all()
 
-        if len(price_history) < 200:
-            # MA 200일 계산 불가
+        if len(price_history) < 90:
+            # MA 90일 계산 불가
             stock.signal_analyzed_at = datetime.utcnow()
             db.commit()
             return {"signals_count": 0, "saved_count": 0}
@@ -340,16 +340,16 @@ class MASignalAnalyzer:
         df: pd.DataFrame,
         current_price: Optional[float]
     ) -> List[Dict]:
-        """골든크로스 / 데드크로스 감지"""
+        """골든크로스 / 데드크로스 감지 (20일/60일 교차)"""
         signals = []
         today = date.today()
 
-        # MA 50, 200 필요
-        if 'ma_50' not in df.columns or 'ma_200' not in df.columns:
+        # MA 20, 60 필요
+        if 'ma_20' not in df.columns or 'ma_60' not in df.columns:
             return signals
 
         # NaN이 아닌 데이터만
-        valid_df = df.dropna(subset=['ma_50', 'ma_200'])
+        valid_df = df.dropna(subset=['ma_20', 'ma_60'])
         if len(valid_df) < 2:
             return signals
 
@@ -366,18 +366,18 @@ class MASignalAnalyzer:
 
             prev_idx = valid_df.index[i - 1]
 
-            ma50_prev = valid_df.loc[prev_idx, 'ma_50']
-            ma200_prev = valid_df.loc[prev_idx, 'ma_200']
-            ma50_curr = valid_df.loc[idx, 'ma_50']
-            ma200_curr = valid_df.loc[idx, 'ma_200']
+            ma20_prev = valid_df.loc[prev_idx, 'ma_20']
+            ma60_prev = valid_df.loc[prev_idx, 'ma_60']
+            ma20_curr = valid_df.loc[idx, 'ma_20']
+            ma60_curr = valid_df.loc[idx, 'ma_60']
 
             signal_price = float(valid_df.loc[idx, 'close'])
             return_pct = 0.0
             if current_price and signal_price > 0:
                 return_pct = ((current_price - signal_price) / signal_price) * 100
 
-            # 골든크로스: 50일선이 200일선 위로 교차
-            if ma50_prev < ma200_prev and ma50_curr > ma200_curr:
+            # 골든크로스: 20일선이 60일선 위로 교차
+            if ma20_prev < ma60_prev and ma20_curr > ma60_curr:
                 signals.append({
                     'signal_type': 'buy',
                     'strategy_name': 'golden_cross',
@@ -386,14 +386,14 @@ class MASignalAnalyzer:
                     'current_price': float(current_price) if current_price else None,
                     'return_percent': float(round(return_pct, 2)),
                     'details': {
-                        'ma_50': float(round(ma50_curr, 2)),
-                        'ma_200': float(round(ma200_curr, 2)),
+                        'ma_20': float(round(ma20_curr, 2)),
+                        'ma_60': float(round(ma60_curr, 2)),
                         'cross_type': 'golden'
                     }
                 })
 
-            # 데드크로스: 50일선이 200일선 아래로 교차
-            elif ma50_prev > ma200_prev and ma50_curr < ma200_curr:
+            # 데드크로스: 20일선이 60일선 아래로 교차
+            elif ma20_prev > ma60_prev and ma20_curr < ma60_curr:
                 signals.append({
                     'signal_type': 'sell',
                     'strategy_name': 'death_cross',
@@ -402,8 +402,8 @@ class MASignalAnalyzer:
                     'current_price': float(current_price) if current_price else None,
                     'return_percent': float(round(return_pct, 2)),
                     'details': {
-                        'ma_50': float(round(ma50_curr, 2)),
-                        'ma_200': float(round(ma200_curr, 2)),
+                        'ma_20': float(round(ma20_curr, 2)),
+                        'ma_60': float(round(ma60_curr, 2)),
                         'cross_type': 'death'
                     }
                 })
@@ -565,7 +565,7 @@ class MASignalAnalyzer:
         df: pd.DataFrame,
         current_price: Optional[float]
     ) -> List[Dict]:
-        """이평선 배열 (정배열/역배열) 전환 감지"""
+        """이평선 배열 (정배열/역배열) 전환 감지 (20/60/90일)"""
         signals = []
 
         # 최근 5일만 검사
@@ -573,8 +573,8 @@ class MASignalAnalyzer:
         if len(recent_df) < 2:
             return signals
 
-        # MA 20, 50, 200 모두 필요
-        required_cols = ['ma_20', 'ma_50', 'ma_200']
+        # MA 20, 60, 90 모두 필요
+        required_cols = ['ma_20', 'ma_60', 'ma_90']
         if not all(col in df.columns for col in required_cols):
             return signals
 
@@ -586,22 +586,22 @@ class MASignalAnalyzer:
 
             # 현재와 이전 MA 값
             ma20_curr = recent_df.loc[idx, 'ma_20']
-            ma50_curr = recent_df.loc[idx, 'ma_50']
-            ma200_curr = recent_df.loc[idx, 'ma_200']
+            ma60_curr = recent_df.loc[idx, 'ma_60']
+            ma90_curr = recent_df.loc[idx, 'ma_90']
 
             ma20_prev = recent_df.loc[prev_idx, 'ma_20']
-            ma50_prev = recent_df.loc[prev_idx, 'ma_50']
-            ma200_prev = recent_df.loc[prev_idx, 'ma_200']
+            ma60_prev = recent_df.loc[prev_idx, 'ma_60']
+            ma90_prev = recent_df.loc[prev_idx, 'ma_90']
 
-            if any(pd.isna([ma20_curr, ma50_curr, ma200_curr, ma20_prev, ma50_prev, ma200_prev])):
+            if any(pd.isna([ma20_curr, ma60_curr, ma90_curr, ma20_prev, ma60_prev, ma90_prev])):
                 continue
 
             # 배열 상태 판단
-            is_bullish_now = (ma20_curr > ma50_curr > ma200_curr)
-            is_bearish_now = (ma200_curr > ma50_curr > ma20_curr)
+            is_bullish_now = (ma20_curr > ma60_curr > ma90_curr)
+            is_bearish_now = (ma90_curr > ma60_curr > ma20_curr)
 
-            is_bullish_prev = (ma20_prev > ma50_prev > ma200_prev)
-            is_bearish_prev = (ma200_prev > ma50_prev > ma20_prev)
+            is_bullish_prev = (ma20_prev > ma60_prev > ma90_prev)
+            is_bearish_prev = (ma90_prev > ma60_prev > ma20_prev)
 
             signal_price = float(recent_df.loc[idx, 'close'])
             return_pct = 0.0
@@ -619,8 +619,8 @@ class MASignalAnalyzer:
                     'return_percent': float(round(return_pct, 2)),
                     'details': {
                         'ma_20': float(round(ma20_curr, 2)),
-                        'ma_50': float(round(ma50_curr, 2)),
-                        'ma_200': float(round(ma200_curr, 2)),
+                        'ma_60': float(round(ma60_curr, 2)),
+                        'ma_90': float(round(ma90_curr, 2)),
                         'alignment': 'bullish'
                     }
                 })
@@ -636,8 +636,8 @@ class MASignalAnalyzer:
                     'return_percent': float(round(return_pct, 2)),
                     'details': {
                         'ma_20': float(round(ma20_curr, 2)),
-                        'ma_50': float(round(ma50_curr, 2)),
-                        'ma_200': float(round(ma200_curr, 2)),
+                        'ma_60': float(round(ma60_curr, 2)),
+                        'ma_90': float(round(ma90_curr, 2)),
                         'alignment': 'bearish'
                     }
                 })
@@ -706,14 +706,14 @@ class MASignalAnalyzer:
             if not stock:
                 return None
 
-            start_date = date.today() - timedelta(days=days + 200)  # MA 계산용 추가 데이터
+            start_date = date.today() - timedelta(days=days + 90)  # MA 계산용 추가 데이터
 
             price_history = db.query(StockPriceHistory).filter(
                 StockPriceHistory.stock_id == stock_id,
                 StockPriceHistory.date >= start_date
             ).order_by(StockPriceHistory.date.asc()).all()
 
-            if len(price_history) < 200:
+            if len(price_history) < 90:
                 return None
 
             # DataFrame 생성 및 MA 계산
@@ -749,10 +749,10 @@ class MASignalAnalyzer:
 
             # 배열 상태 판단
             alignment = 'neutral'
-            if all(period in ma_values for period in [20, 50, 200]):
-                if ma_values[20] > ma_values[50] > ma_values[200]:
+            if all(period in ma_values for period in [20, 60, 90]):
+                if ma_values[20] > ma_values[60] > ma_values[90]:
                     alignment = 'bullish'
-                elif ma_values[200] > ma_values[50] > ma_values[20]:
+                elif ma_values[90] > ma_values[60] > ma_values[20]:
                     alignment = 'bearish'
 
             # 차트 데이터
