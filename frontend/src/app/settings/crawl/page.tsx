@@ -86,7 +86,7 @@ export default function StockCrawlPage() {
     enabled: !!taskId && showProgress,
     refetchInterval: (query) => {
       const data = query.state.data;
-      if (data?.status === 'completed' || data?.status === 'failed') {
+      if (data?.status === 'completed' || data?.status === 'failed' || data?.status === 'cancelled') {
         return false;
       }
       return 1000;
@@ -124,8 +124,35 @@ export default function StockCrawlPage() {
         setShowProgress(false);
         setTaskId(null);
       }, 3000);
+    } else if (progress?.status === 'cancelled') {
+      toast.info('수집이 취소되었습니다');
+      setTimeout(() => {
+        setShowProgress(false);
+        setTaskId(null);
+      }, 3000);
     }
   }, [progress?.status, progress?.error_message, refetchLogs]);
+
+  // 작업 취소
+  const handleCancel = async () => {
+    if (!taskId) return;
+    try {
+      const token = localStorage.getItem('auth_token');
+      const response = await fetch(`${API_URL}/api/tasks/${taskId}/cancel`, {
+        method: 'POST',
+        headers: {
+          'Authorization': token ? `Bearer ${token}` : '',
+          'Content-Type': 'application/json',
+        },
+      });
+      if (response.ok) {
+        toast.success('작업이 취소되었습니다');
+      }
+    } catch (error) {
+      console.error('Error cancelling task:', error);
+      toast.error('작업 취소에 실패했습니다');
+    }
+  };
 
   // 수집 시작
   const handleStart = async () => {
@@ -182,7 +209,7 @@ export default function StockCrawlPage() {
         <div className={`border rounded-lg p-4 ${
           progress.status === 'completed'
             ? 'bg-green-500/10 border-green-500/30'
-            : progress.status === 'failed'
+            : progress.status === 'failed' || progress.status === 'cancelled'
             ? 'bg-red-500/10 border-red-500/30'
             : 'bg-primary/10 border-primary/30'
         }`}>
@@ -201,23 +228,35 @@ export default function StockCrawlPage() {
                 <div>
                   <h4 className="text-sm font-semibold text-foreground">
                     {progress.status === 'running' ? '수집 진행 중' :
-                     progress.status === 'completed' ? '수집 완료' : '수집 실패'}
+                     progress.status === 'completed' ? '수집 완료' :
+                     progress.status === 'cancelled' ? '수집 취소됨' : '수집 실패'}
                   </h4>
                   <p className="text-xs text-muted-foreground">{progress.message}</p>
                 </div>
               </div>
-              {progress.status === 'completed' && (
-                <div className="text-right text-sm">
-                  <span className="text-green-600 dark:text-green-400 font-medium">
-                    {progress.success_count}개 성공
-                  </span>
-                  {progress.failed_count > 0 && (
-                    <span className="text-red-600 dark:text-red-400 ml-2">
-                      {progress.failed_count}개 실패
+              <div className="flex items-center gap-3">
+                {progress.status === 'running' && (
+                  <button
+                    onClick={handleCancel}
+                    className="flex items-center gap-1 px-2 py-1 text-xs bg-red-500/10 hover:bg-red-500/20 text-red-600 dark:text-red-400 rounded transition-colors"
+                  >
+                    <StopCircle className="w-3 h-3" />
+                    취소
+                  </button>
+                )}
+                {progress.status === 'completed' && (
+                  <div className="text-right text-sm">
+                    <span className="text-green-600 dark:text-green-400 font-medium">
+                      {progress.success_count}개 성공
                     </span>
-                  )}
-                </div>
-              )}
+                    {progress.failed_count > 0 && (
+                      <span className="text-red-600 dark:text-red-400 ml-2">
+                        {progress.failed_count}개 실패
+                      </span>
+                    )}
+                  </div>
+                )}
+              </div>
             </div>
 
             {progress.status === 'running' && (
