@@ -296,3 +296,23 @@ class HistoryCollectionSummary(BaseModel):
     success_count: int
     failed_count: int
     total_records_saved: int
+
+
+# 주식 목록 크롤링 로그
+class StockCrawlLogBase(BaseModel):
+    task_id: str
+    status: str
+    market: str
+    total_count: int = 0
+    success_count: int = 0
+    failed_count: int = 0
+    new_count: int = 0
+    updated_count: int = 0
+
+class StockCrawlLog(StockCrawlLogBase):
+    id: int
+    started_at: datetime
+    completed_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True

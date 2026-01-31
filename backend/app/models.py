@@ -307,6 +307,32 @@ class HistoryCollectionLog(Base):
     )
 
 
+class StockCrawlLog(Base):
+    """주식 목록 크롤링 로그 (간단한 히스토리)"""
+    __tablename__ = "stock_crawl_logs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    task_id = Column(String(100), nullable=False, index=True)
+
+    # 크롤링 결과
+    status = Column(String(20), nullable=False)  # "running", "completed", "failed"
+    market = Column(String(10), nullable=False)  # "US", "KR", "ALL"
+    total_count = Column(Integer, default=0)
+    success_count = Column(Integer, default=0)
+    failed_count = Column(Integer, default=0)
+    new_count = Column(Integer, default=0)      # 신규 종목 수
+    updated_count = Column(Integer, default=0)  # 업데이트 종목 수
+
+    # 시간
+    started_at = Column(DateTime, default=datetime.utcnow)
+    completed_at = Column(DateTime)
+
+    __table_args__ = (
+        Index('idx_crawl_log_started', 'started_at'),
+        {'extend_existing': True}
+    )
+
+
 class ApiTokenCache(Base):
     """API 토큰 캐시 (KIS 등 외부 API용)"""
     __tablename__ = "api_token_cache"
