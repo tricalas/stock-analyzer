@@ -116,10 +116,15 @@ All API routes are defined in `backend/app/main.py`:
 1. **Price History Collection**: Uses KIS API for US stock daily prices. Optimized with batch processing and delta updates (tracks `history_updated_at` per stock).
 
 2. **Signal Analysis**: Breakout-pullback strategy implemented in `signal_analyzer.py`. Signals are stored with performance tracking.
+   - **MA 시그널 재설계 진행 중**: `docs/SIGNAL_SPEC.md` 참조 (이동평균 기반 시그널 시스템)
 
 3. **User System**: Token-based authentication with PIN verification. Each user has their own tags and favorites.
 
 4. **Caching**: API token caching in `ApiTokenCache` table for KIS API access tokens.
+
+## Spec Documents
+
+- `docs/SIGNAL_SPEC.md` - MA 기반 시그널 시스템 스펙 (골든크로스, 이평선 지지/저항, 배열 등)
 
 ## Development Notes
 

@@ -15,7 +15,7 @@ import orjson
 
 from app.config import settings
 from app.database import engine, Base, get_db
-from app.models import Stock, StockPrice, StockDailyData, StockPriceHistory, StockTag, StockTagAssignment, User, StockSignal, TaskProgress, HistoryCollectionLog
+from app.models import Stock, StockPrice, StockDailyData, StockPriceHistory, StockTag, StockTagAssignment, User, StockSignal, TaskProgress, HistoryCollectionLog, StockCrawlLog
 from app import schemas
 from app.crawlers.crawler_manager import CrawlerManager
 from app.crawlers.price_history_crawler import price_history_crawler
@@ -23,7 +23,8 @@ from app.scheduler import stock_scheduler
 from app.constants import ETF_KEYWORDS
 from app.auth import get_pin_hash, verify_pin, create_access_token, get_current_user, get_optional_current_user
 from app.signal_analyzer import signal_analyzer
-from app.tasks import collect_history_task, analyze_signals_task, retry_failed_stocks_task
+from app.ma_signal_analyzer import ma_signal_analyzer
+from app.tasks import collect_history_task, analyze_signals_task, analyze_ma_signals_task, retry_failed_stocks_task
 from app.celery_app import celery_app
 import uuid
 
@@ -809,23 +810,51 @@ def get_stock_daily_data(
     daily_data = query.order_by(StockDailyData.date.desc()).limit(500).all()
     return daily_data
 
-def run_background_crawl(market: str):
-    """백그라운드에서 실행될 크롤링 작업"""
+def run_background_crawl(market: str, task_id: str = None):
+    """백그라운드에서 실행될 크롤링 작업 (진행 상황 추적 포함)"""
+    db = SessionLocal()
     try:
-        logger.info(f"Starting background crawl for market: {market}")
+        logger.info(f"Starting background crawl for market: {market}, task_id: {task_id}")
+
+        # TaskProgress 업데이트: 시작
+        if task_id:
+            db.query(TaskProgress).filter(TaskProgress.task_id == task_id).update({
+                "message": f"{market} 시장 크롤링 중..."
+            })
+            db.commit()
+
         result = crawler_manager.update_stock_list(market)
 
         # ETF 필터링 정보 포함한 메시지 생성
         etf_info = ""
         if result.get('skipped_etf', 0) > 0:
-            etf_info = f" ({result['skipped_etf']} ETF/Index stocks filtered out)"
+            etf_info = f" ({result['skipped_etf']} ETF/지수 제외)"
 
         logger.info(f"Background crawl completed: {result['success']} out of {result['total']} stocks{etf_info}")
+
+        # TaskProgress 및 StockCrawlLog 업데이트: 완료
+        if task_id:
+            db.query(TaskProgress).filter(TaskProgress.task_id == task_id).update({
+                "status": "completed",
+                "total_items": result.get('total', 0),
+                "current_item": result.get('total', 0),
+                "success_count": result.get('success', 0),
+                "failed_count": result.get('failed', 0),
+                "message": f"크롤링 완료: {result['success']}개 종목{etf_info}",
+                "completed_at": datetime.utcnow()
+            })
+            db.query(StockCrawlLog).filter(StockCrawlLog.task_id == task_id).update({
+                "status": "completed",
+                "total_count": result.get('total', 0),
+                "success_count": result.get('success', 0),
+                "failed_count": result.get('failed', 0),
+                "completed_at": datetime.utcnow()
+            })
+            db.commit()
 
         # 캐시 무효화
         if redis_client:
             try:
-                # 모든 stocks 관련 캐시 삭제
                 for key in redis_client.scan_iter("cache:*stocks*"):
                     redis_client.delete(key)
                 logger.info("Cache invalidated after crawling")
@@ -834,15 +863,33 @@ def run_background_crawl(market: str):
 
     except Exception as e:
         logger.error(f"Error during background stock list crawling: {str(e)}")
+        # TaskProgress 및 StockCrawlLog 업데이트: 실패
+        if task_id:
+            try:
+                db.query(TaskProgress).filter(TaskProgress.task_id == task_id).update({
+                    "status": "failed",
+                    "error_message": str(e),
+                    "completed_at": datetime.utcnow()
+                })
+                db.query(StockCrawlLog).filter(StockCrawlLog.task_id == task_id).update({
+                    "status": "failed",
+                    "completed_at": datetime.utcnow()
+                })
+                db.commit()
+            except Exception:
+                pass
+    finally:
+        db.close()
 
 
-@app.post("/api/crawl/stocks", response_model=schemas.CrawlingStatus)
+@app.post("/api/crawl/stocks")
 def crawl_stock_list(
     background_tasks: BackgroundTasks,
     market: str = Query("ALL", pattern="^(ALL|KR|US)$"),
+    db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """주식 데이터 크롤링 - 10분 쿨타임 (백그라운드 처리)"""
+    """주식 데이터 크롤링 - 10분 쿨타임 (백그라운드 처리, 진행 상황 추적)"""
     global last_crawl_time
 
     # 쿨타임 체크
@@ -861,17 +908,50 @@ def crawl_stock_list(
     # 쿨타임 업데이트
     last_crawl_time = datetime.utcnow()
 
-    # 백그라운드 작업 추가
-    background_tasks.add_task(run_background_crawl, market)
+    # TaskProgress 및 StockCrawlLog 생성
+    task_id = str(uuid.uuid4())
 
-    # 즉시 응답 반환
+    task_progress = TaskProgress(
+        task_id=task_id,
+        task_type="stock_crawl",
+        status="running",
+        total_items=0,
+        current_item=0,
+        success_count=0,
+        failed_count=0,
+        message="크롤링 시작 중..."
+    )
+    db.add(task_progress)
+
+    crawl_log = StockCrawlLog(
+        task_id=task_id,
+        status="running",
+        market=market
+    )
+    db.add(crawl_log)
+    db.commit()
+
+    # 백그라운드 작업 추가 (task_id 포함)
+    background_tasks.add_task(run_background_crawl, market, task_id)
+
+    # 즉시 응답 반환 (task_id 포함)
     return {
-        "success": 0,
-        "failed": 0,
-        "total": 0,
-        "skipped_etf": 0,
-        "message": f"크롤링 작업이 시작되었습니다. 완료까지 약 20초 소요됩니다."
+        "success": True,
+        "task_id": task_id,
+        "message": f"크롤링 작업이 시작되었습니다."
     }
+
+
+@app.get("/api/crawl/logs", response_model=List[schemas.StockCrawlLog])
+def get_crawl_logs(
+    limit: int = Query(20, ge=1, le=100),
+    db: Session = Depends(get_db)
+):
+    """크롤링 히스토리 조회"""
+    logs = db.query(StockCrawlLog).order_by(
+        StockCrawlLog.started_at.desc()
+    ).limit(limit).all()
+    return logs
 
 
 @app.post("/api/crawl/indicators/{stock_id}")
@@ -2634,6 +2714,270 @@ def refresh_signals(
     }
 
 
+# ===== MA Signal Endpoints =====
+
+@app.post("/api/signals/ma/refresh")
+def refresh_ma_signals(
+    mode: str = Query("all", pattern="^(tagged|all|top)$"),
+    limit: int = Query(500, ge=10, le=2000),
+    days: int = Query(250, ge=200, le=500),
+    force_full: bool = Query(False, description="True면 델타 무시하고 전체 스캔"),
+    current_user: Optional[User] = Depends(get_optional_current_user)
+):
+    """
+    MA 기반 시그널 분석 (Celery 백그라운드 작업)
+
+    골든크로스, 이평선 지지/저항, 이평선 돌파, 이평선 배열 시그널 분석
+
+    Args:
+        mode: 분석 모드 (tagged, all, top)
+        limit: top 모드일 때 상위 몇 개
+        days: 분석할 일수 (MA 200일 계산에 최소 200일 필요)
+        force_full: True면 델타 무시하고 전체 스캔
+
+    Returns:
+        작업 시작 메시지와 task_id
+    """
+    import threading
+
+    task_id = str(uuid.uuid4())
+
+    try:
+        analyze_ma_signals_task.apply_async(
+            kwargs={
+                "task_id": task_id,
+                "mode": mode,
+                "limit": limit,
+                "days": days,
+                "force_full": force_full
+            },
+            task_id=task_id
+        )
+        execution_mode = "celery"
+        logger.info(f"✅ MA signal analysis queued via Celery (task_id: {task_id})")
+    except Exception as e:
+        logger.warning(f"⚠️ Celery unavailable ({e}), falling back to thread")
+
+        def run_analysis():
+            try:
+                ma_signal_analyzer.analyze_and_store_signals(
+                    mode=mode,
+                    limit=limit,
+                    days=days,
+                    force_full=force_full,
+                    task_id=task_id
+                )
+            except Exception as ex:
+                logger.error(f"MA signal analysis failed: {ex}")
+
+        thread = threading.Thread(target=run_analysis, daemon=True)
+        thread.start()
+        execution_mode = "thread"
+
+    delta_msg = "전체 스캔" if force_full else "델타 분석 (변경된 종목만)"
+    return {
+        "success": True,
+        "message": f"MA 시그널 분석 작업이 시작되었습니다 (mode: {mode}, {delta_msg})",
+        "mode": mode,
+        "days": days,
+        "force_full": force_full,
+        "task_id": task_id,
+        "execution_mode": execution_mode,
+        "note": "브라우저를 닫아도 작업이 계속 실행됩니다. GET /api/tasks/{task_id}로 진행 상황을 확인하세요."
+    }
+
+
+@app.get("/api/signals/ma")
+def get_ma_signals(
+    skip: int = Query(0, ge=0),
+    limit: int = Query(30, ge=1, le=100),
+    strategy: Optional[str] = Query(None, description="전략 필터 (golden_cross, death_cross, ma_support, ma_resistance, ma_breakout_up, ma_breakout_down, ma_bullish_alignment, ma_bearish_alignment)"),
+    signal_type: Optional[str] = Query(None, pattern="^(buy|sell)$"),
+    db: Session = Depends(get_db)
+):
+    """
+    MA 기반 시그널 목록 조회
+
+    Args:
+        skip: 오프셋
+        limit: 페이지 크기
+        strategy: 전략 필터 (선택적)
+        signal_type: buy/sell 필터 (선택적)
+
+    Returns:
+        시그널 목록과 통계
+    """
+    # MA 시그널 전략명 목록
+    ma_strategies = [
+        'golden_cross', 'death_cross',
+        'ma_support', 'ma_resistance',
+        'ma_breakout_up', 'ma_breakout_down',
+        'ma_bullish_alignment', 'ma_bearish_alignment'
+    ]
+
+    # 최근 10일 시그널만
+    ten_days_ago = date.today() - timedelta(days=10)
+
+    query = db.query(StockSignal).filter(
+        StockSignal.is_active == True,
+        StockSignal.strategy_name.in_(ma_strategies),
+        StockSignal.signal_date >= ten_days_ago
+    )
+
+    if strategy:
+        query = query.filter(StockSignal.strategy_name == strategy)
+
+    if signal_type:
+        query = query.filter(StockSignal.signal_type == signal_type)
+
+    # 전체 개수
+    total = query.count()
+
+    # 통계
+    all_signals = query.all()
+    positive_count = sum(1 for s in all_signals if s.return_percent and s.return_percent > 0)
+    negative_count = sum(1 for s in all_signals if s.return_percent and s.return_percent < 0)
+    returns = [s.return_percent for s in all_signals if s.return_percent is not None]
+    avg_return = sum(returns) / len(returns) if returns else 0
+
+    # 페이지네이션
+    signals = query.order_by(desc(StockSignal.signal_date), desc(StockSignal.id)).offset(skip).limit(limit).all()
+
+    # 종목 정보 조인
+    result_signals = []
+    for signal in signals:
+        stock = db.query(Stock).filter(Stock.id == signal.stock_id).first()
+        if stock:
+            result_signals.append({
+                "id": signal.id,
+                "stock_id": signal.stock_id,
+                "symbol": stock.symbol,
+                "name": stock.name,
+                "exchange": stock.exchange,
+                "signal_type": signal.signal_type,
+                "signal_date": signal.signal_date.isoformat(),
+                "signal_price": signal.signal_price,
+                "strategy_name": signal.strategy_name,
+                "current_price": signal.current_price,
+                "return_percent": signal.return_percent,
+                "details": json.loads(signal.details) if signal.details else {},
+                "analyzed_at": signal.analyzed_at.isoformat() if signal.analyzed_at else None
+            })
+
+    return {
+        "signals": result_signals,
+        "total": total,
+        "stats": {
+            "positive_count": positive_count,
+            "negative_count": negative_count,
+            "avg_return": round(avg_return, 2)
+        }
+    }
+
+
+@app.get("/api/stocks/{stock_id}/ma-analysis")
+def get_stock_ma_analysis(
+    stock_id: int,
+    days: int = Query(180, ge=30, le=365),
+    db: Session = Depends(get_db)
+):
+    """
+    개별 종목 MA 분석 데이터 (차트용)
+
+    Args:
+        stock_id: 종목 ID
+        days: 조회 기간 (기본 180일)
+
+    Returns:
+        MA 값, 배열 상태, 차트 데이터, 최근 시그널
+    """
+    result = ma_signal_analyzer.get_stock_ma_analysis(stock_id, days, db)
+
+    if not result:
+        raise HTTPException(status_code=404, detail=f"Stock {stock_id} not found or insufficient price history")
+
+    return result
+
+
+@app.get("/api/signals/dashboard")
+def get_signal_dashboard(
+    db: Session = Depends(get_db)
+):
+    """
+    시그널 대시보드 통계
+
+    Returns:
+        전략별 시그널 분포, 수익률 통계, 최근 시그널
+    """
+    # 모든 시그널 전략명
+    all_strategies = [
+        # 기존 추세선 전략
+        'descending_trendline_breakout', 'approaching_breakout', 'pullback_buy', 'doji_star',
+        # MA 전략
+        'golden_cross', 'death_cross',
+        'ma_support', 'ma_resistance',
+        'ma_breakout_up', 'ma_breakout_down',
+        'ma_bullish_alignment', 'ma_bearish_alignment'
+    ]
+
+    # 최근 10일 시그널
+    ten_days_ago = date.today() - timedelta(days=10)
+
+    signals = db.query(StockSignal).filter(
+        StockSignal.is_active == True,
+        StockSignal.signal_date >= ten_days_ago
+    ).all()
+
+    # 전략별 카운트
+    signals_by_strategy = {}
+    for strategy in all_strategies:
+        count = sum(1 for s in signals if s.strategy_name == strategy)
+        if count > 0:
+            signals_by_strategy[strategy] = count
+
+    # 타입별 카운트
+    signals_by_type = {
+        "buy": sum(1 for s in signals if s.signal_type == 'buy'),
+        "sell": sum(1 for s in signals if s.signal_type == 'sell')
+    }
+
+    # 수익률 통계
+    returns = [s.return_percent for s in signals if s.return_percent is not None]
+    positive_count = sum(1 for r in returns if r > 0)
+    negative_count = sum(1 for r in returns if r < 0)
+    avg_return = sum(returns) / len(returns) if returns else 0
+
+    # 최근 시그널 (10개)
+    recent_signals = db.query(StockSignal).filter(
+        StockSignal.is_active == True,
+        StockSignal.signal_date >= ten_days_ago
+    ).order_by(desc(StockSignal.signal_date), desc(StockSignal.id)).limit(10).all()
+
+    recent_signals_data = []
+    for signal in recent_signals:
+        stock = db.query(Stock).filter(Stock.id == signal.stock_id).first()
+        if stock:
+            recent_signals_data.append({
+                "id": signal.id,
+                "symbol": stock.symbol,
+                "name": stock.name,
+                "signal_type": signal.signal_type,
+                "signal_date": signal.signal_date.isoformat(),
+                "strategy_name": signal.strategy_name,
+                "return_percent": signal.return_percent
+            })
+
+    return {
+        "total_signals": len(signals),
+        "signals_by_strategy": signals_by_strategy,
+        "signals_by_type": signals_by_type,
+        "positive_count": positive_count,
+        "negative_count": negative_count,
+        "avg_return": round(avg_return, 2),
+        "recent_signals": recent_signals_data
+    }
+
+
 # ===== Task Progress Endpoints =====
 
 @app.get("/api/tasks/{task_id}", response_model=schemas.TaskProgress)
@@ -3401,6 +3745,76 @@ def sync_history_counts(
         logger.error(f"❌ Error syncing history counts: {str(e)}")
         db.rollback()
         raise HTTPException(status_code=500, detail=f"Failed to sync: {str(e)}")
+
+
+@app.post("/api/admin/update-all-ma90")
+def update_all_ma90(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    모든 종목의 MA90 일괄 업데이트 (관리자 전용)
+
+    60일 이상 히스토리가 있는 종목에 대해 MA90 계산 후 Stock.ma90_price 업데이트
+    """
+    if not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Admin access required")
+
+    try:
+        from sqlalchemy import func
+
+        # 60일 이상 히스토리가 있는 종목들 조회
+        stocks = db.query(Stock).filter(
+            Stock.is_active == True,
+            Stock.history_records_count >= 60
+        ).all()
+
+        updated_count = 0
+        skipped_count = 0
+
+        for stock in stocks:
+            # 최근 90일 종가 조회
+            prices = db.query(StockPriceHistory.close_price).filter(
+                StockPriceHistory.stock_id == stock.id
+            ).order_by(StockPriceHistory.date.desc()).limit(90).all()
+
+            if len(prices) < 60:
+                skipped_count += 1
+                continue
+
+            # 평균 계산
+            close_prices = [p.close_price for p in prices if p.close_price is not None]
+            if not close_prices:
+                skipped_count += 1
+                continue
+
+            ma90 = sum(close_prices) / len(close_prices)
+
+            # Stock 테이블 업데이트
+            db.query(Stock).filter(Stock.id == stock.id).update(
+                {"ma90_price": ma90},
+                synchronize_session=False
+            )
+            updated_count += 1
+
+        db.commit()
+
+        # 캐시 무효화
+        invalidate_cache()
+
+        logger.info(f"✅ MA90 updated: {updated_count} stocks, skipped: {skipped_count}")
+        return {
+            "success": True,
+            "message": f"MA90 updated for {updated_count} stocks",
+            "updated_count": updated_count,
+            "skipped_count": skipped_count,
+            "cache_cleared": True
+        }
+
+    except Exception as e:
+        logger.error(f"❌ Error updating MA90: {str(e)}")
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Failed to update MA90: {str(e)}")
 
 
 @app.get("/api/admin/db-stats")

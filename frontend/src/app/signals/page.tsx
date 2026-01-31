@@ -57,16 +57,28 @@ interface SignalListResponse {
   };
 }
 
-type SignalFilter = 'all' | 'breakout' | 'approaching' | 'pullback';
+type SignalCategory = 'trendline' | 'ma';
+type SignalFilter = 'all' | 'breakout' | 'approaching' | 'pullback' | 'golden_cross' | 'death_cross' | 'ma_support' | 'ma_resistance' | 'ma_breakout_up' | 'ma_breakout_down' | 'ma_bullish_alignment' | 'ma_bearish_alignment';
 type ReturnFilter = 'all' | 'positive' | 'negative';
+
+// 전략명 매핑
+const TRENDLINE_STRATEGIES = ['descending_trendline_breakout', 'approaching_breakout', 'pullback_buy', 'doji_star'];
+const MA_STRATEGIES = ['golden_cross', 'death_cross', 'ma_support', 'ma_resistance', 'ma_breakout_up', 'ma_breakout_down', 'ma_bullish_alignment', 'ma_bearish_alignment'];
 
 const PAGE_SIZE = 30;
 
 export default function SignalsPage() {
   const loadMoreRef = useRef<HTMLDivElement>(null);
+  const [signalCategory, setSignalCategory] = useState<SignalCategory>('ma');
   const [signalFilter, setSignalFilter] = useState<SignalFilter>('all');
   const [returnFilter, setReturnFilter] = useState<ReturnFilter>('all');
   const { formatShortDate, formatShortDateTime } = useTimezone();
+
+  // 카테고리 변경 시 필터 초기화
+  const handleCategoryChange = (category: SignalCategory) => {
+    setSignalCategory(category);
+    setSignalFilter('all');
+  };
 
   const {
     data,
@@ -76,11 +88,13 @@ export default function SignalsPage() {
     hasNextPage,
     isFetchingNextPage,
   } = useInfiniteQuery({
-    queryKey: ['stored-signals-infinite'],
+    queryKey: ['stored-signals-infinite', signalCategory],
     queryFn: async ({ pageParam = 0 }) => {
-      const response = await fetch(
-        `${process.env.NEXT_PUBLIC_API_URL}/api/signals?skip=${pageParam}&limit=${PAGE_SIZE}`
-      );
+      // MA 카테고리면 /api/signals/ma 사용, 아니면 기존 /api/signals 사용
+      const endpoint = signalCategory === 'ma'
+        ? `${process.env.NEXT_PUBLIC_API_URL}/api/signals/ma?skip=${pageParam}&limit=${PAGE_SIZE}`
+        : `${process.env.NEXT_PUBLIC_API_URL}/api/signals?skip=${pageParam}&limit=${PAGE_SIZE}`;
+      const response = await fetch(endpoint);
       if (!response.ok) throw new Error('Failed to fetch signals');
       return response.json() as Promise<SignalListResponse>;
     },
@@ -116,11 +130,23 @@ export default function SignalsPage() {
   const formatPrice = (price: number) => `$${price.toFixed(2)}`;
 
   const filteredSignals = allSignals.filter(signal => {
+    // 시그널 필터
     if (signalFilter !== 'all') {
-      if (signalFilter === 'breakout' && signal.strategy_name !== 'trendline_breakout') return false;
+      // 기존 추세선 시그널 필터
+      if (signalFilter === 'breakout' && signal.strategy_name !== 'descending_trendline_breakout') return false;
       if (signalFilter === 'approaching' && signal.strategy_name !== 'approaching_breakout') return false;
       if (signalFilter === 'pullback' && signal.strategy_name !== 'pullback_buy') return false;
+      // MA 시그널 필터
+      if (signalFilter === 'golden_cross' && signal.strategy_name !== 'golden_cross') return false;
+      if (signalFilter === 'death_cross' && signal.strategy_name !== 'death_cross') return false;
+      if (signalFilter === 'ma_support' && signal.strategy_name !== 'ma_support') return false;
+      if (signalFilter === 'ma_resistance' && signal.strategy_name !== 'ma_resistance') return false;
+      if (signalFilter === 'ma_breakout_up' && signal.strategy_name !== 'ma_breakout_up') return false;
+      if (signalFilter === 'ma_breakout_down' && signal.strategy_name !== 'ma_breakout_down') return false;
+      if (signalFilter === 'ma_bullish_alignment' && signal.strategy_name !== 'ma_bullish_alignment') return false;
+      if (signalFilter === 'ma_bearish_alignment' && signal.strategy_name !== 'ma_bearish_alignment') return false;
     }
+    // 수익률 필터
     if (returnFilter !== 'all') {
       if (returnFilter === 'positive' && (signal.return_percent ?? 0) < 0) return false;
       if (returnFilter === 'negative' && (signal.return_percent ?? 0) >= 0) return false;
@@ -129,13 +155,45 @@ export default function SignalsPage() {
   });
 
   const getSignalBadge = (strategyName: string) => {
+    // 기존 추세선 시그널
     if (strategyName === 'approaching_breakout') {
       return <Badge className="bg-yellow-500/20 text-yellow-600 dark:text-yellow-400 hover:bg-yellow-500/30 text-[10px] px-1.5 h-5">임박</Badge>;
     }
     if (strategyName === 'pullback_buy') {
       return <Badge className="bg-purple-500/20 text-purple-600 dark:text-purple-400 hover:bg-purple-500/30 text-[10px] px-1.5 h-5">되돌림</Badge>;
     }
-    return <Badge className="bg-green-500/20 text-green-600 dark:text-green-400 hover:bg-green-500/30 text-[10px] px-1.5 h-5">돌파</Badge>;
+    if (strategyName === 'descending_trendline_breakout') {
+      return <Badge className="bg-green-500/20 text-green-600 dark:text-green-400 hover:bg-green-500/30 text-[10px] px-1.5 h-5">돌파</Badge>;
+    }
+    if (strategyName === 'doji_star') {
+      return <Badge className="bg-pink-500/20 text-pink-600 dark:text-pink-400 hover:bg-pink-500/30 text-[10px] px-1.5 h-5">도지</Badge>;
+    }
+    // MA 시그널
+    if (strategyName === 'golden_cross') {
+      return <Badge className="bg-amber-500/20 text-amber-600 dark:text-amber-400 hover:bg-amber-500/30 text-[10px] px-1.5 h-5">골든</Badge>;
+    }
+    if (strategyName === 'death_cross') {
+      return <Badge className="bg-slate-500/20 text-slate-600 dark:text-slate-400 hover:bg-slate-500/30 text-[10px] px-1.5 h-5">데드</Badge>;
+    }
+    if (strategyName === 'ma_support') {
+      return <Badge className="bg-blue-500/20 text-blue-600 dark:text-blue-400 hover:bg-blue-500/30 text-[10px] px-1.5 h-5">지지</Badge>;
+    }
+    if (strategyName === 'ma_resistance') {
+      return <Badge className="bg-orange-500/20 text-orange-600 dark:text-orange-400 hover:bg-orange-500/30 text-[10px] px-1.5 h-5">저항</Badge>;
+    }
+    if (strategyName === 'ma_breakout_up') {
+      return <Badge className="bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/30 text-[10px] px-1.5 h-5">상향돌파</Badge>;
+    }
+    if (strategyName === 'ma_breakout_down') {
+      return <Badge className="bg-rose-500/20 text-rose-600 dark:text-rose-400 hover:bg-rose-500/30 text-[10px] px-1.5 h-5">하향돌파</Badge>;
+    }
+    if (strategyName === 'ma_bullish_alignment') {
+      return <Badge className="bg-teal-500/20 text-teal-600 dark:text-teal-400 hover:bg-teal-500/30 text-[10px] px-1.5 h-5">정배열</Badge>;
+    }
+    if (strategyName === 'ma_bearish_alignment') {
+      return <Badge className="bg-red-500/20 text-red-600 dark:text-red-400 hover:bg-red-500/30 text-[10px] px-1.5 h-5">역배열</Badge>;
+    }
+    return <Badge className="bg-gray-500/20 text-gray-600 dark:text-gray-400 hover:bg-gray-500/30 text-[10px] px-1.5 h-5">{strategyName}</Badge>;
   };
 
   const handleAddToFavorites = async (e: React.MouseEvent, signal: StockSignal) => {
@@ -156,16 +214,43 @@ export default function SignalsPage() {
         {/* Header */}
         <div className="flex flex-col lg:flex-row lg:items-center gap-3">
           {/* Filters */}
-          <div className="flex items-center gap-2 flex-1">
+          <div className="flex items-center gap-2 flex-1 flex-wrap">
+            {/* 카테고리 선택 */}
+            <Select value={signalCategory} onValueChange={(v) => handleCategoryChange(v as SignalCategory)}>
+              <SelectTrigger className="w-[100px] h-9">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="ma">MA 시그널</SelectItem>
+                <SelectItem value="trendline">추세선</SelectItem>
+              </SelectContent>
+            </Select>
+
+            {/* 시그널 타입 필터 - 카테고리에 따라 다른 옵션 */}
             <Select value={signalFilter} onValueChange={(v) => setSignalFilter(v as SignalFilter)}>
               <SelectTrigger className="w-[120px] h-9">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">전체 시그널</SelectItem>
-                <SelectItem value="breakout">돌파</SelectItem>
-                <SelectItem value="approaching">임박</SelectItem>
-                <SelectItem value="pullback">되돌림</SelectItem>
+                <SelectItem value="all">전체</SelectItem>
+                {signalCategory === 'ma' ? (
+                  <>
+                    <SelectItem value="golden_cross">골든크로스</SelectItem>
+                    <SelectItem value="death_cross">데드크로스</SelectItem>
+                    <SelectItem value="ma_support">지지</SelectItem>
+                    <SelectItem value="ma_resistance">저항</SelectItem>
+                    <SelectItem value="ma_breakout_up">상향돌파</SelectItem>
+                    <SelectItem value="ma_breakout_down">하향돌파</SelectItem>
+                    <SelectItem value="ma_bullish_alignment">정배열</SelectItem>
+                    <SelectItem value="ma_bearish_alignment">역배열</SelectItem>
+                  </>
+                ) : (
+                  <>
+                    <SelectItem value="breakout">돌파</SelectItem>
+                    <SelectItem value="approaching">임박</SelectItem>
+                    <SelectItem value="pullback">되돌림</SelectItem>
+                  </>
+                )}
               </SelectContent>
             </Select>
 

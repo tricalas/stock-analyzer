@@ -120,6 +120,62 @@ def analyze_signals_task(
 
 @shared_task(
     bind=True,
+    name="analyze_ma_signals_task",
+    autoretry_for=(Exception,),
+    dont_autoretry_for=(SoftTimeLimitExceeded,),
+    retry_backoff=60,
+    retry_backoff_max=600,
+    max_retries=3
+)
+def analyze_ma_signals_task(
+    self,
+    task_id: str,
+    mode: str = "all",
+    limit: int = 500,
+    days: int = 250,
+    force_full: bool = False
+):
+    """
+    MA 시그널 분석 Celery 태스크
+
+    Args:
+        task_id: TaskProgress에 사용할 task_id
+        mode: 분석 모드 ("tagged", "all", "top")
+        limit: top 모드일 때 상위 몇 개
+        days: 분석할 일수 (MA 200일 계산용)
+        force_full: True면 델타 무시하고 전체 스캔
+
+    Returns:
+        분석 결과 딕셔너리
+    """
+    from app.ma_signal_analyzer import ma_signal_analyzer
+
+    try:
+        logger.info(f"[Celery] Starting MA signal analysis: task_id={task_id}, mode={mode}, force_full={force_full}")
+
+        result = ma_signal_analyzer.analyze_and_store_signals(
+            mode=mode,
+            limit=limit,
+            days=days,
+            force_full=force_full,
+            task_id=task_id
+        )
+
+        logger.info(f"[Celery] MA signal analysis completed: {result}")
+        return result
+
+    except SoftTimeLimitExceeded:
+        logger.warning(f"[Celery] Task {task_id} soft time limit exceeded, cleaning up...")
+        _mark_task_failed(task_id, "작업 시간 초과 (59분)")
+        raise
+    except Exception as e:
+        logger.error(f"[Celery] Error during MA signal analysis: {str(e)}")
+        _mark_task_failed(task_id, str(e))
+        raise
+
+
+@shared_task(
+    bind=True,
     name="retry_failed_stocks_task",
     autoretry_for=(Exception,),
     dont_autoretry_for=(SoftTimeLimitExceeded,),
