@@ -159,6 +159,7 @@ export default function Home() {
   const handleStockClick = useCallback((stock: Stock) => openNaverChartPopup(stock), []);
 
   const stocks = data?.pages.flatMap(page => page.stocks || []) || [];
+  const totalInDb = data?.pages[0]?.total_in_db;
 
   return (
     <AppLayout>
@@ -176,6 +177,11 @@ export default function Home() {
               <SearchBar onStockSelect={handleShowChart} />
             </div>
             <div className="flex items-center gap-3">
+              {totalInDb && (
+                <span className="text-sm font-medium text-primary">
+                  전체 {totalInDb.toLocaleString()}종목
+                </span>
+              )}
               {lastUpdateTime && (
                 <span className="text-sm text-muted-foreground">
                   최근: {formatShortDateTime(lastUpdateTime)}
@@ -196,11 +202,18 @@ export default function Home() {
           <div className="lg:hidden space-y-3">
             <SearchBar onStockSelect={handleShowChart} />
             <div className="flex items-center justify-between gap-2">
-              <SortDropdown
-                sortField={sortField}
-                sortDirection={sortDirection}
-                onSortChange={handleSortChange}
-              />
+              <div className="flex items-center gap-2">
+                <SortDropdown
+                  sortField={sortField}
+                  sortDirection={sortDirection}
+                  onSortChange={handleSortChange}
+                />
+                {totalInDb && (
+                  <span className="text-xs font-medium text-primary">
+                    {totalInDb.toLocaleString()}종목
+                  </span>
+                )}
+              </div>
               <div className="flex items-center gap-2">
                 {lastUpdateTime && (
                   <span className="text-xs text-muted-foreground hidden sm:block">

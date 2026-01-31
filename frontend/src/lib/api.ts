@@ -109,6 +109,7 @@ export interface Tag {
 
 export interface StockListResponse {
   total: number;
+  total_in_db?: number;  // DB 전체 종목 수
   stocks: Stock[];
   page: number;
   page_size: number;

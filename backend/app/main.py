@@ -426,9 +426,15 @@ def get_stocks(
         }
         stock_list.append(stock_data)
 
+    # DB 전체 종목 수 (첫 페이지에서만 계산)
+    total_in_db = None
+    if skip == 0:
+        total_in_db = db.query(Stock).filter(Stock.is_active == True).count()
+
     # 결과 생성 및 캐시에 저장
     result = {
         "total": total,
+        "total_in_db": total_in_db,
         "stocks": stock_list,
         "page": skip // limit + 1,
         "page_size": limit

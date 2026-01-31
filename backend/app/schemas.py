@@ -154,6 +154,7 @@ class PaginationParams(BaseModel):
 
 class StockListResponse(BaseModel):
     total: int
+    total_in_db: Optional[int] = None  # DB 전체 종목 수
     stocks: List[StockWithLatestPrice]
     page: int
     page_size: int
