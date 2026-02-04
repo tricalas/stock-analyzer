@@ -633,8 +633,8 @@ def get_ma90_screener_stocks(
     db: Session = Depends(get_db),
     current_user: Optional[User] = Depends(get_optional_current_user)
 ):
-    """90일선 스크리너: MA90 근접 + 고점 대비 하락 종목"""
-    from sqlalchemy import func, and_
+    """90일선 스크리너: MA90 근접 종목"""
+    from sqlalchemy import and_
 
     # 캐시 키 생성
     user_token = current_user.user_token if current_user else "anonymous"
@@ -650,31 +650,16 @@ def get_ma90_screener_stocks(
     if cached_data:
         return cached_data
 
-    # 서브쿼리: 종목별 최고가
-    high_price_subq = db.query(
-        StockPriceHistory.stock_id,
-        func.max(StockPriceHistory.high_price).label('max_high_price')
-    ).group_by(StockPriceHistory.stock_id).subquery()
-
-    # 메인 쿼리: Stock + 최고가 조인
-    query = db.query(Stock, high_price_subq.c.max_high_price).join(
-        high_price_subq,
-        Stock.id == high_price_subq.c.stock_id
-    ).filter(
+    query = db.query(Stock).filter(
         Stock.is_active == True,
         Stock.current_price.isnot(None),
         Stock.ma90_price.isnot(None),
         Stock.ma90_price > 0,
-        high_price_subq.c.max_high_price > 0,
     )
 
-    # 조건 1: MA90 대비 -5% ~ +5%
+    # 조건: MA90 대비 -5% ~ +5%
     ma90_pct = (Stock.current_price - Stock.ma90_price) / Stock.ma90_price * 100
     query = query.filter(ma90_pct.between(-5, 5))
-
-    # 조건 2: 고점 대비 30% 이상 하락
-    from_high_pct = (high_price_subq.c.max_high_price - Stock.current_price) / high_price_subq.c.max_high_price * 100
-    query = query.filter(from_high_pct >= 30)
 
     # dislike/error 태그 제외
     if current_user:
@@ -691,8 +676,8 @@ def get_ma90_screener_stocks(
             if exclude_stock_ids:
                 query = query.filter(~Stock.id.in_(exclude_stock_ids))
 
-    # 정렬: 고점 대비 하락률 내림차순
-    query = query.order_by(from_high_pct.desc(), Stock.market_cap.desc().nullslast())
+    # 정렬: 시가총액 내림차순
+    query = query.order_by(Stock.market_cap.desc().nullslast(), Stock.id.asc())
 
     # COUNT 최적화
     if skip == 0:
@@ -705,13 +690,13 @@ def get_ma90_screener_stocks(
         else:
             total = query.count()
 
-    results = query.offset(skip).limit(limit).all()
+    stocks = query.offset(skip).limit(limit).all()
 
     # 태그 정보 일괄 조회
     tags_map = {}
     tags_by_id = {}
-    if current_user and results:
-        stock_ids = [stock.id for stock, _ in results]
+    if current_user and stocks:
+        stock_ids = [s.id for s in stocks]
         tag_assignments = db.query(StockTagAssignment).filter(
             and_(
                 StockTagAssignment.stock_id.in_(stock_ids),
@@ -728,9 +713,8 @@ def get_ma90_screener_stocks(
 
     # 응답 구성
     stock_list = []
-    for stock, max_high_price in results:
+    for stock in stocks:
         ma90_percentage = ((stock.current_price - stock.ma90_price) / stock.ma90_price) * 100
-        from_high_percent = ((max_high_price - stock.current_price) / max_high_price) * 100
 
         tags = []
         if stock.id in tags_map:
@@ -772,8 +756,6 @@ def get_ma90_screener_stocks(
             "updated_at": stock.updated_at,
             "ma90_price": stock.ma90_price,
             "ma90_percentage": round(ma90_percentage, 2),
-            "max_high_price": max_high_price,
-            "from_high_percent": round(from_high_percent, 2),
             "tags": tags,
             "latest_tag_date": None,
             "history_records_count": stock.history_records_count or 0,

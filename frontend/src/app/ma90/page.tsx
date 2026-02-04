@@ -95,7 +95,7 @@ export default function Ma90ScreenerPage() {
           <div>
             <h2 className="text-lg font-bold">90일선 스크리너</h2>
             <p className="text-sm text-muted-foreground">
-              90일선 근접(-5%~+5%) &amp; 고점 대비 30% 이상 하락 종목
+              현재가가 90일 이동평균선 -5% ~ +5% 범위에 있는 종목
             </p>
           </div>
         </div>
@@ -147,7 +147,7 @@ export default function Ma90ScreenerPage() {
               </div>
               <p className="font-medium">조건에 맞는 종목이 없습니다</p>
               <p className="text-sm text-muted-foreground mt-1">
-                90일선 근접 & 고점 대비 30% 이상 하락한 종목이 없습니다
+                90일선 근접(-5%~+5%) 종목이 없습니다
               </p>
             </div>
           )}
