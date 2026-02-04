@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Star, ThumbsDown, Settings, TrendingUp, ShoppingCart, ThumbsUp, Eye, AlertCircle, Trash2, LogOut, User, Globe, UserCircle, Menu, Moon, Sun } from 'lucide-react';
+import { Star, ThumbsDown, Settings, TrendingUp, ShoppingCart, ThumbsUp, Eye, AlertCircle, Trash2, LogOut, User, Globe, UserCircle, Menu, Moon, Sun, Target } from 'lucide-react';
 import { usePathname } from 'next/navigation';
 import Link from 'next/link';
 import { useTheme } from 'next-themes';
@@ -50,6 +50,7 @@ export default function Sidebar({ favoriteCount = 0, dislikeCount = 0 }: Sidebar
 
   const baseNavigation: NavItem[] = [
     { name: '종목', href: '/', icon: Globe },
+    { name: '90일', href: '/ma90', icon: Target },
     { name: '시그널', href: '/signals', icon: TrendingUp },
   ];
 
@@ -73,6 +74,7 @@ export default function Sidebar({ favoriteCount = 0, dislikeCount = 0 }: Sidebar
   // 모바일 하단 네비게이션 (5개)
   const mobileBottomNav: NavItem[] = [
     { name: '종목', href: '/', icon: Globe },
+    { name: '90일', href: '/ma90', icon: Target },
     { name: '시그널', href: '/signals', icon: TrendingUp },
     ...(visibleTags.length > 0 ? [{
       name: visibleTags[0].display_name,

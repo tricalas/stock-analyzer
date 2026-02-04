@@ -93,6 +93,10 @@ export interface Stock {
 
   // 최신 태그 활동 날짜
   latest_tag_date?: string;
+
+  // MA90 스크리너 전용 필드
+  max_high_price?: number;
+  from_high_percent?: number;
 }
 
 export interface Tag {
@@ -293,6 +297,14 @@ export const stockApi = {
 
   removeTagFromStock: async (stockId: number, tagId: number) => {
     const response = await api.delete(`/api/stocks/${stockId}/tags/${tagId}`);
+    return response.data;
+  },
+
+  getMa90Stocks: async (params?: {
+    skip?: number;
+    limit?: number;
+  }): Promise<StockListResponse> => {
+    const response = await api.get('/api/stocks/ma90-screener', { params });
     return response.data;
   },
 

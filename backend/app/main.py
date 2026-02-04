@@ -626,6 +626,174 @@ def search_stocks(
     return result
 
 
+@app.get("/api/stocks/ma90-screener")
+def get_ma90_screener_stocks(
+    skip: int = Query(0, ge=0),
+    limit: int = Query(20, ge=1, le=100),
+    db: Session = Depends(get_db),
+    current_user: Optional[User] = Depends(get_optional_current_user)
+):
+    """90일선 스크리너: MA90 근접 + 고점 대비 하락 종목"""
+    from sqlalchemy import func, and_
+
+    # 캐시 키 생성
+    user_token = current_user.user_token if current_user else "anonymous"
+    cache_key_data = {
+        "endpoint": "ma90-screener",
+        "user": user_token,
+        "skip": skip,
+        "limit": limit
+    }
+    cache_key = hashlib.md5(orjson.dumps(cache_key_data, option=orjson.OPT_SORT_KEYS)).hexdigest()
+
+    cached_data = get_cache(cache_key)
+    if cached_data:
+        return cached_data
+
+    # 서브쿼리: 종목별 최고가
+    high_price_subq = db.query(
+        StockPriceHistory.stock_id,
+        func.max(StockPriceHistory.high_price).label('max_high_price')
+    ).group_by(StockPriceHistory.stock_id).subquery()
+
+    # 메인 쿼리: Stock + 최고가 조인
+    query = db.query(Stock, high_price_subq.c.max_high_price).join(
+        high_price_subq,
+        Stock.id == high_price_subq.c.stock_id
+    ).filter(
+        Stock.is_active == True,
+        Stock.current_price.isnot(None),
+        Stock.ma90_price.isnot(None),
+        Stock.ma90_price > 0,
+        high_price_subq.c.max_high_price > 0,
+    )
+
+    # 조건 1: MA90 대비 -5% ~ +5%
+    ma90_pct = (Stock.current_price - Stock.ma90_price) / Stock.ma90_price * 100
+    query = query.filter(ma90_pct.between(-5, 5))
+
+    # 조건 2: 고점 대비 30% 이상 하락
+    from_high_pct = (high_price_subq.c.max_high_price - Stock.current_price) / high_price_subq.c.max_high_price * 100
+    query = query.filter(from_high_pct >= 30)
+
+    # dislike/error 태그 제외
+    if current_user:
+        exclude_tags = db.query(StockTag).filter(
+            StockTag.name.in_(["dislike", "error", "delete"])
+        ).all()
+        if exclude_tags:
+            exclude_tag_ids = [tag.id for tag in exclude_tags]
+            exclude_stock_ids = db.query(StockTagAssignment.stock_id).filter(
+                StockTagAssignment.tag_id.in_(exclude_tag_ids),
+                StockTagAssignment.user_token == current_user.user_token
+            ).all()
+            exclude_stock_ids = [sid[0] for sid in exclude_stock_ids]
+            if exclude_stock_ids:
+                query = query.filter(~Stock.id.in_(exclude_stock_ids))
+
+    # 정렬: 고점 대비 하락률 내림차순
+    query = query.order_by(from_high_pct.desc(), Stock.market_cap.desc().nullslast())
+
+    # COUNT 최적화
+    if skip == 0:
+        total = query.count()
+    else:
+        count_cache_key = f"count:{hashlib.md5(orjson.dumps({**cache_key_data, 'skip': 0}, option=orjson.OPT_SORT_KEYS)).hexdigest()}"
+        cached_first_page = get_cache(count_cache_key)
+        if cached_first_page and 'total' in cached_first_page:
+            total = cached_first_page['total']
+        else:
+            total = query.count()
+
+    results = query.offset(skip).limit(limit).all()
+
+    # 태그 정보 일괄 조회
+    tags_map = {}
+    tags_by_id = {}
+    if current_user and results:
+        stock_ids = [stock.id for stock, _ in results]
+        tag_assignments = db.query(StockTagAssignment).filter(
+            and_(
+                StockTagAssignment.stock_id.in_(stock_ids),
+                StockTagAssignment.user_token == current_user.user_token
+            )
+        ).all()
+        for ta in tag_assignments:
+            if ta.stock_id not in tags_map:
+                tags_map[ta.stock_id] = []
+            tags_map[ta.stock_id].append(ta)
+        tag_ids = list(set(ta.tag_id for ta in tag_assignments))
+        if tag_ids:
+            tags_by_id = {tag.id: tag for tag in db.query(StockTag).filter(StockTag.id.in_(tag_ids)).all()}
+
+    # 응답 구성
+    stock_list = []
+    for stock, max_high_price in results:
+        ma90_percentage = ((stock.current_price - stock.ma90_price) / stock.ma90_price) * 100
+        from_high_percent = ((max_high_price - stock.current_price) / max_high_price) * 100
+
+        tags = []
+        if stock.id in tags_map:
+            for ta in tags_map[stock.id]:
+                tag_obj = tags_by_id.get(ta.tag_id)
+                if tag_obj:
+                    tags.append({
+                        "id": tag_obj.id,
+                        "name": tag_obj.name,
+                        "display_name": tag_obj.display_name,
+                        "color": tag_obj.color,
+                        "icon": tag_obj.icon,
+                        "order": tag_obj.order,
+                        "is_active": tag_obj.is_active,
+                        "user_token": tag_obj.user_token,
+                        "created_at": tag_obj.created_at.isoformat() if tag_obj.created_at else None,
+                        "updated_at": tag_obj.updated_at.isoformat() if tag_obj.updated_at else None,
+                    })
+
+        stock_list.append({
+            "id": stock.id,
+            "symbol": stock.symbol,
+            "name": stock.name,
+            "market": stock.market,
+            "exchange": stock.exchange,
+            "sector": stock.sector,
+            "industry": stock.industry,
+            "current_price": stock.current_price,
+            "previous_close": stock.previous_close,
+            "change_amount": stock.change_amount,
+            "change_percent": stock.change_percent,
+            "market_cap": stock.market_cap,
+            "trading_volume": stock.trading_volume,
+            "per": stock.per,
+            "roe": stock.roe,
+            "market_cap_rank": stock.market_cap_rank,
+            "is_active": stock.is_active,
+            "created_at": stock.created_at,
+            "updated_at": stock.updated_at,
+            "ma90_price": stock.ma90_price,
+            "ma90_percentage": round(ma90_percentage, 2),
+            "max_high_price": max_high_price,
+            "from_high_percent": round(from_high_percent, 2),
+            "tags": tags,
+            "latest_tag_date": None,
+            "history_records_count": stock.history_records_count or 0,
+            "has_history_data": (stock.history_records_count or 0) > 0,
+            "latest_price": stock.current_price,
+            "latest_change": stock.change_amount,
+            "latest_change_percent": stock.change_percent,
+            "latest_volume": stock.trading_volume,
+        })
+
+    result = {
+        "total": total,
+        "stocks": stock_list,
+        "page": skip // limit + 1,
+        "page_size": limit
+    }
+    set_cache(cache_key, result, ttl=300)
+    return result
+
+
 @app.get("/api/stocks/no-history")
 def get_stocks_without_history(
     page: int = Query(1, ge=1, description="페이지 번호"),
