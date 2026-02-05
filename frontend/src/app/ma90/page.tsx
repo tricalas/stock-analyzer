@@ -58,6 +58,7 @@ export default function Ma90ScreenerPage() {
   }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
 
   const allStocks = data?.pages.flatMap((page) => page.stocks) ?? [];
+  const totalCount = data?.pages[0]?.total ?? 0;
 
   const handleStockClick = (stock: Stock) => {
     openNaverChartPopup(stock);
@@ -93,9 +94,14 @@ export default function Ma90ScreenerPage() {
         {/* Header */}
         <div className="flex items-center justify-between">
           <div>
-            <h2 className="text-lg font-bold">90일선 스크리너</h2>
+            <div className="flex items-center gap-2">
+              <h2 className="text-lg font-bold">90일선 스크리너</h2>
+              {!isLoading && totalCount > 0 && (
+                <span className="text-sm font-medium text-primary">{totalCount}개</span>
+              )}
+            </div>
             <p className="text-sm text-muted-foreground">
-              현재가가 90일 이동평균선 -5% ~ +5% 범위에 있는 종목
+              현재가가 90일 이동평균선 -5% ~ +5% 범위에 있는 미국 주식
             </p>
           </div>
         </div>

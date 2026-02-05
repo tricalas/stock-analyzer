@@ -652,6 +652,7 @@ def get_ma90_screener_stocks(
 
     query = db.query(Stock).filter(
         Stock.is_active == True,
+        Stock.market == "US",
         Stock.current_price.isnot(None),
         Stock.ma90_price.isnot(None),
         Stock.ma90_price > 0,
