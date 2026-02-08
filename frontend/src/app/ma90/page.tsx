@@ -8,7 +8,7 @@ import StockChartModal from '@/components/StockChartModal';
 import AppLayout from '@/components/AppLayout';
 import { Target } from 'lucide-react';
 import ScrollToTopButton from '@/components/atoms/ScrollToTopButton';
-import { openNaverChartPopup } from '@/lib/naverStock';
+import { openNaverChartNewTab } from '@/lib/naverStock';
 import { Toaster } from '@/components/ui/sonner';
 
 export default function Ma90ScreenerPage() {
@@ -61,7 +61,7 @@ export default function Ma90ScreenerPage() {
   const totalCount = data?.pages[0]?.total ?? 0;
 
   const handleStockClick = (stock: Stock) => {
-    openNaverChartPopup(stock);
+    openNaverChartNewTab(stock);
   };
 
   const handleShowChart = (stock: Stock) => {

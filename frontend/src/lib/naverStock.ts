@@ -52,3 +52,11 @@ export function openNaverChartPopup(stock: StockInfo): void {
     `width=${width},height=${height},left=${left},top=${top},resizable=yes,scrollbars=yes`
   );
 }
+
+/**
+ * 네이버 차트를 새 탭으로 열기
+ */
+export function openNaverChartNewTab(stock: StockInfo): void {
+  const url = getNaverChartUrl(stock);
+  window.open(url, '_blank');
+}
