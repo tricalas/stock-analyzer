@@ -101,7 +101,7 @@ export default function Ma90ScreenerPage() {
               )}
             </div>
             <p className="text-sm text-muted-foreground">
-              현재가가 90일 이동평균선 -5% ~ +5% 범위에 있는 미국 주식
+              현재가가 90일 이동평균선 -2% ~ +2% 범위에 있는 미국 주식
             </p>
           </div>
         </div>
@@ -153,7 +153,7 @@ export default function Ma90ScreenerPage() {
               </div>
               <p className="font-medium">조건에 맞는 종목이 없습니다</p>
               <p className="text-sm text-muted-foreground mt-1">
-                90일선 근접(-5%~+5%) 종목이 없습니다
+                90일선 근접(-2%~+2%) 종목이 없습니다
               </p>
             </div>
           )}

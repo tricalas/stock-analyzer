@@ -658,9 +658,9 @@ def get_ma90_screener_stocks(
         Stock.ma90_price > 0,
     )
 
-    # 조건: MA90 대비 -5% ~ +5%
+    # 조건: MA90 대비 -2% ~ +2%
     ma90_pct = (Stock.current_price - Stock.ma90_price) / Stock.ma90_price * 100
-    query = query.filter(ma90_pct.between(-5, 5))
+    query = query.filter(ma90_pct.between(-2, 2))
 
     # dislike/error 태그 제외
     if current_user:
