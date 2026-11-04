@@ -6,6 +6,7 @@ echo ""
 # Backend 시작
 echo "Starting backend server..."
 cd backend
+python3 -m app.migrate || exit 1
 python3 -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000 &
 BACKEND_PID=$!
 echo "Backend started with PID: $BACKEND_PID"

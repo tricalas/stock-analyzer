@@ -91,3 +91,13 @@ auto_crawl_history.py
 
 # Claude Code
 .claude/
+# Build output (kept separate from legacy root-owned cache)
+.next-build/
+*.tsbuildinfo
+
+# Private deployment backups
+.backups/
+
+.vercel/
+.vercel
+.env*.local

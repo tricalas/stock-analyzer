@@ -18,7 +18,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import desc, or_, func
 
 from app.models import Stock, StockPriceHistory, StockSignal, TaskProgress, StockTagAssignment
-from app.database import get_db
+from app.database import get_db, SessionLocal
 
 logger = logging.getLogger(__name__)
 
@@ -69,7 +69,7 @@ class MASignalAnalyzer:
         """
         close_db = False
         if db is None:
-            db = next(get_db())
+            db = SessionLocal()
             close_db = True
 
         if task_id is None:
@@ -130,6 +130,7 @@ class MASignalAnalyzer:
                     logger.error(f"❌ Error analyzing stock {stock_id}: {str(e)}")
                     import traceback
                     logger.error(traceback.format_exc())
+                    db.rollback()
                     task_progress.failed_count += 1
                     db.commit()
                     continue
@@ -163,6 +164,7 @@ class MASignalAnalyzer:
         except Exception as e:
             logger.error(f"❌ Error in MA signal analysis: {str(e)}")
 
+            db.rollback()
             if task_progress:
                 task_progress.status = "failed"
                 task_progress.error_message = str(e)
@@ -187,20 +189,22 @@ class MASignalAnalyzer:
         if mode == "tagged":
             tagged_stocks = db.query(StockTagAssignment.stock_id).join(
                 Stock, Stock.id == StockTagAssignment.stock_id
-            ).filter(Stock.market == 'US').distinct().all()
+            ).filter(Stock.market == 'US', Stock.history_precision_version >= 1).distinct().all()
             stock_ids = set(sid[0] for sid in tagged_stocks)
 
         elif mode == "top":
             top_stocks = db.query(Stock.id).filter(
                 Stock.is_active == True,
-                Stock.market == 'US'
+                Stock.market == 'US',
+                Stock.history_precision_version >= 1
             ).order_by(Stock.market_cap.desc().nullslast()).limit(limit or 500).all()
             stock_ids = set(s.id for s in top_stocks)
 
         else:  # "all"
             all_stocks = db.query(Stock.id).filter(
                 Stock.is_active == True,
-                Stock.market == 'US'
+                Stock.market == 'US',
+                Stock.history_precision_version >= 1
             ).all()
             stock_ids = set(s.id for s in all_stocks)
 
@@ -217,14 +221,13 @@ class MASignalAnalyzer:
 
         logger.info(f"Mode: {mode}, Total stocks: {len(stock_ids)}, With 90+ history: {total_with_history}")
 
-        # 델타 필터링 (ma_signal_analyzed_at 컬럼이 없으므로 signal_analyzed_at 재사용)
-        # TODO: 별도 컬럼 추가 고려
+        # MA 분석은 기존 추세선 분석과 독립적으로 추적합니다.
         if delta_only and filtered_ids:
             delta_stocks = db.query(Stock.id).filter(
                 Stock.id.in_(filtered_ids),
                 or_(
-                    Stock.signal_analyzed_at == None,
-                    Stock.history_updated_at > Stock.signal_analyzed_at
+                    Stock.ma_signal_analyzed_at == None,
+                    Stock.history_updated_at > Stock.ma_signal_analyzed_at
                 )
             ).all()
             filtered_ids = [s.id for s in delta_stocks]
@@ -233,49 +236,27 @@ class MASignalAnalyzer:
         return filtered_ids
 
     def _analyze_stock(self, stock_id: int, days: int, db: Session) -> Dict:
-        """단일 종목 MA 시그널 분석 및 저장"""
-        stock = db.query(Stock).filter(Stock.id == stock_id).first()
-        if not stock:
+        # Serialize competing analyses for this stock and replace signals atomically.
+        stock = db.query(Stock).filter(Stock.id == stock_id).with_for_update().first()
+        if stock is None:
             return {"signals_count": 0, "saved_count": 0}
-
-        # 가격 히스토리 조회
-        start_date = date.today() - timedelta(days=days)
-
-        price_history = db.query(StockPriceHistory).filter(
+        from datetime import timedelta
+        history = db.query(StockPriceHistory).filter(
             StockPriceHistory.stock_id == stock_id,
-            StockPriceHistory.date >= start_date
+            StockPriceHistory.date >= date.today() - timedelta(days=days)
         ).order_by(StockPriceHistory.date.asc()).all()
-
-        if len(price_history) < 90:
-            # MA 90일 계산 불가
-            stock.signal_analyzed_at = datetime.utcnow()
+        if len(history) < 90:
             db.commit()
             return {"signals_count": 0, "saved_count": 0}
-
-        # 기존 MA 시그널 삭제 (재분석)
+        signals = self._run_signal_analysis(history, stock.current_price)
         db.query(StockSignal).filter(
             StockSignal.stock_id == stock_id,
             StockSignal.strategy_name.in_(self.STRATEGY_NAMES)
         ).delete(synchronize_session=False)
-        db.commit()
-
-        # 시그널 분석
-        signals = self._run_signal_analysis(price_history, stock.current_price)
-
-        # 분석 완료 타임스탬프 갱신
-        stock.signal_analyzed_at = datetime.utcnow()
-        db.commit()
-
-        if not signals:
-            return {"signals_count": 0, "saved_count": 0}
-
-        # 시그널 저장
         saved_count = self._save_signals(stock_id, signals, db)
-
-        return {
-            "signals_count": len(signals),
-            "saved_count": saved_count
-        }
+        stock.ma_signal_analyzed_at = datetime.utcnow()
+        db.commit()
+        return {"signals_count": len(signals), "saved_count": saved_count}
 
     def _run_signal_analysis(
         self,
@@ -327,7 +308,7 @@ class MASignalAnalyzer:
             logger.error(f"Error in MA signal analysis: {str(e)}")
             import traceback
             logger.error(traceback.format_exc())
-            return []
+            raise
 
     def _calculate_moving_averages(self, df: pd.DataFrame) -> pd.DataFrame:
         """이동평균 계산"""
@@ -645,49 +626,8 @@ class MASignalAnalyzer:
         return signals
 
     def _save_signals(self, stock_id: int, signals: List[Dict], db: Session) -> int:
-        """시그널을 DB에 저장"""
-        saved_count = 0
-
-        for signal_info in signals:
-            try:
-                strategy_name = signal_info.get('strategy_name')
-                signal_type = signal_info.get('signal_type', 'buy')
-
-                # 기존 시그널 확인 (같은 종목, 같은 날짜, 같은 전략)
-                existing = db.query(StockSignal).filter(
-                    StockSignal.stock_id == stock_id,
-                    StockSignal.signal_date == signal_info['signal_date'],
-                    StockSignal.strategy_name == strategy_name
-                ).first()
-
-                if existing:
-                    # 기존 시그널 업데이트
-                    existing.current_price = signal_info['current_price']
-                    existing.return_percent = signal_info['return_percent']
-                    existing.updated_at = datetime.utcnow()
-                else:
-                    # 새 시그널 생성
-                    new_signal = StockSignal(
-                        stock_id=stock_id,
-                        signal_type=signal_type,
-                        signal_date=signal_info['signal_date'],
-                        signal_price=signal_info['signal_price'],
-                        strategy_name=strategy_name,
-                        current_price=signal_info['current_price'],
-                        return_percent=signal_info['return_percent'],
-                        details=json.dumps(signal_info['details']),
-                        is_active=True,
-                        analyzed_at=datetime.utcnow()
-                    )
-                    db.add(new_signal)
-                    saved_count += 1
-
-            except Exception as e:
-                logger.error(f"Error saving MA signal: {str(e)}")
-                continue
-
-        db.commit()
-        return saved_count
+        from app.signal_store import save_signals
+        return save_signals(db, stock_id, signals, None)
 
     def get_stock_ma_analysis(
         self,
@@ -698,7 +638,7 @@ class MASignalAnalyzer:
         """개별 종목 MA 분석 데이터 반환 (차트용)"""
         close_db = False
         if db is None:
-            db = next(get_db())
+            db = SessionLocal()
             close_db = True
 
         try:

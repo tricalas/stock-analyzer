@@ -24,70 +24,24 @@ class KISHistoryCrawler:
         self.kis_client = get_kis_client()
 
     def _calculate_and_update_ma90(self, stock_id: int, db: Session) -> Optional[float]:
-        """
-        StockPriceHistory에서 90일 이동평균 계산 후 Stock.ma90_price 업데이트
-
-        Args:
-            stock_id: 종목 ID
-            db: 데이터베이스 세션
-
-        Returns:
-            계산된 MA90 가격 (60일 미만 데이터면 None)
-        """
-        # 최근 90일 종가 조회 (최신순)
-        prices = db.query(StockPriceHistory.close_price).filter(
-            StockPriceHistory.stock_id == stock_id
-        ).order_by(StockPriceHistory.date.desc()).limit(90).all()
-
-        if len(prices) < 60:  # 최소 60일 데이터 필요
-            logger.debug(f"Stock {stock_id}: Not enough data for MA90 ({len(prices)} days)")
-            return None
-
-        # 평균 계산
-        close_prices = [p.close_price for p in prices if p.close_price is not None]
-        if not close_prices:
-            return None
-
-        ma90 = sum(close_prices) / len(close_prices)
-
-        # Stock 테이블 업데이트
-        db.query(Stock).filter(Stock.id == stock_id).update(
-            {"ma90_price": ma90},
-            synchronize_session=False
-        )
-
-        logger.debug(f"Stock {stock_id}: MA90 updated to {ma90:.2f}")
-        return ma90
+        from app.moving_averages import update_ma90
+        return update_ma90(stock_id, db)
 
     def _get_last_trading_day(self) -> date:
-        """
-        가장 최근 거래일 반환 (미국 주식 기준)
-        - 주말(토/일)이면 금요일 반환
-        - 평일이면 오늘 반환 (장 마감 전이면 어제)
-        """
-        today = date.today()
-        weekday = today.weekday()  # 0=월, 1=화, ..., 5=토, 6=일
-
-        if weekday == 5:  # 토요일 → 금요일
-            return today - timedelta(days=1)
-        elif weekday == 6:  # 일요일 → 금요일
-            return today - timedelta(days=2)
-        else:
-            # 평일: 미국 장 마감 전(한국 시간 오전 6시 이전)이면 전날
-            from datetime import datetime
-            now = datetime.now()
-            if now.hour < 6:  # 한국 시간 오전 6시 이전 = 미국 장 마감 전
-                if weekday == 0:  # 월요일 새벽 → 금요일
-                    return today - timedelta(days=3)
-                else:
-                    return today - timedelta(days=1)
-            return today
+        from zoneinfo import ZoneInfo
+        now = datetime.now(ZoneInfo("America/New_York"))
+        trading_day = now.date()
+        if now.hour < 16:
+            trading_day -= timedelta(days=1)
+        while trading_day.weekday() >= 5:
+            trading_day -= timedelta(days=1)
+        return trading_day
 
     def _should_collect_history(
         self,
         stock: Stock,
         db: Session,
-        min_records: int = 60
+        min_records: int = 90
     ) -> tuple:
         """
         수집 필요 여부 판단 (하이브리드 전략)
@@ -103,6 +57,9 @@ class KISHistoryCrawler:
             - mode: "full" | "incremental" | "skip"
             - last_date: 마지막 수집 날짜 (증분 수집용)
         """
+        if stock.market == "US" and (stock.history_precision_version or 0) < 1:
+            return (True, "full", None)
+
         count = stock.history_records_count or 0
 
         # 데이터 없음 → 전체 수집
@@ -177,7 +134,13 @@ class KISHistoryCrawler:
                 ohlcv_data = self._collect_kr_stock_history(stock.symbol, start_date_str, end_date_str)
             elif stock.market == "US":
                 exchange = self._get_us_exchange_code(stock.exchange)
-                ohlcv_data = self._collect_us_stock_history(stock.symbol, exchange)
+                # Precision repair must cover all previously saved sessions.
+                cutoff = datetime.strptime(start_date_str, "%Y%m%d").date()
+                if (stock.history_precision_version or 0) < 1:
+                    oldest = db.query(StockPriceHistory.date).filter(StockPriceHistory.stock_id == stock.id).order_by(StockPriceHistory.date.asc()).first()
+                    if oldest:
+                        cutoff = min(cutoff, oldest.date)
+                ohlcv_data = self._collect_us_stock_history(stock.symbol, exchange, cutoff)
             else:
                 logger.warning(f"Unknown market: {stock.market} for {stock.symbol}")
                 return {"success": False, "error": f"Unknown market: {stock.market}"}
@@ -201,11 +164,14 @@ class KISHistoryCrawler:
             db.query(Stock).filter(Stock.id == stock.id).update(
                 {
                     "history_records_count": total_records,
-                    "history_updated_at": datetime.utcnow()
+                    "history_updated_at": datetime.utcnow(),
+                    "history_precision_version": 1
                 },
                 synchronize_session=False
             )
             db.commit()
+            from app.cache import invalidate_cache
+            invalidate_cache()
 
             ma90_info = f", MA90: {ma90:.2f}" if ma90 else ""
             logger.info(f"Saved {saved_count} records for {stock.symbol} (total: {total_records}{ma90_info})")
@@ -218,6 +184,7 @@ class KISHistoryCrawler:
             }
 
         except Exception as e:
+            db.rollback()
             logger.error(f"Error collecting history for {stock.symbol}: {str(e)}")
             return {"success": False, "error": str(e)}
 
@@ -267,45 +234,39 @@ class KISHistoryCrawler:
             logger.error(f"Error fetching KR stock history: {str(e)}")
             return []
 
-    def _collect_us_stock_history(
-        self,
-        symbol: str,
-        exchange: str
-    ) -> List[Dict]:
-        """
-        해외 주식 히스토리 수집
-
-        Returns:
-            OHLCV 데이터 리스트
-        """
-        try:
-            raw_data = self.kis_client.get_us_stock_ohlcv(
-                symbol=symbol,
-                exchange=exchange,
-                period="D"  # 일봉
-            )
-
-            # 데이터 변환
-            result = []
+    def _collect_us_stock_history(self, symbol: str, exchange: str, start_date: date = None) -> List[Dict]:
+        """Fetch dated pages and preserve fractional OHLC values."""
+        import math
+        import time
+        cutoff = start_date or (date.today() - timedelta(days=180))
+        records = {}
+        cursor = ""
+        for page in range(100):
+            raw_data = self.kis_client.get_us_stock_ohlcv(symbol=symbol, exchange=exchange, period="D", end_date=cursor)
+            if not raw_data:
+                if page:
+                    raise RuntimeError(f"Incomplete price history for {symbol}")
+                return []
+            parsed = []
             for item in raw_data:
-                try:
-                    result.append({
-                        "date": datetime.strptime(item["xymd"], "%Y%m%d").date(),
-                        "open_price": int(float(item.get("open", 0))),
-                        "high_price": int(float(item.get("high", 0))),
-                        "low_price": int(float(item.get("low", 0))),
-                        "close_price": int(float(item.get("clos", 0))),
-                        "volume": int(item.get("tvol", 0))
-                    })
-                except (ValueError, KeyError) as e:
-                    logger.warning(f"Error parsing US data: {str(e)}, item: {item}")
-                    continue
-
-            return result
-
-        except Exception as e:
-            logger.error(f"Error fetching US stock history: {str(e)}")
-            return []
+                trading_date = datetime.strptime(item["xymd"], "%Y%m%d").date()
+                values = [float(item[key]) for key in ("open", "high", "low", "clos")]
+                if not all(math.isfinite(value) and value > 0 for value in values):
+                    raise ValueError(f"Invalid OHLC data for {symbol} on {trading_date}")
+                parsed.append(trading_date)
+                records[trading_date] = dict(date=trading_date, open_price=values[0], high_price=values[1],
+                    low_price=values[2], close_price=values[3], volume=int(item.get("tvol", 0)))
+            oldest = min(parsed)
+            if oldest <= cutoff or len(raw_data) < 100:
+                break
+            next_cursor = (oldest - timedelta(days=1)).strftime("%Y%m%d")
+            if cursor and next_cursor >= cursor:
+                raise RuntimeError(f"History pagination made no progress for {symbol}")
+            cursor = next_cursor
+            time.sleep(0.1)
+        else:
+            raise RuntimeError(f"Price history exceeded pagination limit for {symbol}")
+        return [record for day, record in sorted(records.items()) if day >= cutoff]
 
     def _get_us_exchange_code(self, exchange: str) -> str:
         """
@@ -322,64 +283,20 @@ class KISHistoryCrawler:
             "NYSE": "NYS",
             "AMEX": "AMS",
         }
-        return exchange_map.get(exchange.upper(), "NAS")
+        return exchange_map.get((exchange or "NASDAQ").upper(), "NAS")
 
-    def _save_price_history(
-        self,
-        stock_id: int,
-        ohlcv_data: List[Dict],
-        db: Session
-    ) -> int:
-        """
-        가격 히스토리 데이터를 DB에 저장
-
-        Args:
-            stock_id: 종목 ID
-            ohlcv_data: OHLCV 데이터 리스트
-            db: 데이터베이스 세션
-
-        Returns:
-            저장된 레코드 수
-        """
-        saved_count = 0
-
-        for data in ohlcv_data:
-            try:
-                # 중복 체크
-                existing = db.query(StockPriceHistory).filter_by(
-                    stock_id=stock_id,
-                    date=data["date"]
-                ).first()
-
-                if existing:
-                    # 업데이트
-                    existing.open_price = data["open_price"]
-                    existing.high_price = data["high_price"]
-                    existing.low_price = data["low_price"]
-                    existing.close_price = data["close_price"]
-                    existing.volume = data["volume"]
-                    existing.updated_at = datetime.utcnow()
-                else:
-                    # 새로 추가
-                    new_record = StockPriceHistory(
-                        stock_id=stock_id,
-                        date=data["date"],
-                        open_price=data["open_price"],
-                        high_price=data["high_price"],
-                        low_price=data["low_price"],
-                        close_price=data["close_price"],
-                        volume=data["volume"]
-                    )
-                    db.add(new_record)
-
-                saved_count += 1
-
-            except Exception as e:
-                logger.error(f"Error saving price history: {str(e)}")
-                continue
-
-        db.commit()
-        return saved_count
+    def _save_price_history(self, stock_id: int, ohlcv_data: List[Dict], db: Session) -> int:
+        from sqlalchemy.dialects.postgresql import insert as pg_insert
+        from sqlalchemy.dialects.sqlite import insert as sqlite_insert
+        insert = pg_insert if db.bind.dialect.name == "postgresql" else sqlite_insert
+        # One statement per batch avoids a database round trip for every candle.
+        for offset in range(0, len(ohlcv_data), 500):
+            records = [dict(stock_id=stock_id, **record) for record in ohlcv_data[offset:offset + 500]]
+            stmt = insert(StockPriceHistory).values(records)
+            updates = {key:getattr(stmt.excluded, key) for key in ("open_price","high_price","low_price","close_price","volume")}
+            updates["updated_at"] = datetime.utcnow()
+            db.execute(stmt.on_conflict_do_update(index_elements=["stock_id", "date"], set_=updates))
+        return len(ohlcv_data)
 
     def collect_history_for_tagged_stocks(
         self,

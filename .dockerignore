@@ -1,0 +1,17 @@
+.git
+**/.env
+**/.env.local
+**/.env.*.local
+**/venv
+**/.venv
+**/node_modules
+**/.next
+**/.next-build
+**/__pycache__
+**/*.db
+**/*.sqlite
+**/*.sqlite3
+**/*.dump
+**/*.log
+**/.kis_token_cache.json
+**/.vercel

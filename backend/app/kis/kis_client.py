@@ -379,7 +379,8 @@ class KISClient:
         self,
         symbol: str,
         exchange: str = "NAS",
-        period: str = "D"
+        period: str = "D",
+        end_date: str = ""
     ) -> List[Dict[str, Any]]:
         """
         해외 주식 기간별 시세 조회
@@ -401,8 +402,8 @@ class KISClient:
             "AUTH": "",
             "EXCD": exchange,
             "SYMB": symbol,
-            "GUBN": period,  # 0: 일, 1: 주, 2: 월
-            "BYMD": "",  # 조회 기준일 (YYYYMMDD, 공백: 당일)
+            "GUBN": {"D": "0", "W": "1", "M": "2"}.get(period, period),  # 0: 일, 1: 주, 2: 월
+            "BYMD": end_date,  # 조회 기준일 (YYYYMMDD, 공백: 당일)
             "MODP": "0"  # 0: 수정주가 미반영, 1: 수정주가 반영
         }
 

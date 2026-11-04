@@ -1,0 +1,12 @@
+backend
+.backups
+docs
+.git
+frontend/node_modules
+frontend/.next
+frontend/.next-build
+frontend/.env*
+frontend/.vercel
+frontend/yarn.lock
+frontend/tests
+frontend/*.tsbuildinfo

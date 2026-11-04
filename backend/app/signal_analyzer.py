@@ -11,7 +11,7 @@ from sqlalchemy import desc
 
 from app.models import Stock, StockPriceHistory, StockSignal, TaskProgress
 from app.technical_indicators import generate_descending_trendline_breakout_signals, generate_approaching_breakout_signals, generate_pullback_signals
-from app.database import get_db
+from app.database import get_db, SessionLocal
 
 logger = logging.getLogger(__name__)
 
@@ -47,7 +47,7 @@ class SignalAnalyzer:
         """
         close_db = False
         if db is None:
-            db = next(get_db())
+            db = SessionLocal()
             close_db = True
 
         # 작업 진행 상황 추적 생성 (task_id가 없으면 자동 생성)
@@ -109,6 +109,7 @@ class SignalAnalyzer:
                     logger.error(f"❌ Error analyzing stock {stock_id}: {str(e)}")
                     import traceback
                     logger.error(traceback.format_exc())
+                    db.rollback()
                     task_progress.failed_count += 1
                     db.commit()
                     continue
@@ -142,6 +143,7 @@ class SignalAnalyzer:
             logger.error(f"❌ Error in signal analysis: {str(e)}")
 
             # TaskProgress 실패 처리
+            db.rollback()
             if task_progress:
                 task_progress.status = "failed"
                 task_progress.error_message = str(e)
@@ -169,14 +171,15 @@ class SignalAnalyzer:
             # 태그가 있는 US 종목만
             tagged_stocks = db.query(StockTagAssignment.stock_id).join(
                 Stock, Stock.id == StockTagAssignment.stock_id
-            ).filter(Stock.market == 'US').distinct().all()
+            ).filter(Stock.market == 'US', Stock.history_precision_version >= 1).distinct().all()
             stock_ids = set(sid[0] for sid in tagged_stocks)
 
         elif mode == "top":
             # 시총 상위 N개 (US만)
             top_stocks = db.query(Stock.id).filter(
                 Stock.is_active == True,
-                Stock.market == 'US'
+                Stock.market == 'US',
+                Stock.history_precision_version >= 1
             ).order_by(Stock.market_cap.desc().nullslast()).limit(limit or 500).all()
             stock_ids = set(s.id for s in top_stocks)
 
@@ -184,7 +187,8 @@ class SignalAnalyzer:
             # 모든 활성 US 종목
             all_stocks = db.query(Stock.id).filter(
                 Stock.is_active == True,
-                Stock.market == 'US'
+                Stock.market == 'US',
+                Stock.history_precision_version >= 1
             ).all()
             stock_ids = set(s.id for s in all_stocks)
 
@@ -217,54 +221,27 @@ class SignalAnalyzer:
         return filtered_ids
 
     def _analyze_stock(self, stock_id: int, days: int, db: Session) -> Dict:
-        """단일 종목 시그널 분석 및 저장"""
-        # 종목 정보 조회
-        stock = db.query(Stock).filter(Stock.id == stock_id).first()
-        if not stock:
+        # Serialize competing analyses for this stock and replace signals atomically.
+        stock = db.query(Stock).filter(Stock.id == stock_id).with_for_update().first()
+        if stock is None:
             return {"signals_count": 0, "saved_count": 0}
-
-        # 가격 히스토리 조회
         from datetime import timedelta
-        start_date = date.today() - timedelta(days=days)
-
-        price_history = db.query(StockPriceHistory).filter(
+        history = db.query(StockPriceHistory).filter(
             StockPriceHistory.stock_id == stock_id,
-            StockPriceHistory.date >= start_date
+            StockPriceHistory.date >= date.today() - timedelta(days=days)
         ).order_by(StockPriceHistory.date.asc()).all()
-
-        if len(price_history) < 60:
-            # 분석 완료 처리 (데이터 부족이어도 분석 시도함)
-            stock.signal_analyzed_at = datetime.utcnow()
+        if len(history) < 60:
             db.commit()
             return {"signals_count": 0, "saved_count": 0}
-
-        # 1. 기존 시그널 삭제 (새 알고리즘으로 재분석하므로)
+        signals = self._run_signal_analysis(history, stock.current_price)
         db.query(StockSignal).filter(
             StockSignal.stock_id == stock_id,
             StockSignal.strategy_name.in_(['descending_trendline_breakout', 'approaching_breakout', 'pullback_buy', 'doji_star'])
         ).delete(synchronize_session=False)
-        db.commit()
-
-        # 2. 기존 "돌파 임박" 시그널의 돌파 확인 업데이트 (삭제 후 남은 시그널이 있다면)
-        self._check_breakout_confirmation(stock_id, price_history, db)
-
-        # 3. 시그널 분석 (돌파 + 돌파 임박)
-        signals = self._run_signal_analysis(price_history, stock.current_price)
-
-        # 4. 분석 완료 타임스탬프 갱신
+        saved_count = self._save_signals(stock_id, signals, db)
         stock.signal_analyzed_at = datetime.utcnow()
         db.commit()
-
-        if not signals or len(signals) == 0:
-            return {"signals_count": 0, "saved_count": 0}
-
-        # 5. 시그널 저장
-        saved_count = self._save_signals(stock_id, signals, db)
-
-        return {
-            "signals_count": len(signals),
-            "saved_count": saved_count
-        }
+        return {"signals_count": len(signals), "saved_count": saved_count}
 
     def _check_breakout_confirmation(
         self,
@@ -526,7 +503,7 @@ class SignalAnalyzer:
 
         except Exception as e:
             logger.error(f"Error running signal analysis: {str(e)}")
-            return []
+            raise
 
     def _detect_doji_pattern(self, df, current_price: Optional[float]) -> List[Dict]:
         """
@@ -592,49 +569,8 @@ class SignalAnalyzer:
         return signals
 
     def _save_signals(self, stock_id: int, signals: List[Dict], db: Session) -> int:
-        """시그널을 DB에 저장 (중복 방지)"""
-        saved_count = 0
-
-        for signal_info in signals:
-            try:
-                # 시그널 정보에서 전략명과 타입 추출
-                strategy_name = signal_info.get('strategy_name', self.strategy_name)
-                signal_type = signal_info.get('signal_type', 'buy')
-
-                # 기존 시그널 확인 (같은 종목, 같은 날짜, 같은 전략)
-                existing = db.query(StockSignal).filter(
-                    StockSignal.stock_id == stock_id,
-                    StockSignal.signal_date == signal_info['signal_date'],
-                    StockSignal.strategy_name == strategy_name
-                ).first()
-
-                if existing:
-                    # 기존 시그널 업데이트 (현재 가격과 수익률만)
-                    existing.current_price = signal_info['current_price']
-                    existing.return_percent = signal_info['return_percent']
-                    existing.updated_at = datetime.utcnow()
-                else:
-                    # 새 시그널 생성
-                    new_signal = StockSignal(
-                        stock_id=stock_id,
-                        signal_type=signal_type,
-                        signal_date=signal_info['signal_date'],
-                        signal_price=signal_info['signal_price'],
-                        strategy_name=strategy_name,
-                        current_price=signal_info['current_price'],
-                        return_percent=signal_info['return_percent'],
-                        details=json.dumps(signal_info['details']),
-                        is_active=True,
-                        analyzed_at=datetime.utcnow()
-                    )
-                    db.add(new_signal)
-                    saved_count += 1
-
-            except Exception as e:
-                logger.error(f"Error saving signal: {str(e)}")
-                continue
-
-        return saved_count
+        from app.signal_store import save_signals
+        return save_signals(db, stock_id, signals, self.strategy_name)
 
     def get_active_signals(
         self,

@@ -60,6 +60,8 @@ class Stock(Base):
     # 델타 추적용 (최적화)
     history_updated_at = Column(DateTime)    # 히스토리 마지막 업데이트 시간
     signal_analyzed_at = Column(DateTime)    # 시그널 마지막 분석 시간
+    ma_signal_analyzed_at = Column(DateTime)
+    history_precision_version = Column(Integer, nullable=False, default=0, server_default="0")
 
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.utcnow)
@@ -132,10 +134,10 @@ class StockPriceHistory(Base):
     date = Column(Date, nullable=False, index=True)
 
     # 가격 정보
-    open_price = Column(Integer)  # 시가
-    high_price = Column(Integer)  # 고가
-    low_price = Column(Integer)   # 저가
-    close_price = Column(Integer) # 종가
+    open_price = Column(Float)  # 시가 (미국 주식 소수점 보존)
+    high_price = Column(Float)
+    low_price = Column(Float)
+    close_price = Column(Float)
     volume = Column(BigInteger)   # 거래량
 
     created_at = Column(DateTime, default=datetime.utcnow)
@@ -216,6 +218,7 @@ class StockSignal(Base):
 
     # 전략 정보
     strategy_name = Column(String(50), nullable=False)  # "breakout_pullback"
+    ma_period = Column(Integer, nullable=False, default=0, server_default="0")
 
     # 성과 정보
     current_price = Column(Float)  # 현재 가격
@@ -234,7 +237,7 @@ class StockSignal(Base):
 
     __table_args__ = (
         # 같은 종목, 같은 날짜, 같은 전략에 대해서는 하나의 시그널만 저장
-        UniqueConstraint('stock_id', 'signal_date', 'strategy_name', name='unique_stock_signal'),
+        UniqueConstraint('stock_id', 'signal_date', 'strategy_name', 'ma_period', name='unique_stock_signal'),
         # 분석 시간과 활성 상태로 검색을 위한 복합 인덱스
         Index('idx_signal_analyzed_active', 'analyzed_at', 'is_active'),
         # 시그널 타입과 날짜로 검색을 위한 복합 인덱스

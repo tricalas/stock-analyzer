@@ -127,10 +127,10 @@ class StockWithLatestPrice(Stock):
 
 class StockPriceHistoryBase(BaseModel):
     date: date
-    open_price: Optional[int] = None
-    high_price: Optional[int] = None
-    low_price: Optional[int] = None
-    close_price: Optional[int] = None
+    open_price: Optional[float] = None
+    high_price: Optional[float] = None
+    low_price: Optional[float] = None
+    close_price: Optional[float] = None
     volume: Optional[int] = None
 
 class StockPriceHistory(StockPriceHistoryBase):
@@ -216,6 +216,7 @@ class StockSignalBase(BaseModel):
     signal_date: date
     signal_price: float
     strategy_name: str
+    ma_period: int = 0
     current_price: Optional[float] = None
     return_percent: Optional[float] = None
     details: Optional[str] = None  # JSON string

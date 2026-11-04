@@ -1,15 +1,31 @@
 from pydantic_settings import BaseSettings
 from typing import List, Union, Optional
-from pydantic import field_validator
+from pydantic import field_validator, model_validator
+import secrets
 import os
 
 class Settings(BaseSettings):
     DATABASE_URL: str = "sqlite:///./stock_analyzer.db"
     # Railway uses REDIS_PRIVATE_URL or REDIS_URL
     REDIS_URL: str = os.environ.get("REDIS_PRIVATE_URL") or os.environ.get("REDIS_URL") or "redis://localhost:6379"
-    SECRET_KEY: str = "your-secret-key-here"
-    SUPER_PIN: str = "999999"  # 슈퍼 관리자 PIN
+    ENVIRONMENT: str = "development"
+    SECRET_KEY: str = ""
+    SUPER_PIN: str = ""  # Disabled unless explicitly configured
     CORS_ORIGINS: Union[List[str], str] = "http://localhost:3000"
+
+    @model_validator(mode="after")
+    def validate_security(self):
+        weak_key = not self.SECRET_KEY or self.SECRET_KEY.startswith("your-secret")
+        if self.ENVIRONMENT == "production":
+            if weak_key or len(self.SECRET_KEY) < 32:
+                raise ValueError("Production requires a unique SECRET_KEY of at least 32 characters")
+            if self.SUPER_PIN == "999999":
+                raise ValueError("The default SUPER_PIN is not allowed in production; clear it to disable")
+            if "*" in self.CORS_ORIGINS:
+                raise ValueError("Production requires explicit CORS origins")
+        elif weak_key:
+            self.SECRET_KEY = secrets.token_urlsafe(48)
+        return self
 
     # 한국투자증권 Open API 설정
     KIS_APP_KEY: str = ""

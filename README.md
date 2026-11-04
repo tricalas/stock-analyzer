@@ -19,7 +19,7 @@
 - **SQLAlchemy**: ORM 및 데이터베이스 관리
 - **APScheduler**: 크롤링 스케줄러
 - **BeautifulSoup4 & Requests**: 웹 크롤링
-- **SQLite**: 데이터베이스
+- **PostgreSQL / SQLite**: 운영 / 로컬 데이터베이스
 - **Python 3.11+**
 
 ### Frontend
@@ -36,7 +36,7 @@
 
 ### Prerequisites
 - Python 3.11+
-- Node.js 18+
+- Node.js 20.9+
 - npm or yarn
 
 ### 1. 저장소 클론
@@ -57,6 +57,9 @@ pip install -r requirements.txt
 # 환경 변수 설정
 cp .env.example .env
 # .env 파일을 편집하여 필요한 설정을 입력하세요
+
+# DB 스키마 준비
+python -m app.migrate
 
 # 서버 실행
 python3 -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000

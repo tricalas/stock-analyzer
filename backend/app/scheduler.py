@@ -21,6 +21,7 @@ class StockScheduler:
         """스케줄 작업 설정"""
         # 한국 시간대 설정
         kst = pytz.timezone('Asia/Seoul')
+        ny = pytz.timezone('America/New_York')
 
         if settings.ENABLE_AUTO_HISTORY_COLLECTION:
             logger.info("✅ Auto history collection ENABLED")
@@ -30,22 +31,22 @@ class StockScheduler:
             # 약간 여유를 둬서 오전 6시 10분에 수집
             self.scheduler.add_job(
                 func=self._collect_tagged_stocks_history,
-                trigger=CronTrigger(hour=6, minute=10, day_of_week='tue-sat', timezone=kst),
+                trigger=CronTrigger(hour=16, minute=10, day_of_week='mon-fri', timezone=ny),
                 id='us_market_history_collection',
                 name='US Market History Collection (After Close)',
                 replace_existing=True
             )
-            logger.info("📅 Scheduled: US market history collection (Tue-Sat 06:10 KST)")
+            logger.info("📅 Scheduled: US market history collection (Mon-Fri 16:10 America/New_York)")
 
             # 미국 장: 07:00 (히스토리 수집 06:10 + 50분)
             self.scheduler.add_job(
                 func=self._analyze_signals,
-                trigger=CronTrigger(hour=7, minute=0, day_of_week='tue-sat', timezone=kst),
+                trigger=CronTrigger(hour=17, minute=0, day_of_week='mon-fri', timezone=ny),
                 id='us_market_signal_analysis',
                 name='US Market Signal Analysis',
                 replace_existing=True
             )
-            logger.info("📊 Scheduled: US market signal analysis (Tue-Sat 07:00 KST)")
+            logger.info("📊 Scheduled: US market signal analysis (Mon-Fri 17:00 America/New_York)")
 
         else:
             logger.info("⚠️ Auto history collection DISABLED - using manual updates only")
@@ -183,6 +184,8 @@ class StockScheduler:
             else:
                 logger.warning(f"⚠️ Signal analysis completed with no signals found ({mode} mode)")
 
+            from app.ma_signal_analyzer import ma_signal_analyzer
+            result["ma"] = ma_signal_analyzer.analyze_and_store_signals(mode=mode, limit=settings.HISTORY_COLLECTION_LIMIT if mode == "top" else None, days=180)
             return result
         except Exception as e:
             logger.error(f"❌ Error in scheduled signal analysis: {str(e)}")

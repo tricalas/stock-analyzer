@@ -82,8 +82,9 @@ Railway 대시보드에서 다음 환경 변수 설정:
 DATABASE_URL=sqlite:////app/data/stock_analyzer.db
 
 # Security
-SECRET_KEY=lydFtzV_C68KzcQ7859mpierU_CEgANi_ns6MKLk8nQ
-SUPER_PIN=999999
+ENVIRONMENT=production
+SECRET_KEY=<random-value-at-least-32-characters>
+SUPER_PIN=
 
 # CORS
 CORS_ORIGINS=https://tricalas.com,https://www.tricalas.com
@@ -95,7 +96,7 @@ REDIS_URL=redis://localhost:6379
 ### 1.4 Procfile 또는 Start Command 설정
 Railway Settings → Deploy에서 Start Command 설정:
 ```bash
-uvicorn app.main:app --host 0.0.0.0 --port $PORT
+sh start.sh
 ```
 
 ---
@@ -148,7 +149,7 @@ curl https://victorious-determination-production-9f97.up.railway.app/api/stocks?
 
 ### 4.2 프론트엔드 확인
 1. https://tricalas.com 접속
-2. 로그인 테스트 (신신 / 080808)
+2. 기존 사용자 계정으로 로그인 테스트
 3. 데이터 새로고침 버튼 테스트
 4. 태그 기능 테스트
 
@@ -211,3 +212,26 @@ pgloader stock_analyzer.db postgresql://user:pass@host:port/dbname
 2. **Railway 환경 변수 설정**
 3. **Vercel 프로젝트 생성 및 배포**
 4. **DNS 설정 확인**
+
+
+## Versioned deployment and data recovery
+
+- Use Python 3.11+ and Node 20.9+ (CI uses Node 24). Frontend installs use `npm ci` and `package-lock.json`.
+- The web and Celery startup scripts run `python -m app.migrate` before serving traffic. Migration failure stops startup.
+- Back up the production database before the first upgrade. The migration preserves existing price rows and tags, upgrades OHLC columns to floating point, and adds separate MA analysis state and MA-period signal identity.
+- Old US price rows have already lost decimal data. They are marked for a full history refresh; their cached MA90 and active signals are invalidated until recovery.
+- Run `python -m app.recover_history` in the deployed backend to fetch historical prices again and rebuild both signal strategies. KIS API credentials must be configured. Failed recovery exits with an error and can be retried.
+- Set `ENVIRONMENT=production`, a unique random `SECRET_KEY`, explicit `CORS_ORIGINS`, and leave `SUPER_PIN` empty. Preserve existing user accounts; rotating the JWT secret requires users to log in again.
+- Verify `/health`, login, stock search, favorites, MA90, signal results, and rejection of unauthenticated writes after deployment.
+- Schema changes are forward-only. Rollback requires the database backup together with the previous application version.
+
+Validation:
+```sh
+cd backend
+python -B -m unittest discover -s tests -v
+cd ../frontend
+npm ci
+npm test
+npm run typecheck
+npm run build
+```

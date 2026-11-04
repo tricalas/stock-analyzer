@@ -57,15 +57,17 @@ def decode_token(token: str) -> dict:
 
 
 def get_current_user(
-    credentials: HTTPAuthorizationCredentials = Depends(security),
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
     db: Session = Depends(get_db)
 ) -> User:
     """Get the current authenticated user from the JWT token"""
+    if credentials is None:
+        raise HTTPException(status_code=401, detail="Authentication required", headers={"WWW-Authenticate": "Bearer"})
     token = credentials.credentials
     payload = decode_token(token)
 
     user_token: str = payload.get("sub")
-    if user_token is None:
+    if not isinstance(user_token, str) or not user_token:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Could not validate credentials",
@@ -74,7 +76,7 @@ def get_current_user(
 
     # 슈퍼 관리자 토큰 체크
     is_super = payload.get("is_super", False)
-    if is_super and user_token.startswith("super-admin-"):
+    if settings.SUPER_PIN and is_super and user_token.startswith("super-admin-"):
         # 임시 슈퍼 관리자 유저 객체 생성 (DB에 없지만 User 타입으로 반환)
         from datetime import datetime
 
@@ -83,6 +85,7 @@ def get_current_user(
             id=0,
             user_token=user_token,
             nickname="슈퍼관리자",
+            timezone="Asia/Seoul",
             pin_hash="",
             is_admin=True,
             created_at=datetime.utcnow(),
@@ -109,7 +112,11 @@ def get_optional_current_user(
     if credentials is None:
         return None
 
-    try:
-        return get_current_user(credentials, db)
-    except HTTPException:
-        return None
+    return get_current_user(credentials, db)
+
+
+def get_admin_user(current_user: User = Depends(get_current_user)) -> User:
+    """Authorize operations that change shared data or control background jobs."""
+    if not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Admin access required")
+    return current_user
