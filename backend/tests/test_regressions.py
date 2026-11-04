@@ -69,6 +69,17 @@ class Regressions(unittest.TestCase):
         self.stock.history_records_count=count
         self.db.commit()
 
+    def test_partial_recovery_analyzes_successful_repairs_before_reporting_failure(self):
+        from app.recover_history import recover_history
+        with patch('app.recover_history.kis_history_crawler') as crawler, \
+             patch('app.recover_history.signal_analyzer') as signals, \
+             patch('app.recover_history.ma_signal_analyzer') as ma:
+            crawler.collect_history_for_all_stocks.return_value={'success':True,'failed_count':1}
+            with self.assertRaisesRegex(RuntimeError,'incomplete'):
+                recover_history()
+            signals.analyze_and_store_signals.assert_called_once_with(mode='all',days=180,force_full=False)
+            ma.analyze_and_store_signals.assert_called_once_with(mode='all',days=180,force_full=False)
+
     def test_celery_redis_transport_loads(self):
         # This catches missing runtime dependencies that an HTTP test never imports.
         from kombu.transport import get_transport_cls
@@ -148,6 +159,38 @@ class Regressions(unittest.TestCase):
         tags=self.client.get('/api/tags',headers=self.headers(self.user)).json()['tags']
         self.assertNotIn(tag.id,[t['id'] for t in tags])
 
+    def test_share_class_symbols_use_kis_format(self):
+        from app.kis.kis_client import KISClient
+        client=object.__new__(KISClient)
+        client.base_url='https://provider.example'
+        client.client=MagicMock()
+        client._get_headers=lambda _: {}
+        client.client.get.return_value.json.return_value={'rt_cd':'0','output2':[]}
+        for symbol, expected in {'BRK.B':'BRK/B','BRK B':'BRK/B','BRK.A':'BRK/A','WHR PRA':'WHR/A','ET PR I':'ET/I'}.items():
+            client.get_us_stock_ohlcv(symbol,'NYS')
+            self.assertEqual(client.client.get.call_args.kwargs['params']['SYMB'],expected)
+        client.client.get.return_value.json.return_value={'rt_cd':'1','msg1':'Rate limit exceeded'}
+        with self.assertRaises(RuntimeError):client.get_us_stock_ohlcv('AAPL')
+
+    def test_new_listing_can_end_on_an_empty_history_page(self):
+        crawler=KISHistoryCrawler()
+        rows=[{'xymd':(date.today()-timedelta(days=i)).strftime('%Y%m%d'),
+               'open':'10.5','high':'11.2','low':'10.1','clos':'10.8','tvol':'100'} for i in range(100)]
+        provider=MagicMock();provider.get_us_stock_ohlcv.side_effect=[rows,[]]
+        crawler.kis_client=provider
+        result=crawler._collect_us_stock_history('NEW','NAS',date.today()-timedelta(days=180))
+        self.assertEqual(len(result),100)
+
+    def test_incomplete_repair_never_marks_old_prices_as_restored(self):
+        self.stock.history_precision_version=0
+        self.db.add(StockPriceHistory(stock_id=self.stock.id,date=date.today()-timedelta(days=300),close_price=100));self.db.commit()
+        crawler=KISHistoryCrawler()
+        crawler.kis_client=SimpleNamespace(get_us_stock_ohlcv=lambda **kw:[{'xymd':date.today().strftime('%Y%m%d'),
+            'open':'10.5','high':'11.2','low':'10.1','clos':'10.8','tvol':'100'}])
+        result=crawler.collect_history_for_stock(self.stock,db=self.db)
+        self.assertFalse(result['success'])
+        self.db.refresh(self.stock);self.assertEqual(self.stock.history_precision_version,0)
+
     def test_fractional_us_prices_survive_storage_and_api(self):
         crawler=KISHistoryCrawler()
         crawler.kis_client=SimpleNamespace(get_us_stock_ohlcv=lambda **kw:[{'xymd':date.today().strftime('%Y%m%d'),
@@ -181,6 +224,16 @@ class Regressions(unittest.TestCase):
         self.db.refresh(self.stock);self.assertIsNone(self.stock.ma90_price)
         self.db.add(StockPriceHistory(stock_id=self.stock.id,date=date.today()-timedelta(days=89),close_price=123.89));self.db.commit()
         self.assertAlmostEqual(crawler._calculate_and_update_ma90(self.stock.id,self.db),123.89)
+
+    def test_pending_precision_repairs_are_exposed_and_excluded_from_screener(self):
+        self.stock.ma90_price=self.stock.current_price
+        self.stock.history_precision_version=0;self.db.commit()
+        response=self.client.get('/api/stocks/ma90-screener',headers=self.headers(self.user))
+        self.assertEqual(response.status_code,200);self.assertEqual(response.json()['total'],0)
+        response=self.client.get('/api/stocks',headers=self.headers(self.user))
+        self.assertEqual(response.json()['stocks'][0]['history_precision_version'],0)
+        response=self.client.get(f'/api/stocks/{self.stock.id}',headers=self.headers(self.user))
+        self.assertEqual(response.json()['history_precision_version'],0)
 
     def test_precision_repair_never_skips_existing_integer_history(self):
         self.history(90);self.stock.history_precision_version=0;self.db.commit()

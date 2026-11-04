@@ -149,6 +149,13 @@ class KISHistoryCrawler:
                 logger.warning(f"No data received for {stock.symbol}")
                 return {"success": False, "error": "No data received from API"}
 
+            if stock.market == "US" and (stock.history_precision_version or 0) < 1:
+                existing_dates = {row.date for row in db.query(StockPriceHistory.date).filter(StockPriceHistory.stock_id == stock.id).all()}
+                received_dates = {row["date"] for row in ohlcv_data}
+                missing_dates = existing_dates - received_dates
+                if missing_dates:
+                    raise RuntimeError(f"Provider omitted {len(missing_dates)} existing history dates for {stock.symbol}")
+
             # 데이터 저장
             saved_count = self._save_price_history(stock.id, ohlcv_data, db)
 
@@ -243,7 +250,7 @@ class KISHistoryCrawler:
             raw_data = self.kis_client.get_us_stock_ohlcv(symbol=symbol, exchange=exchange, period="D", end_date=cursor)
             if not raw_data:
                 if page:
-                    raise RuntimeError(f"Incomplete price history for {symbol}")
+                    break  # Valid empty page: the listing has no earlier sessions.
                 return []
             parsed = []
             for item in raw_data:

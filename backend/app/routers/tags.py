@@ -9,7 +9,7 @@ import orjson
 from app.database import get_db
 from app.models import Stock, StockTag, StockTagAssignment, User
 from app import schemas
-from app.auth import get_current_user, get_optional_current_user
+from app.auth import get_current_user
 
 from app.cache import get_cache, set_cache, invalidate_cache
 logger = logging.getLogger(__name__)
@@ -53,7 +53,7 @@ def get_stocks_by_tag(
     skip: int = Query(0, ge=0),
     limit: int = Query(20, ge=1, le=100),
     db: Session = Depends(get_db),
-    current_user: Optional[User] = Depends(get_optional_current_user)
+    current_user: User = Depends(get_current_user)
 ):
     """특정 태그가 부여된 종목 목록 조회 (사용자별) - 최적화됨"""
 
@@ -195,6 +195,7 @@ def get_stocks_by_tag(
             "shares_outstanding": stock.shares_outstanding,
             "foreign_ratio": stock.foreign_ratio,
             "history_records_count": stock.history_records_count or 0,
+            "history_precision_version": stock.history_precision_version,
             "history_latest_date": None,
             "history_oldest_date": None,
             "has_history_data": (stock.history_records_count or 0) > 0,

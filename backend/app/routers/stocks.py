@@ -11,7 +11,7 @@ from app.database import get_db
 from app.models import Stock, StockPrice, StockDailyData, StockPriceHistory, StockTag, StockTagAssignment, User, StockSignal
 from app import schemas
 from app.constants import ETF_KEYWORDS
-from app.auth import get_current_user, get_optional_current_user, get_admin_user
+from app.auth import get_current_user, get_admin_user
 
 from app.cache import get_cache, set_cache
 logger = logging.getLogger(__name__)
@@ -25,7 +25,7 @@ def search_stocks(
     market: Optional[str] = Query(None, description="Filter by market (KR, US)"),
     limit: int = Query(10, ge=1, le=50),
     db: Session = Depends(get_db),
-    current_user: Optional[User] = Depends(get_optional_current_user)
+    current_user: User = Depends(get_current_user)
 ):
     """종목 검색 API - 종목명 또는 심볼로 검색 (자동완성용)"""
     # 캐시 키 생성
@@ -173,6 +173,7 @@ def search_stocks(
 
             # 히스토리 데이터 상태
             "history_records_count": stock.history_records_count or 0,
+            "history_precision_version": stock.history_precision_version,
             "has_history_data": (stock.history_records_count or 0) > 0,
 
             # 호환성을 위한 최소 필드
@@ -199,7 +200,7 @@ def get_ma90_screener_stocks(
     skip: int = Query(0, ge=0),
     limit: int = Query(20, ge=1, le=100),
     db: Session = Depends(get_db),
-    current_user: Optional[User] = Depends(get_optional_current_user)
+    current_user: User = Depends(get_current_user)
 ):
     """90일선 스크리너: MA90 근접 종목"""
     from sqlalchemy import and_
@@ -329,6 +330,7 @@ def get_ma90_screener_stocks(
             "tags": tags,
             "latest_tag_date": None,
             "history_records_count": stock.history_records_count or 0,
+            "history_precision_version": stock.history_precision_version,
             "has_history_data": (stock.history_records_count or 0) > 0,
             "latest_price": stock.current_price,
             "latest_change": stock.change_amount,
@@ -419,7 +421,7 @@ def get_stocks(
     order_dir: Optional[str] = Query("desc", description="Sort direction (asc, desc)"),
     nocache: bool = Query(False, description="Skip cache and fetch fresh data"),
     db: Session = Depends(get_db),
-    current_user: Optional[User] = Depends(get_optional_current_user)
+    current_user: User = Depends(get_current_user)
 ):
     # 캐시 키 생성 (유저별, 조건별로 구분)
     user_token = current_user.user_token if current_user else "anonymous"
@@ -606,6 +608,7 @@ def get_stocks(
 
             # 히스토리 데이터 상태
             "history_records_count": stock.history_records_count or 0,
+            "history_precision_version": stock.history_precision_version,
             "has_history_data": (stock.history_records_count or 0) > 0,
 
             # 호환성을 위한 최소 필드만 유지
@@ -871,7 +874,7 @@ def get_stock_price_history(
     stock_id: int,
     days: int = Query(120, ge=1, le=365),
     db: Session = Depends(get_db),
-    current_user: Optional[User] = Depends(get_optional_current_user)
+    current_user: User = Depends(get_current_user)
 ):
     """
     특정 종목의 가격 히스토리 조회

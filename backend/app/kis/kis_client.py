@@ -395,6 +395,11 @@ class KISClient:
         """
         url = f"{self.base_url}/uapi/overseas-price/v1/quotations/dailyprice"
 
+        # KIS uses a slash for US share classes (BRK.B / BRK B -> BRK/B).
+        import re
+        symbol = re.sub(r"^([A-Z0-9]+)[ .]PR?[ .]?([A-Z])$", r"\1/\2", symbol.strip().upper())
+        symbol = re.sub(r"^([A-Z0-9]+)[ .]([A-Z])$", r"\1/\2", symbol)
+
         # TR_ID
         tr_id = "HHDFS76240000"
 
@@ -420,12 +425,11 @@ class KISClient:
                 logger.info(f"Fetched {len(output)} OHLCV records for {symbol} ({exchange})")
                 return output
             else:
-                logger.error(f"Failed to get US stock OHLCV: {result.get('msg1')}")
-                return []
+                raise RuntimeError(f"KIS history request failed: {result.get('msg1')}")
 
         except Exception as e:
             logger.error(f"Error getting US stock OHLCV for {symbol}: {str(e)}")
-            return []
+            raise
 
     # ==================== 주문 (추후 구현) ====================
 

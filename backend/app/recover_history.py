@@ -9,10 +9,11 @@ def recover_history():
     if kis_history_crawler.kis_client is None:
         raise RuntimeError('KIS credentials are required for price history recovery')
     result = kis_history_crawler.collect_history_for_all_stocks(days=180, max_workers=1)
+    # Successful repairs remain useful when another symbol is unavailable.
+    signal_analyzer.analyze_and_store_signals(mode='all', days=180, force_full=False)
+    ma_signal_analyzer.analyze_and_store_signals(mode='all', days=180, force_full=False)
     if result.get('success') is False or result.get('failed_count', 0):
         raise RuntimeError(f'History recovery incomplete: {result}')
-    signal_analyzer.analyze_and_store_signals(mode='all', days=180, force_full=True)
-    ma_signal_analyzer.analyze_and_store_signals(mode='all', days=180, force_full=True)
     return result
 
 

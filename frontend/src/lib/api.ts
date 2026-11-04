@@ -70,6 +70,7 @@ export interface Stock {
 
   // 히스토리 데이터 상태
   history_records_count?: number;
+  history_precision_version?: number;
   history_latest_date?: string;
   history_oldest_date?: string;
   has_history_data?: boolean;

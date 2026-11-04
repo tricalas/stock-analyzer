@@ -84,15 +84,22 @@ const StockItem = React.memo<StockItemProps>(({
   const [syncStatus, setSyncStatus] = useState<'none' | 'partial' | 'synced'>(() => {
     const count = stock.history_records_count || 0;
     if (count === 0) return 'none';
-    if (count < 60) return 'partial';
+    if (count < 90 || (stock.market === 'US' && stock.history_precision_version !== 1)) return 'partial';
     return 'synced';
   });
+  const needsPriceRecovery = stock.market === 'US' && stock.history_precision_version === 0;
   const [recordsCount, setRecordsCount] = useState(stock.history_records_count || 0);
   const { tags: availableTags } = useTags();
   const [stockTags, setStockTags] = useState<Tag[]>(stock.tags || []);
   const [togglingTags, setTogglingTags] = useState<Set<number>>(new Set());
   const [showTags, setShowTags] = useState(false);
   const queryClient = useQueryClient();
+
+  useEffect(() => {
+    const count = stock.history_records_count || 0;
+    setRecordsCount(count);
+    setSyncStatus(count === 0 ? 'none' : count < 90 || (stock.market === 'US' && stock.history_precision_version !== 1) ? 'partial' : 'synced');
+  }, [stock.history_records_count, stock.history_precision_version, stock.market]);
 
   const { data: signalData } = useQuery({
     queryKey: ['stock-signals', stock.id],
@@ -130,12 +137,12 @@ const StockItem = React.memo<StockItemProps>(({
       if (hasTag) {
         await stockApi.removeTagFromStock(stock.id, tag.id);
         setStockTags(prev => prev.filter(t => t.id !== tag.id));
-        queryClient.invalidateQueries({ queryKey: ['stocks', 'TAG'] });
+        queryClient.invalidateQueries({ queryKey: ['stocks'] });
         toast.success(`${tag.display_name} 제거`);
       } else {
         await stockApi.addTagToStock(stock.id, tag.id);
         setStockTags(prev => [...prev, tag]);
-        queryClient.invalidateQueries({ queryKey: ['stocks', 'TAG'] });
+        queryClient.invalidateQueries({ queryKey: ['stocks'] });
         toast.success(`${tag.display_name} 추가`);
       }
     } catch (error) {
@@ -155,7 +162,7 @@ const StockItem = React.memo<StockItemProps>(({
     try {
       const result = await stockApi.syncStockHistory(stock.id, 180);
       setRecordsCount(result.records_count);
-      if (result.records_count >= 60) setSyncStatus('synced');
+      if (result.records_count >= 90) setSyncStatus('synced');
       else if (result.records_count > 0) setSyncStatus('partial');
 
       if (result.mode === 'skip') {
@@ -164,6 +171,7 @@ const StockItem = React.memo<StockItemProps>(({
         toast.success(`${result.records_added}건 동기화 완료`);
       }
       queryClient.invalidateQueries({ queryKey: ['stock-signals', stock.id] });
+      queryClient.invalidateQueries({ queryKey: ['stocks'] });
     } catch (error: any) {
       toast.error(`동기화 실패`);
     } finally {
@@ -244,6 +252,7 @@ const StockItem = React.memo<StockItemProps>(({
           <button
             onClick={handleSyncHistory}
             disabled={isSyncing || !user?.is_admin}
+            title={needsPriceRecovery ? '과거 가격을 다시 받아야 분석할 수 있습니다.' : '과거 가격 동기화'}
             className={cn(
               "shrink-0 flex items-center gap-1 text-xs px-2 py-1 rounded-full border transition-colors",
               syncStatus === 'synced' && "border-green-500/30 text-green-600 dark:text-green-400",
@@ -254,7 +263,7 @@ const StockItem = React.memo<StockItemProps>(({
             {isSyncing ? (
               <RefreshCw className="h-3 w-3 animate-spin" />
             ) : (
-              <span>{syncStatus === 'synced' ? '✓' : syncStatus === 'partial' ? '⚠' : '○'} {recordsCount}일</span>
+              <span>{needsPriceRecovery ? '⚠ 가격 재수집 필요' : `${syncStatus === 'synced' ? '✓' : syncStatus === 'partial' ? '⚠' : '○'} ${recordsCount}일`}</span>
             )}
           </button>
 
@@ -350,6 +359,7 @@ const StockItem = React.memo<StockItemProps>(({
               size="sm"
               onClick={handleSyncHistory}
               disabled={isSyncing || !user?.is_admin}
+              title={needsPriceRecovery ? '과거 가격을 다시 받아야 분석할 수 있습니다.' : '과거 가격 동기화'}
               className={cn(
                 "h-5 px-1.5 text-[10px]",
                 syncStatus === 'synced' && "text-green-600",
@@ -360,7 +370,7 @@ const StockItem = React.memo<StockItemProps>(({
               {isSyncing ? (
                 <RefreshCw className="h-3 w-3 animate-spin" />
               ) : (
-                <span>{syncStatus === 'synced' ? '✓' : syncStatus === 'partial' ? '⚠' : '○'} {recordsCount}일</span>
+                <span>{needsPriceRecovery ? '⚠ 가격 재수집 필요' : `${syncStatus === 'synced' ? '✓' : syncStatus === 'partial' ? '⚠' : '○'} ${recordsCount}일`}</span>
               )}
             </Button>
           </div>

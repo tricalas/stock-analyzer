@@ -11,7 +11,7 @@ import orjson
 from app.database import get_db
 from app.models import Stock, StockPriceHistory, StockTagAssignment, User, StockSignal
 from app import schemas
-from app.auth import get_current_user, get_optional_current_user, get_admin_user
+from app.auth import get_current_user, get_admin_user
 from app.signal_analyzer import signal_analyzer
 from app.ma_signal_analyzer import ma_signal_analyzer
 from app.tasks import analyze_signals_task, analyze_ma_signals_task
@@ -29,7 +29,7 @@ def refresh_ma_signals(
     limit: int = Query(500, ge=10, le=2000),
     days: int = Query(150, ge=90, le=500),
     force_full: bool = Query(False, description="True면 델타 무시하고 전체 스캔"),
-    current_user: Optional[User] = Depends(get_optional_current_user)
+    current_user: User = Depends(get_current_user)
 ):
     """
     MA 기반 시그널 분석 (Celery 백그라운드 작업)
@@ -100,7 +100,7 @@ def refresh_signals(
     limit: int = Query(500, ge=10, le=2000),
     days: int = Query(120, ge=60, le=365),
     force_full: bool = Query(False, description="True면 델타 무시하고 전체 스캔"),
-    current_user: Optional[User] = Depends(get_optional_current_user)
+    current_user: User = Depends(get_current_user)
 ):
     """
     매매 시그널 재분석 (Celery 백그라운드 작업)
@@ -262,7 +262,7 @@ def get_ma_signals(
 @router.delete("/api/signals/ma", dependencies=[Depends(get_admin_user)])
 def delete_ma_signals(
     db: Session = Depends(get_db),
-    current_user: Optional[User] = Depends(get_optional_current_user)
+    current_user: User = Depends(get_current_user)
 ):
     """
     모든 MA 시그널 삭제
@@ -374,7 +374,7 @@ def scan_all_tagged_stocks(
     mode: str = Query("all", pattern="^(tagged|all|top)$"),
     limit: int = Query(500, ge=10, le=2000),
     db: Session = Depends(get_db),
-    current_user: Optional[User] = Depends(get_optional_current_user)
+    current_user: User = Depends(get_current_user)
 ):
     """
     종목 스캔하여 매수 시그널이 있는 종목 찾기
@@ -535,7 +535,7 @@ def get_stored_signals(
     skip: int = Query(0, ge=0, description="Number of records to skip (for pagination)"),
     limit: int = Query(30, ge=1, le=500),
     db: Session = Depends(get_db),
-    current_user: Optional[User] = Depends(get_optional_current_user)
+    current_user: User = Depends(get_current_user)
 ):
     """
     저장된 매매 시그널 조회 (DB에서 읽기만 함 - 빠름, 페이지네이션 지원)
@@ -626,7 +626,7 @@ def get_stored_signals(
 @router.delete("/api/signals", dependencies=[Depends(get_admin_user)])
 def delete_all_signals(
     db: Session = Depends(get_db),
-    current_user: Optional[User] = Depends(get_optional_current_user)
+    current_user: User = Depends(get_current_user)
 ):
     """
     모든 시그널 삭제
@@ -651,7 +651,7 @@ def get_trading_signals(
     stock_id: int,
     days: int = Query(120, ge=60, le=365),
     db: Session = Depends(get_db),
-    current_user: Optional[User] = Depends(get_optional_current_user)
+    current_user: User = Depends(get_current_user)
 ):
     """
     특정 종목의 추세선 돌파 + 되돌림 매매 시그널 조회
