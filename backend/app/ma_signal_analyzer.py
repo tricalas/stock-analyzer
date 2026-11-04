@@ -118,6 +118,7 @@ class MASignalAnalyzer:
                         total_signals_saved += result['saved_count']
 
                     task_progress.success_count += 1
+                    db.commit()
 
                 except Exception as e:
                     logger.error(f"❌ Error analyzing stock {stock_id}: {str(e)}")

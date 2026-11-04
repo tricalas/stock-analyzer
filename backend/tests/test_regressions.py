@@ -112,6 +112,15 @@ class Regressions(unittest.TestCase):
         self.assertEqual(self.db.query(StockPriceHistory).one().close_price,0.99)
         self.assertEqual(self.client.post('/api/stocks/9999/crawl-history',headers=self.headers()).status_code,404)
 
+    def test_ma_progress_preserves_each_completed_stock(self):
+        from app.models import TaskProgress
+        analyzer=MASignalAnalyzer()
+        with patch.object(analyzer,'_get_stock_ids_by_mode',return_value=[self.stock.id,self.stock.id]), \
+             patch.object(analyzer,'_analyze_stock',return_value={'signals_count':0,'saved_count':0}):
+            analyzer.analyze_and_store_signals(task_id='ma-progress',db=self.db)
+        task=self.db.query(TaskProgress).filter_by(task_id='ma-progress').one()
+        self.assertEqual((task.status,task.success_count,task.current_item),('completed',2,2))
+
     def test_celery_redis_transport_loads(self):
         # This catches missing runtime dependencies that an HTTP test never imports.
         from kombu.transport import get_transport_cls
