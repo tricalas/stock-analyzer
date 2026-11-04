@@ -160,6 +160,20 @@ class Regressions(unittest.TestCase):
         self.assertEqual(response.status_code,200)
         self.assertEqual(response.json()[0]['close_price'],0.99)
 
+    def test_single_stock_sync_repairs_existing_us_prices(self):
+        from app.crawlers.kis_history_crawler import kis_history_crawler
+        self.stock.history_precision_version=0
+        self.db.add(StockPriceHistory(stock_id=self.stock.id,date=date.today(),close_price=100));self.db.commit()
+        provider=SimpleNamespace(get_us_stock_ohlcv=lambda **kw:[{'xymd':date.today().strftime('%Y%m%d'),
+            'open':'0.75','high':'1.25','low':'0.50','clos':'0.99','tvol':'100'}])
+        with patch.object(kis_history_crawler,'kis_client',provider):
+            response=self.client.post(f'/api/stocks/{self.stock.id}/sync-history?days=180',headers=self.headers())
+        self.assertEqual(response.status_code,200)
+        self.assertEqual(response.json()['mode'],'full')
+        self.db.expire_all()
+        self.assertEqual(self.db.query(StockPriceHistory).one().close_price,0.99)
+        self.assertEqual(self.db.get(Stock,self.stock.id).history_precision_version,1)
+
     def test_ma90_requires_90_valid_sessions_and_clears_stale_value(self):
         self.history(89);self.stock.ma90_price=100;self.db.commit()
         crawler=KISHistoryCrawler()

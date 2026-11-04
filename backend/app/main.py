@@ -35,7 +35,7 @@ app.add_middleware(CORSMiddleware, allow_origins=settings.CORS_ORIGINS, allow_cr
 
 @app.get("/")
 def read_root():
-    return {"message": "Stock Analyzer API", "version": "1.1.0", "revision": os.getenv("APP_REVISION") or os.getenv("RAILWAY_GIT_COMMIT_SHA", "local")}
+    return {"message": "Stock Analyzer API", "version": "1.1.0", "revision": os.getenv("RAILWAY_GIT_COMMIT_SHA") or os.getenv("APP_REVISION", "local")}
 
 @app.get("/health")
 def health():

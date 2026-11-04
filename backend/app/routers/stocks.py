@@ -221,6 +221,7 @@ def get_ma90_screener_stocks(
     query = db.query(Stock).filter(
         Stock.is_active == True,
         Stock.market == "US",
+        Stock.history_precision_version >= 1,
         Stock.current_price.isnot(None),
         Stock.ma90_price.isnot(None),
         Stock.ma90_price > 0,
@@ -735,159 +736,25 @@ def sync_stock_history(
     days: int = Query(100, ge=1, le=365, description="수집할 일수 (전체 수집 시)"),
     db: Session = Depends(get_db)
 ):
-    """
-    개별 종목의 히스토리 데이터 동기화 (하이브리드 전략)
-
-    - 데이터 없음/부족: 전체 수집 (full)
-    - 최신 데이터 있음: 스킵 (skip)
-    - 며칠 빠짐: 증분 수집 (incremental)
-    """
-    try:
-        stock = db.query(Stock).filter(Stock.id == stock_id).first()
-        if not stock:
-            raise HTTPException(status_code=404, detail="Stock not found")
-
-        # 시장별 처리
-        if stock.market == 'KR':
-            # 한국 주식: KIS API 사용
-            from app.crawlers.kis_history_crawler import kis_history_crawler
-
-            # 수집 필요 여부 확인 (하이브리드 전략)
-            should_collect, mode, last_date = kis_history_crawler._should_collect_history(stock, db)
-
-            if mode == "skip":
-                return {
-                    "success": True,
-                    "mode": "skip",
-                    "message": f"이미 최신 상태입니다 (마지막: {last_date})",
-                    "stock_id": stock_id,
-                    "symbol": stock.symbol,
-                    "name": stock.name,
-                    "records_count": stock.history_records_count,
-                    "last_date": str(last_date) if last_date else None,
-                    "records_added": 0
-                }
-
-            # 수집 실행
-            if mode == "incremental":
-                incremental_start = last_date + timedelta(days=1)
-                result = kis_history_crawler.collect_history_for_stock(stock, start_date=incremental_start, db=db)
-                logger.info(f"Incremental sync for {stock.symbol} from {incremental_start}")
-            else:
-                result = kis_history_crawler.collect_history_for_stock(stock, days=days, db=db)
-                logger.info(f"Full sync for {stock.symbol} ({days} days)")
-
-        elif stock.market == 'US':
-            # 미국 주식: KIS API 사용
-            from app.kis.kis_client import get_kis_client
-
-            kis_client = get_kis_client()
-            if not kis_client:
-                raise HTTPException(status_code=500, detail="KIS API가 설정되지 않았습니다")
-
-            # 거래소 코드 변환 (NASDAQ -> NAS, NYSE -> NYS)
-            exchange_map = {
-                'NASDAQ': 'NAS',
-                'NYSE': 'NYS',
-                'AMEX': 'AMS',
-                'NAS': 'NAS',
-                'NYS': 'NYS',
-            }
-            kis_exchange = exchange_map.get(stock.exchange, 'NAS')
-
-            logger.info(f"Fetching US stock history for {stock.symbol} ({kis_exchange}) via KIS API")
-
-            # KIS API로 OHLCV 데이터 가져오기
-            ohlcv_data = kis_client.get_us_stock_ohlcv(stock.symbol, exchange=kis_exchange)
-
-            if not ohlcv_data:
-                return {
-                    "success": False,
-                    "mode": "full",
-                    "message": "KIS API에서 데이터를 가져올 수 없습니다",
-                    "stock_id": stock_id,
-                    "symbol": stock.symbol,
-                    "name": stock.name,
-                    "records_count": stock.history_records_count or 0,
-                    "last_date": None,
-                    "records_added": 0
-                }
-
-            # 가격 데이터 저장
-            records_added = 0
-            for item in ohlcv_data:
-                try:
-                    # KIS API 응답 필드: xymd(날짜), open, high, low, clos, tvol
-                    date_str = item.get('xymd', '')
-                    if not date_str:
-                        continue
-
-                    price_date = datetime.strptime(date_str, '%Y%m%d').date()
-
-                    # 중복 체크
-                    existing = db.query(StockPriceHistory).filter(
-                        StockPriceHistory.stock_id == stock_id,
-                        StockPriceHistory.date == price_date
-                    ).first()
-
-                    if not existing:
-                        history_record = StockPriceHistory(
-                            stock_id=stock_id,
-                            date=price_date,
-                            open_price=float(item.get('open', 0)),
-                            high_price=float(item.get('high', 0)),
-                            low_price=float(item.get('low', 0)),
-                            close_price=float(item.get('clos', 0)),
-                            volume=int(item.get('tvol', 0))
-                        )
-                        db.add(history_record)
-                        records_added += 1
-                except Exception as e:
-                    logger.error(f"Error saving US price data: {e}")
-                    continue
-
-            db.commit()
-            mode = "full"
-            result = {"success": True, "records_saved": records_added}
-            logger.info(f"US stock sync for {stock.symbol}: {records_added} records added")
-
-        else:
-            raise HTTPException(status_code=400, detail=f"지원하지 않는 시장입니다: {stock.market}")
-
-        # 업데이트된 레코드 수 조회
-        updated_count = db.query(StockPriceHistory).filter(
-            StockPriceHistory.stock_id == stock_id
-        ).count()
-
-        # Stock의 history_records_count 업데이트
-        db.execute(
-            text("UPDATE stocks SET history_records_count = :count WHERE id = :id"),
-            {"count": updated_count, "id": stock_id}
-        )
-        db.commit()
-
-        # 최신 날짜 조회
-        latest = db.query(StockPriceHistory.date).filter(
-            StockPriceHistory.stock_id == stock_id
-        ).order_by(StockPriceHistory.date.desc()).first()
-
-        return {
-            "success": result.get("success", False),
-            "mode": mode,
-            "message": f"{mode} 수집 완료",
-            "stock_id": stock_id,
-            "symbol": stock.symbol,
-            "name": stock.name,
-            "records_count": updated_count,
-            "last_date": str(latest[0]) if latest else None,
-            "records_added": result.get("records_saved", 0)
-        }
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error syncing history for stock {stock_id}: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+    """Synchronize all markets through the same precision-aware history writer."""
+    from app.crawlers.kis_history_crawler import kis_history_crawler
+    stock = db.get(Stock, stock_id)
+    if stock is None:
+        raise HTTPException(status_code=404, detail="Stock not found")
+    if kis_history_crawler.kis_client is None:
+        raise HTTPException(status_code=503, detail="KIS API not configured")
+    should_collect, mode, last_date = kis_history_crawler._should_collect_history(stock, db)
+    result = {"records_saved": 0}
+    if should_collect:
+        result = kis_history_crawler.collect_history_for_stock(stock, days=days,
+            start_date=last_date + timedelta(days=1) if mode == "incremental" else None, db=db)
+        if not result.get("success"):
+            raise HTTPException(status_code=502, detail=result.get("error", "History provider unavailable"))
+    latest = db.query(StockPriceHistory.date).filter(StockPriceHistory.stock_id == stock_id).order_by(StockPriceHistory.date.desc()).first()
+    count = db.query(StockPriceHistory).filter(StockPriceHistory.stock_id == stock_id).count()
+    return {"success": True, "mode": mode, "message": f"{mode} 수집 완료", "stock_id": stock_id,
+        "symbol": stock.symbol, "name": stock.name, "records_count": count,
+        "last_date": str(latest[0]) if latest else None, "records_added": result.get("records_saved", 0)}
 
 
 @router.post("/api/stocks/{stock_id}/analyze", dependencies=[Depends(get_admin_user)])

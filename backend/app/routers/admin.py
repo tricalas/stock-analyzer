@@ -250,7 +250,7 @@ def update_all_ma90(
     """
     모든 종목의 MA90 일괄 업데이트 (관리자 전용)
 
-    60일 이상 히스토리가 있는 종목에 대해 MA90 계산 후 Stock.ma90_price 업데이트
+    90개 유효 거래일이 있고 정밀도 복구가 완료된 종목에 대해 MA90 계산 후 Stock.ma90_price 업데이트
     """
     if not current_user.is_admin:
         raise HTTPException(status_code=403, detail="Admin access required")

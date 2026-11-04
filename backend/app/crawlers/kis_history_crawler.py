@@ -157,9 +157,6 @@ class KISHistoryCrawler:
                 StockPriceHistory.stock_id == stock.id
             ).count()
 
-            # MA90 계산 (히스토리 저장 후)
-            ma90 = self._calculate_and_update_ma90(stock.id, db)
-
             # 직접 UPDATE 쿼리로 확실하게 업데이트 (history_updated_at 포함)
             db.query(Stock).filter(Stock.id == stock.id).update(
                 {
@@ -169,6 +166,7 @@ class KISHistoryCrawler:
                 },
                 synchronize_session=False
             )
+            ma90 = self._calculate_and_update_ma90(stock.id, db)
             db.commit()
             from app.cache import invalidate_cache
             invalidate_cache()

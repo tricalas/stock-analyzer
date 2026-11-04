@@ -153,7 +153,7 @@ const StockItem = React.memo<StockItemProps>(({
     e.stopPropagation();
     setIsSyncing(true);
     try {
-      const result = await stockApi.syncStockHistory(stock.id, 100);
+      const result = await stockApi.syncStockHistory(stock.id, 180);
       setRecordsCount(result.records_count);
       if (result.records_count >= 60) setSyncStatus('synced');
       else if (result.records_count > 0) setSyncStatus('partial');

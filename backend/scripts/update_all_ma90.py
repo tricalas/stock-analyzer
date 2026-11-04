@@ -28,8 +28,7 @@ def update_all_ma90():
     try:
         # 60일 이상 히스토리가 있는 활성 종목들 조회
         stocks = db.query(Stock).filter(
-            Stock.is_active == True,
-            Stock.history_records_count >= 60
+            Stock.is_active == True
         ).all()
 
         total = len(stocks)
@@ -40,30 +39,12 @@ def update_all_ma90():
         skipped_count = 0
 
         for i, stock in enumerate(stocks, 1):
-            # 최근 90일 종가 조회
-            prices = db.query(StockPriceHistory.close_price).filter(
-                StockPriceHistory.stock_id == stock.id
-            ).order_by(StockPriceHistory.date.desc()).limit(90).all()
-
-            if len(prices) < 60:
+            from app.moving_averages import update_ma90
+            ma90 = update_ma90(stock.id, db)
+            if ma90 is None:
                 skipped_count += 1
-                continue
-
-            # 평균 계산
-            close_prices = [p.close_price for p in prices if p.close_price is not None]
-            if not close_prices:
-                skipped_count += 1
-                continue
-
-            ma90 = sum(close_prices) / len(close_prices)
-            old_ma90 = stock.ma90_price
-
-            # Stock 테이블 업데이트
-            db.query(Stock).filter(Stock.id == stock.id).update(
-                {"ma90_price": ma90},
-                synchronize_session=False
-            )
-            updated_count += 1
+            else:
+                updated_count += 1
 
             # 진행 상황 출력 (10개마다)
             if i % 10 == 0 or i == total:
