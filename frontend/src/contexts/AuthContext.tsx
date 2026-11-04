@@ -1,7 +1,10 @@
 'use client';
 
+import { apiFetch, API_BASE_URL } from '@/lib/http';
+
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { useRouter } from 'next/navigation';
+import { useQueryClient } from '@tanstack/react-query';
 
 interface User {
   id: number;
@@ -31,6 +34,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [token, setToken] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const router = useRouter();
+  const queryClient = useQueryClient();
 
   // Check for existing token on mount
   useEffect(() => {
@@ -44,7 +48,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const verifyToken = async (token: string) => {
     try {
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/auth/me`, {
+      const response = await apiFetch(`${API_BASE_URL}/api/auth/me`, {
         headers: {
           'Authorization': `Bearer ${token}`,
         },
@@ -72,7 +76,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const login = async (nickname: string, pin: string) => {
     try {
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/auth/login`, {
+      const response = await apiFetch(`${API_BASE_URL}/api/auth/login`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -86,6 +90,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
 
       const data = await response.json();
+      await queryClient.cancelQueries();
+      queryClient.clear();
       setUser(data.user);
       setToken(data.access_token);
       localStorage.setItem('auth_token', data.access_token);
@@ -97,7 +103,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const register = async (nickname: string, pin: string) => {
     try {
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/auth/register`, {
+      const response = await apiFetch(`${API_BASE_URL}/api/auth/register`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -111,6 +117,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
 
       const data = await response.json();
+      await queryClient.cancelQueries();
+      queryClient.clear();
       setUser(data.user);
       setToken(data.access_token);
       localStorage.setItem('auth_token', data.access_token);
@@ -121,6 +129,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const logout = () => {
+    void queryClient.cancelQueries();
+    queryClient.clear();
     setUser(null);
     setToken(null);
     localStorage.removeItem('auth_token');
@@ -133,7 +143,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
 
     try {
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/auth/me/timezone`, {
+      const response = await apiFetch(`${API_BASE_URL}/api/auth/me/timezone`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',

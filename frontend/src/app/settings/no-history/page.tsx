@@ -1,5 +1,7 @@
 'use client';
 
+import { apiFetch, API_BASE_URL } from '@/lib/http';
+
 import { useState } from 'react';
 import { Trash2, AlertTriangle, RefreshCw, Search, ChevronLeft, ChevronRight } from 'lucide-react';
 import { toast } from 'sonner';
@@ -51,14 +53,14 @@ export default function NoHistoryStocksPage() {
   const limit = 50;
   const queryClient = useQueryClient();
 
-  const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+  const API_URL = API_BASE_URL;
 
   // 데이터 없는 종목 목록 조회
   const { data, isLoading, refetch } = useQuery<NoHistoryResponse>({
     queryKey: ['stocks-no-history', page, limit],
     queryFn: async () => {
       const token = localStorage.getItem('auth_token');
-      const response = await fetch(`${API_URL}/api/stocks/no-history?page=${page}&limit=${limit}`, {
+      const response = await apiFetch(`${API_URL}/api/stocks/no-history?page=${page}&limit=${limit}`, {
         headers: {
           'Authorization': `Bearer ${token}`,
         },
@@ -73,7 +75,7 @@ export default function NoHistoryStocksPage() {
     setIsDeleting(true);
     try {
       const token = localStorage.getItem('auth_token');
-      const response = await fetch(`${API_URL}/api/stocks/cleanup-no-history?confirm=true`, {
+      const response = await apiFetch(`${API_URL}/api/stocks/cleanup-no-history?confirm=true`, {
         method: 'DELETE',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -101,7 +103,7 @@ export default function NoHistoryStocksPage() {
   const handleDeleteStock = async (stockId: number, stockName: string) => {
     try {
       const token = localStorage.getItem('auth_token');
-      const response = await fetch(`${API_URL}/api/stocks/${stockId}`, {
+      const response = await apiFetch(`${API_URL}/api/stocks/${stockId}`, {
         method: 'DELETE',
         headers: {
           'Authorization': `Bearer ${token}`,

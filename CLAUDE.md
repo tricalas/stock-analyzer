@@ -9,15 +9,15 @@ Stock Analyzer (오스카투자) is a web application for tracking and analyzing
 ## Tech Stack
 
 ### Backend (Python 3.11+)
-- **FastAPI 0.128.0** - Web framework
+- **FastAPI 0.162.0** - Web framework
 - **SQLAlchemy 2.0** - ORM with PostgreSQL (production) / SQLite (local)
 - **APScheduler** - Background job scheduling
 - **Celery + Redis** - Async task processing
 - **BeautifulSoup4 / lxml** - Web scraping
 - **httpx** - Async HTTP client
 
-### Frontend (Node.js 18+)
-- **Next.js 16.1.1** (App Router with Turbopack)
+### Frontend (Node.js 24)
+- **Next.js 16.4.5** (App Router with Turbopack)
 - **React 19.2.3** with TypeScript
 - **TailwindCSS 4** - Styling
 - **shadcn/ui** - UI components
@@ -30,7 +30,7 @@ Stock Analyzer (오스카투자) is a web application for tracking and analyzing
 stock-analyzer/
 ├── backend/
 │   ├── app/
-│   │   ├── main.py           # FastAPI app and all routes
+│   │   ├── main.py           # FastAPI composition and lifespan
 │   │   ├── models.py         # SQLAlchemy models
 │   │   ├── schemas.py        # Pydantic schemas
 │   │   ├── database.py       # Database connection
@@ -90,7 +90,7 @@ cd frontend && npm run build  # Production build
 
 ## API Structure
 
-All API routes are defined in `backend/app/main.py`:
+API routes are grouped in `backend/app/routers/` (stocks, tags, auth, signals, tasks, collection, maintenance and admin):
 - `/stocks/*` - Stock CRUD and listing
 - `/tags/*` - Tag management
 - `/signals/*` - Trading signal endpoints
@@ -129,6 +129,17 @@ All API routes are defined in `backend/app/main.py`:
 ## Development Notes
 
 - The codebase uses Korean comments extensively
-- Main.py is large (~1500+ lines) - all routes in one file
+- Main.py composes feature routers; shared cache, signal persistence and authorization have separate modules
 - Frontend uses Korean UI text throughout
 - Stock symbols are US-focused (NASDAQ, NYSE) despite Naver Finance source
+
+
+## Reliability and security
+
+- Run `python -m app.migrate` before the web or worker process starts; Alembic migrations support existing SQLite/PostgreSQL installations.
+- Use `python -B -m unittest discover -s tests -v` from `backend` for regression checks. Frontend uses `npm test`, `npm run typecheck`, and `npm run build`.
+- JWTs use PyJWT/HS256. All data reads require authentication; shared-data writes and task controls require `get_admin_user`.
+- US OHLC values use floating point. MA90 requires 90 complete valid sessions. `history_precision_version` tracks repaired historical data.
+- Signal uniqueness includes `ma_period`; each analyzer has an independent completion timestamp. Signal replacement and timestamp updates are transactional.
+- Vercel production is the `stock-analyzer` project with root `frontend`; the older `frontend` Vercel project is not the public site.
+- Preserve pre-existing user changes, including `frontend/yarn.lock`; production installs use `package-lock.json`.

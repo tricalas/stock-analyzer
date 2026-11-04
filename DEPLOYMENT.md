@@ -1,237 +1,66 @@
-# tricalas.com 배포 가이드
+# Production deployment
 
-## 1. 백엔드 배포 (Railway)
+The public application is served at https://www.tricalas.com (Vercel project `stock-analyzer`, root directory `frontend`). The API is hosted on Railway at https://victorious-determination-production-dafc.up.railway.app.
 
-### 1.1 Railway Volume 설정 (SQLite DB 저장용)
-1. Railway 대시보드에서 백엔드 프로젝트 선택
-2. **Settings** → **Volumes** 클릭
-3. **New Volume** 버튼 클릭
-4. Mount Path: `/app/data` 입력
-5. Volume 생성 완료
+## Services
 
-### 1.2 로컬 DB를 Railway에 업로드하기
+- Railway API: `API (FastAPI)`, application root `/backend`, `APP_ROLE=api`.
+- Railway workers: `stock-analyzer` and `Worker (Celery)`, `APP_ROLE=worker`.
+- PostgreSQL stores application data. Redis provides the Celery broker/result backend and shared API cache.
+- `start-service.sh` selects the role. Both web and worker startup run `python -m app.migrate`; a failed migration prevents startup.
+- Automatic history collection and analysis run only in the API process. Scheduling uses `America/New_York`, including daylight saving time.
 
-**방법 1: Railway CLI 사용 (권장)**
-```bash
-# Railway CLI 설치
-npm install -g @railway/cli
-
-# Railway 로그인
-railway login
-
-# 프로젝트 연결
-cd /Users/wooleen/workspace/stock-analyzer/backend
-railway link
-
-# DB 파일 업로드
-railway run bash
-# 컨테이너 내부에서:
-# 로컬 DB를 Volume으로 복사하는 방법은 직접 파일을 넣어야 함
-
-# 대안: 로컬에서 Railway로 SSH 접속 후 파일 전송
-```
-
-**방법 2: SCP/SFTP로 직접 업로드**
-Railway는 직접 파일 업로드를 지원하지 않으므로, 다음 방법을 사용:
-
-1. **임시 방법**: 초기 배포 시 빈 DB로 시작하고, 프로덕션에서 직접 데이터 크롤링
-2. **권장 방법**: PostgreSQL로 마이그레이션 (아래 섹션 참조)
-
-**방법 3: 초기 데이터 마이그레이션 스크립트**
-```bash
-# backend 폴더에서 실행
-cd /Users/wooleen/workspace/stock-analyzer/backend
-
-# 로컬 DB에서 데이터 추출
-python3 << 'PYTHON'
-import sqlite3
-import json
-
-# 로컬 DB 연결
-conn = sqlite3.connect('stock_analyzer.db')
-cursor = conn.cursor()
-
-# users 테이블 데이터 추출
-cursor.execute("SELECT * FROM users")
-users = cursor.fetchall()
-
-# stocks 테이블 데이터 추출 (최근 100개만)
-cursor.execute("SELECT * FROM stocks LIMIT 100")
-stocks = cursor.fetchall()
-
-# JSON으로 저장
-data = {
-    'users': users,
-    'stocks': stocks
-}
-
-with open('migration_data.json', 'w') as f:
-    json.dump(data, f)
-
-conn.close()
-print("데이터 추출 완료: migration_data.json")
-PYTHON
-```
-
-### 1.3 환경 변수 설정
-
-Railway 대시보드에서 다음 환경 변수 설정:
+## Required environment
 
 ```env
-# Database
-DATABASE_URL=sqlite:////app/data/stock_analyzer.db
-
-# Security
+DATABASE_URL=postgresql://<user>:<password>@<host>/<database>
+REDIS_URL=redis://:<password>@<host>:6379
 ENVIRONMENT=production
-SECRET_KEY=<random-value-at-least-32-characters>
+SECRET_KEY=<unique-random-value-at-least-32-characters>
 SUPER_PIN=
-
-# CORS
-CORS_ORIGINS=https://tricalas.com,https://www.tricalas.com
-
-# Redis (선택사항)
-REDIS_URL=redis://localhost:6379
+CORS_ORIGINS=https://tricalas.com,https://www.tricalas.com,https://stock-analyzer-tricalas.vercel.app
+APP_ROLE=api
+ENABLE_AUTO_HISTORY_COLLECTION=true
+HISTORY_COLLECTION_DAYS=180
+HISTORY_COLLECTION_MODE=all
+KIS_APP_KEY=<configured-in-Railway>
+KIS_APP_SECRET=<configured-in-Railway>
+KIS_IS_MOCK=true
 ```
 
-### 1.4 Procfile 또는 Start Command 설정
-Railway Settings → Deploy에서 Start Command 설정:
-```bash
-sh start.sh
-```
+Generate `SECRET_KEY` with `python -c 'import secrets; print(secrets.token_urlsafe(48))'`. Never commit generated keys, PINs, database dumps, or service credentials. Rotating the JWT key requires users to sign in again. `SUPER_PIN` is disabled when empty. Existing users and their PIN hashes are preserved.
 
----
+Worker services use `APP_ROLE=worker` and `ENABLE_AUTO_HISTORY_COLLECTION=false`. Keep JWT, database, Redis and KIS settings consistent across services. The frontend needs `NEXT_PUBLIC_API_URL` set to the API URL above in Vercel.
 
-## 2. 프론트엔드 배포 (Vercel)
+## Validate before deployment
 
-### 2.1 Vercel 프로젝트 생성
-1. https://vercel.com 접속 및 로그인
-2. **New Project** 클릭
-3. GitHub 저장소 연결
-4. `frontend` 폴더 선택
-5. Root Directory: `frontend` 입력
+Python 3.11+ and Node 24 are supported. Use npm with the committed `package-lock.json`; existing Yarn files are not used by the deployment.
 
-### 2.2 환경 변수 설정
-Vercel 프로젝트 Settings → Environment Variables:
-```env
-NEXT_PUBLIC_API_URL=https://victorious-determination-production-9f97.up.railway.app
-```
-
-### 2.3 도메인 설정
-1. Vercel Settings → Domains
-2. `tricalas.com` 입력
-3. DNS 설정 안내 확인:
-   - A Record: `76.76.21.21`
-   - CNAME Record: `cname.vercel-dns.com`
-
----
-
-## 3. DNS 설정 (도메인 제공업체에서)
-
-tricalas.com DNS 설정:
-```
-Type    Name    Value                   TTL
-A       @       76.76.21.21            Auto
-CNAME   www     cname.vercel-dns.com    Auto
-```
-
----
-
-## 4. 배포 후 확인 사항
-
-### 4.1 백엔드 확인
-```bash
-# API health check
-curl https://victorious-determination-production-9f97.up.railway.app/
-
-# stocks 조회 테스트
-curl https://victorious-determination-production-9f97.up.railway.app/api/stocks?limit=5
-```
-
-### 4.2 프론트엔드 확인
-1. https://tricalas.com 접속
-2. 기존 사용자 계정으로 로그인 테스트
-3. 데이터 새로고침 버튼 테스트
-4. 태그 기능 테스트
-
----
-
-## 5. PostgreSQL로 마이그레이션 (권장)
-
-SQLite는 파일 기반이라 Railway에서 영구 저장이 어렵습니다. 
-프로덕션 환경에서는 PostgreSQL을 권장합니다.
-
-### 5.1 Railway PostgreSQL 추가
-1. Railway 프로젝트에서 **New** → **Database** → **PostgreSQL**
-2. 자동으로 `DATABASE_URL` 환경 변수 생성됨
-
-### 5.2 SQLAlchemy 설정 변경
-`backend/app/config.py`에서 DATABASE_URL을 환경 변수에서 가져오도록 이미 설정됨
-
-### 5.3 데이터 마이그레이션
-```bash
-# SQLite에서 PostgreSQL로 데이터 이동
-# 1. pgloader 설치 (Mac)
-brew install pgloader
-
-# 2. 마이그레이션 실행
-pgloader stock_analyzer.db postgresql://user:pass@host:port/dbname
-```
-
----
-
-## 6. 보안 체크리스트
-
-- [x] SECRET_KEY 변경 완료
-- [x] CORS 설정 프로덕션 도메인만 허용
-- [x] HTTPS 강제 적용 (Vercel/Railway 자동)
-- [x] Rate limiting (10분 쿨타임 적용됨)
-- [ ] 환경 변수로 모든 민감 정보 관리
-- [ ] .env 파일 .gitignore에 추가 확인
-
----
-
-## 7. 문제 해결
-
-### Railway에서 DB 데이터가 사라지는 경우
-- Volume이 제대로 마운트되었는지 확인
-- DATABASE_URL이 Volume 경로를 가리키는지 확인: `sqlite:////app/data/stock_analyzer.db`
-
-### CORS 에러 발생 시
-- Railway 환경 변수에서 CORS_ORIGINS 확인
-- https://tricalas.com이 포함되어 있는지 확인
-
-### Vercel 빌드 실패 시
-- Node.js 버전 확인 (package.json의 engines 필드)
-- 환경 변수 NEXT_PUBLIC_API_URL 설정 확인
-
----
-
-## 8. 현재 작업이 필요한 것
-
-1. **Railway CLI로 DB 업로드** 또는 **PostgreSQL로 마이그레이션**
-2. **Railway 환경 변수 설정**
-3. **Vercel 프로젝트 생성 및 배포**
-4. **DNS 설정 확인**
-
-
-## Versioned deployment and data recovery
-
-- Use Python 3.11+ and Node 20.9+ (CI uses Node 24). Frontend installs use `npm ci` and `package-lock.json`.
-- The web and Celery startup scripts run `python -m app.migrate` before serving traffic. Migration failure stops startup.
-- Back up the production database before the first upgrade. The migration preserves existing price rows and tags, upgrades OHLC columns to floating point, and adds separate MA analysis state and MA-period signal identity.
-- Old US price rows have already lost decimal data. They are marked for a full history refresh; their cached MA90 and active signals are invalidated until recovery.
-- Run `python -m app.recover_history` in the deployed backend to fetch historical prices again and rebuild both signal strategies. KIS API credentials must be configured. Failed recovery exits with an error and can be retried.
-- Set `ENVIRONMENT=production`, a unique random `SECRET_KEY`, explicit `CORS_ORIGINS`, and leave `SUPER_PIN` empty. Preserve existing user accounts; rotating the JWT secret requires users to log in again.
-- Verify `/health`, login, stock search, favorites, MA90, signal results, and rejection of unauthenticated writes after deployment.
-- Schema changes are forward-only. Rollback requires the database backup together with the previous application version.
-
-Validation:
 ```sh
 cd backend
+pip install -r requirements.txt
 python -B -m unittest discover -s tests -v
 cd ../frontend
 npm ci
 npm test
 npm run typecheck
 npm run build
+npm audit
 ```
+
+Tests use temporary databases and mocked market APIs. A clean Linux install is also verified by the Vercel build. Local build output uses `.next-build`; Vercel uses `.next`.
+
+## Rollout and recovery
+
+1. Create a PostgreSQL custom-format backup with `pg_dump -Fc`. Store the download outside version control (`.backups/` is ignored).
+2. Restore the backup into a temporary database and test `python -m app.migrate` twice. Check row preservation, fractional OHLC types and the four-column signal key.
+3. Stage Railway variables and deploy the API and both worker services. Use explicit service IDs so the database and Redis services are never redeployed accidentally.
+4. Verify API `/health`, login and authenticated stock/tag/task endpoints. Anonymous shared-data writes must return 401; non-admin writes must return 403.
+5. Deploy the Vercel `stock-analyzer` project from the repository root (`vercel --prod`), since the project root setting is `frontend`. Verify both public domain aliases.
+6. Run `python -m app.recover_history` in the deployed backend. This fetches US price history again and rebuilds both signal strategies. The KIS credentials and API mode must be valid. Recovery stops with an error if any stock cannot be recovered; inspect per-stock logs and retry.
+
+The first migration preserves existing rows and tags, upgrades OHLC columns to floating point, and adds separate MA analysis state and MA-period signal identity. Old US prices already lost their decimals, so their MA90 values and active signals are invalidated until recovery. `history_precision_version=0` identifies pending repairs. MA90 requires 90 complete valid sessions.
+
+After rollout, check the recovery count, history freshness, fractional prices, MA90 results and both signal categories. `TaskProgress` and per-stock logs retain progress and failures. Jobs older than the worker timeout are reconciled at API startup.
+
+Schema rollback is forward-only: restore the PostgreSQL backup together with the previous application version. Restoring a backup discards subsequent changes; do not do this automatically after the new application has accepted writes.

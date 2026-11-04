@@ -1,6 +1,6 @@
 import axios from 'axios';
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+import { API_BASE_URL } from './http';
 
 const api = axios.create({
   baseURL: API_BASE_URL,
@@ -177,7 +177,7 @@ export const stockApi = {
     return response.data;
   },
 
-  crawlStocks: async (market: string = 'ALL'): Promise<CrawlingStatus> => {
+  crawlStocks: async (market: string = 'ALL'): Promise<{ task_id: string; success: boolean; message: string }> => {
     const response = await api.post('/api/crawl/stocks', null, {
       params: { market },
     });

@@ -6,6 +6,7 @@ import { ArrowUpIcon, ArrowDownIcon, BarChart3, TrendingUp, TrendingDown, Trash2
 import { getNaverChartUrl, getNaverInfoUrl } from '@/lib/naverStock';
 import { toast } from 'sonner';
 import { useTags } from '@/contexts/TagContext';
+import { useAuth } from '@/contexts/AuthContext';
 import { useQueryClient, useQuery } from '@tanstack/react-query';
 import { useTimezone } from '@/hooks/useTimezone';
 import { Button } from '@/components/ui/button';
@@ -77,6 +78,7 @@ const StockItem = React.memo<StockItemProps>(({
   viewMode = 'table'
 }) => {
   const { formatShortDateTime, formatShortDate } = useTimezone();
+  const { user } = useAuth();
   const [isDeleting, setIsDeleting] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncStatus, setSyncStatus] = useState<'none' | 'partial' | 'synced'>(() => {
@@ -241,7 +243,7 @@ const StockItem = React.memo<StockItemProps>(({
           {/* Sync Button */}
           <button
             onClick={handleSyncHistory}
-            disabled={isSyncing}
+            disabled={isSyncing || !user?.is_admin}
             className={cn(
               "shrink-0 flex items-center gap-1 text-xs px-2 py-1 rounded-full border transition-colors",
               syncStatus === 'synced' && "border-green-500/30 text-green-600 dark:text-green-400",
@@ -347,7 +349,7 @@ const StockItem = React.memo<StockItemProps>(({
               variant="ghost"
               size="sm"
               onClick={handleSyncHistory}
-              disabled={isSyncing}
+              disabled={isSyncing || !user?.is_admin}
               className={cn(
                 "h-5 px-1.5 text-[10px]",
                 syncStatus === 'synced' && "text-green-600",
@@ -418,13 +420,13 @@ const StockItem = React.memo<StockItemProps>(({
       </td>
 
       <td className="px-2 py-3 text-center">
-        <AlertDialog>
+        {user?.is_admin && <AlertDialog>
           <AlertDialogTrigger asChild>
             <Button
               variant="ghost"
               size="icon"
               onClick={(e) => e.stopPropagation()}
-              disabled={isDeleting}
+              disabled={isDeleting || !user?.is_admin}
               className="opacity-0 group-hover:opacity-100 h-8 w-8 text-muted-foreground hover:text-destructive"
             >
               {isDeleting ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
@@ -446,7 +448,7 @@ const StockItem = React.memo<StockItemProps>(({
               </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>
-        </AlertDialog>
+        </AlertDialog>}
       </td>
     </tr>
   );

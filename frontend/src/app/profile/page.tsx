@@ -1,5 +1,7 @@
 'use client';
 
+import { apiFetch, API_BASE_URL } from '@/lib/http';
+
 import { useState, useEffect } from 'react';
 import AppLayout from '@/components/AppLayout';
 import { User, Key, Save, X, Shield, Globe } from 'lucide-react';
@@ -44,7 +46,7 @@ export default function ProfilePage() {
   useEffect(() => {
     const fetchTimezones = async () => {
       try {
-        const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/timezones`);
+        const response = await apiFetch(`${API_BASE_URL}/api/timezones`);
         if (response.ok) {
           const data = await response.json();
           setTimezones(data.timezones);

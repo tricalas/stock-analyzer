@@ -15,7 +15,7 @@
 ## 기술 스택 🛠
 
 ### Backend
-- **FastAPI 0.128.0**: 고성능 Python 웹 프레임워크
+- **FastAPI 0.162.0**: 고성능 Python 웹 프레임워크
 - **SQLAlchemy**: ORM 및 데이터베이스 관리
 - **APScheduler**: 크롤링 스케줄러
 - **BeautifulSoup4 & Requests**: 웹 크롤링
@@ -23,7 +23,7 @@
 - **Python 3.11+**
 
 ### Frontend
-- **Next.js 16.1.1**: React 기반 풀스택 프레임워크
+- **Next.js 16.4.5**: React 기반 풀스택 프레임워크
 - **React 19.2.3**: UI 라이브러리
 - **TypeScript**: 타입 안정성
 - **TailwindCSS**: 스타일링
@@ -36,7 +36,7 @@
 
 ### Prerequisites
 - Python 3.11+
-- Node.js 20.9+
+- Node.js 24
 - npm or yarn
 
 ### 1. 저장소 클론

@@ -3,6 +3,7 @@
 import React, { createContext, useContext, ReactNode, useCallback } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Tag, stockApi } from '@/lib/api';
+import { useAuth } from '@/contexts/AuthContext';
 
 interface TagContextType {
   tags: Tag[];
@@ -15,9 +16,11 @@ const TagContext = createContext<TagContextType | undefined>(undefined);
 
 export function TagProvider({ children }: { children: ReactNode }) {
   const queryClient = useQueryClient();
+  const { user } = useAuth();
 
   const { data, isLoading, error } = useQuery({
-    queryKey: ['tags'],
+    queryKey: ['tags', user?.user_token],
+    enabled: !!user,
     queryFn: async () => {
       const { tags } = await stockApi.getTags();
       return tags;

@@ -1,5 +1,7 @@
 'use client';
 
+import { apiFetch, API_BASE_URL } from '@/lib/http';
+
 import { useQuery } from '@tanstack/react-query';
 import AppLayout from '@/components/AppLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -83,8 +85,8 @@ export default function SignalDashboardPage() {
   const { data, isLoading, error, refetch, isFetching } = useQuery({
     queryKey: ['signal-dashboard'],
     queryFn: async () => {
-      const response = await fetch(
-        `${process.env.NEXT_PUBLIC_API_URL}/api/signals/dashboard`
+      const response = await apiFetch(
+        `${API_BASE_URL}/api/signals/dashboard`
       );
       if (!response.ok) throw new Error('Failed to fetch dashboard');
       return response.json() as Promise<DashboardResponse>;

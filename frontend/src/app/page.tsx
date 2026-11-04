@@ -29,6 +29,7 @@ import { toast } from 'sonner';
 import { useAuth } from '@/contexts/AuthContext';
 import { useTimezone } from '@/hooks/useTimezone';
 import { Button } from '@/components/ui/button';
+import { waitForTask } from '@/lib/tasks';
 
 export default function Home() {
   const queryClient = useQueryClient();
@@ -38,6 +39,8 @@ export default function Home() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [selectedStock, setSelectedStock] = useState<Stock | null>(null);
   const [isChartModalOpen, setIsChartModalOpen] = useState(false);
+  const refreshController = useRef<AbortController | null>(null);
+  useEffect(() => () => refreshController.current?.abort(), []);
   const loadMoreRef = useRef<HTMLDivElement>(null);
   const [lastUpdateTime, setLastUpdateTime] = useState<string | null>(null);
   const [sortField, setSortField] = useState<SortField>('market_cap');
@@ -66,7 +69,7 @@ export default function Home() {
     isFetchingNextPage,
     refetch,
   } = useInfiniteQuery({
-    queryKey: ['stocks', activeTab, sortField, sortDirection],
+    queryKey: ['stocks', user?.user_token, activeTab, sortField, sortDirection],
     queryFn: ({ pageParam = 0 }) => {
       if (activeTab === 'FAVORITES') return stockApi.getFavorites();
       if (activeTab === 'DISLIKES') return stockApi.getDislikes();
@@ -106,24 +109,24 @@ export default function Home() {
     setIsRefreshing(true);
     toast.info('데이터를 가져오는 중입니다...');
     try {
-      await stockApi.crawlStocks('US');
-      toast.success('크롤링 시작됨');
-
-      setTimeout(async () => {
-        await refetch();
-        const now = new Date().toISOString();
-        localStorage.setItem('lastStockUpdate', now);
-        setLastUpdateTime(now);
-        toast.success('데이터 업데이트 완료');
-        setIsRefreshing(false);
-      }, 25000);
+      const result = await stockApi.crawlStocks('US');
+      const controller = new AbortController();
+      refreshController.current = controller;
+      await waitForTask(result.task_id, controller.signal);
+      await refetch();
+      const now = new Date().toISOString();
+      localStorage.setItem('lastStockUpdate', now);
+      setLastUpdateTime(now);
+      toast.success('데이터 업데이트 완료');
     } catch (error: any) {
-      setIsRefreshing(false);
+      if (error.name === 'AbortError') return;
       if (error.response?.status === 429) {
         toast.error('잠시 후 다시 시도해주세요');
       } else {
-        toast.error('업데이트 실패');
+        toast.error(error.message || '업데이트 실패');
       }
+    } finally {
+      setIsRefreshing(false);
     }
   }, [refetch]);
 
@@ -195,7 +198,7 @@ export default function Home() {
               )}
               <Button
                 onClick={handleRefreshStocks}
-                disabled={isRefreshing}
+                disabled={isRefreshing || !user?.is_admin}
                 variant="outline"
               >
                 <RefreshCw className={`h-4 w-4 mr-2 ${isRefreshing ? 'animate-spin' : ''}`} />
@@ -233,7 +236,7 @@ export default function Home() {
                 )}
                 <Button
                   onClick={handleRefreshStocks}
-                  disabled={isRefreshing}
+                  disabled={isRefreshing || !user?.is_admin}
                   variant="outline"
                   size="icon"
                   className="h-9 w-9"

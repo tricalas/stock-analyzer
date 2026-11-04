@@ -1,5 +1,7 @@
 'use client';
 
+import { apiFetch, API_BASE_URL } from '@/lib/http';
+
 import { useParams, useRouter } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
 import AppLayout from '@/components/AppLayout';
@@ -48,8 +50,8 @@ export default function StockMAAnalysisPage() {
   const { data, isLoading, error } = useQuery({
     queryKey: ['stock-ma-analysis', stockId],
     queryFn: async () => {
-      const response = await fetch(
-        `${process.env.NEXT_PUBLIC_API_URL}/api/stocks/${stockId}/ma-analysis?days=180`
+      const response = await apiFetch(
+        `${API_BASE_URL}/api/stocks/${stockId}/ma-analysis?days=180`
       );
       if (!response.ok) throw new Error('Failed to fetch MA analysis');
       return response.json() as Promise<MAAnalysisResponse>;

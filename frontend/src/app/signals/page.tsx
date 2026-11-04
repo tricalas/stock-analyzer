@@ -1,5 +1,7 @@
 'use client';
 
+import { apiFetch, API_BASE_URL } from '@/lib/http';
+
 import { useState, useEffect, useRef } from 'react';
 import { useInfiniteQuery } from '@tanstack/react-query';
 import AppLayout from '@/components/AppLayout';
@@ -97,9 +99,9 @@ export default function SignalsPage() {
     queryFn: async ({ pageParam = 0 }) => {
       // MA 카테고리면 /api/signals/ma 사용, 아니면 기존 /api/signals 사용
       const endpoint = signalCategory === 'ma'
-        ? `${process.env.NEXT_PUBLIC_API_URL}/api/signals/ma?skip=${pageParam}&limit=${PAGE_SIZE}`
-        : `${process.env.NEXT_PUBLIC_API_URL}/api/signals?skip=${pageParam}&limit=${PAGE_SIZE}`;
-      const response = await fetch(endpoint);
+        ? `${API_BASE_URL}/api/signals/ma?skip=${pageParam}&limit=${PAGE_SIZE}`
+        : `${API_BASE_URL}/api/signals?skip=${pageParam}&limit=${PAGE_SIZE}`;
+      const response = await apiFetch(endpoint);
       if (!response.ok) throw new Error('Failed to fetch signals');
       return response.json() as Promise<SignalListResponse>;
     },

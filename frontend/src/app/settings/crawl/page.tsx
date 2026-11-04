@@ -1,5 +1,7 @@
 'use client';
 
+import { apiFetch, API_BASE_URL } from '@/lib/http';
+
 import { useState, useEffect } from 'react';
 import { RefreshCw, Clock, StopCircle, CloudOff, Play } from 'lucide-react';
 import { toast } from 'sonner';
@@ -44,7 +46,7 @@ export default function StockCrawlPage() {
   const [showProgress, setShowProgress] = useState(false);
   const [taskId, setTaskId] = useState<string | null>(null);
 
-  const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+  const API_URL = API_BASE_URL;
 
   // 페이지 로드 시 실행 중인 작업 확인
   useEffect(() => {
@@ -53,7 +55,7 @@ export default function StockCrawlPage() {
         const token = localStorage.getItem('auth_token');
         if (!token) return;
 
-        const response = await fetch(`${API_URL}/api/tasks/latest/stock_crawl`, {
+        const response = await apiFetch(`${API_URL}/api/tasks/latest/stock_crawl`, {
           headers: { 'Authorization': `Bearer ${token}` },
         });
 
@@ -80,7 +82,7 @@ export default function StockCrawlPage() {
       const token = localStorage.getItem('auth_token');
       if (!token) return null;
 
-      const response = await fetch(`${API_URL}/api/tasks/${taskId}`, {
+      const response = await apiFetch(`${API_URL}/api/tasks/${taskId}`, {
         headers: { 'Authorization': `Bearer ${token}` },
       });
       if (!response.ok) throw new Error('Failed to fetch task progress');
@@ -103,7 +105,7 @@ export default function StockCrawlPage() {
       const token = localStorage.getItem('auth_token');
       if (!token) return [];
 
-      const response = await fetch(`${API_URL}/api/crawl/logs?limit=20`, {
+      const response = await apiFetch(`${API_URL}/api/crawl/logs?limit=20`, {
         headers: { 'Authorization': `Bearer ${token}` },
       });
       if (!response.ok) return [];
@@ -142,7 +144,7 @@ export default function StockCrawlPage() {
     if (!taskId) return;
     try {
       const token = localStorage.getItem('auth_token');
-      const response = await fetch(`${API_URL}/api/tasks/${taskId}/cancel`, {
+      const response = await apiFetch(`${API_URL}/api/tasks/${taskId}/cancel`, {
         method: 'POST',
         headers: {
           'Authorization': token ? `Bearer ${token}` : '',
@@ -167,7 +169,7 @@ export default function StockCrawlPage() {
         return;
       }
 
-      const response = await fetch(`${API_URL}/api/crawl/stocks?market=US`, {
+      const response = await apiFetch(`${API_URL}/api/crawl/stocks?market=US`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,

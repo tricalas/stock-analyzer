@@ -1,5 +1,7 @@
 'use client';
 
+import { apiFetch, API_BASE_URL } from '@/lib/http';
+
 import { useState, useEffect } from 'react';
 import { TrendingUp, RefreshCw, StopCircle, CloudOff, Target, BarChart3, Trash2, Activity, LineChart } from 'lucide-react';
 import { toast } from 'sonner';
@@ -56,14 +58,14 @@ export default function SignalAnalysisPage() {
   const [maAnalysisMode, setMAAnalysisMode] = useState<'all' | 'tagged'>('tagged');
   const [isDeletingMA, setIsDeletingMA] = useState(false);
 
-  const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+  const API_URL = API_BASE_URL;
 
   // 페이지 로드 시 실행 중인 작업 확인
   useEffect(() => {
     const checkRunningTask = async () => {
       try {
         // 추세선 분석 작업 확인
-        const response = await fetch(`${API_URL}/api/tasks/latest/signal_analysis`);
+        const response = await apiFetch(`${API_URL}/api/tasks/latest/signal_analysis`);
         if (response.ok) {
           const task: TaskProgress = await response.json();
           if (task.status === 'running') {
@@ -77,7 +79,7 @@ export default function SignalAnalysisPage() {
 
       try {
         // MA 분석 작업 확인
-        const maResponse = await fetch(`${API_URL}/api/tasks/latest/ma_signal_analysis`);
+        const maResponse = await apiFetch(`${API_URL}/api/tasks/latest/ma_signal_analysis`);
         if (maResponse.ok) {
           const maTask: TaskProgress = await maResponse.json();
           if (maTask.status === 'running') {
@@ -98,7 +100,7 @@ export default function SignalAnalysisPage() {
     queryKey: ['signal-progress', taskId],
     queryFn: async () => {
       if (!taskId) return null;
-      const response = await fetch(`${API_URL}/api/tasks/${taskId}`);
+      const response = await apiFetch(`${API_URL}/api/tasks/${taskId}`);
       if (!response.ok) throw new Error('Failed to fetch task progress');
       return response.json();
     },
@@ -116,7 +118,7 @@ export default function SignalAnalysisPage() {
   const { data: signalData, refetch: refetchSignals } = useQuery<SignalListResponse>({
     queryKey: ['signal-stats'],
     queryFn: async () => {
-      const response = await fetch(`${API_URL}/api/signals?limit=1`);
+      const response = await apiFetch(`${API_URL}/api/signals?limit=1`);
       if (!response.ok) throw new Error('Failed to fetch signals');
       return response.json();
     },
@@ -127,7 +129,7 @@ export default function SignalAnalysisPage() {
     queryKey: ['ma-signal-progress', maTaskId],
     queryFn: async () => {
       if (!maTaskId) return null;
-      const response = await fetch(`${API_URL}/api/tasks/${maTaskId}`);
+      const response = await apiFetch(`${API_URL}/api/tasks/${maTaskId}`);
       if (!response.ok) throw new Error('Failed to fetch MA task progress');
       return response.json();
     },
@@ -145,7 +147,7 @@ export default function SignalAnalysisPage() {
   const { data: maSignalData, refetch: refetchMASignals } = useQuery<SignalListResponse>({
     queryKey: ['ma-signal-stats'],
     queryFn: async () => {
-      const response = await fetch(`${API_URL}/api/signals/ma?limit=1`);
+      const response = await apiFetch(`${API_URL}/api/signals/ma?limit=1`);
       if (!response.ok) throw new Error('Failed to fetch MA signals');
       return response.json();
     },
@@ -203,7 +205,7 @@ export default function SignalAnalysisPage() {
   const handleStart = async (mode: 'all' | 'tagged') => {
     try {
       setAnalysisMode(mode);
-      const response = await fetch(
+      const response = await apiFetch(
         `${API_URL}/api/signals/refresh?mode=${mode}&days=120&force_full=true`,
         { method: 'POST' }
       );
@@ -225,7 +227,7 @@ export default function SignalAnalysisPage() {
     if (!taskId) return;
     try {
       const token = localStorage.getItem('auth_token');
-      const response = await fetch(`${API_URL}/api/tasks/${taskId}/cancel`, {
+      const response = await apiFetch(`${API_URL}/api/tasks/${taskId}/cancel`, {
         method: 'POST',
         headers: {
           'Authorization': token ? `Bearer ${token}` : '',
@@ -246,7 +248,7 @@ export default function SignalAnalysisPage() {
     if (!confirm('모든 시그널을 삭제하시겠습니까?')) return;
     try {
       setIsDeleting(true);
-      const response = await fetch(`${API_URL}/api/signals`, { method: 'DELETE' });
+      const response = await apiFetch(`${API_URL}/api/signals`, { method: 'DELETE' });
       if (!response.ok) throw new Error('Failed to delete signals');
       toast.success('모든 시그널이 삭제되었습니다');
       refetchSignals();
@@ -262,7 +264,7 @@ export default function SignalAnalysisPage() {
   const handleMAStart = async (mode: 'all' | 'tagged') => {
     try {
       setMAAnalysisMode(mode);
-      const response = await fetch(
+      const response = await apiFetch(
         `${API_URL}/api/signals/ma/refresh?mode=${mode}&days=150&force_full=true`,
         { method: 'POST' }
       );
@@ -284,7 +286,7 @@ export default function SignalAnalysisPage() {
     if (!maTaskId) return;
     try {
       const token = localStorage.getItem('auth_token');
-      const response = await fetch(`${API_URL}/api/tasks/${maTaskId}/cancel`, {
+      const response = await apiFetch(`${API_URL}/api/tasks/${maTaskId}/cancel`, {
         method: 'POST',
         headers: {
           'Authorization': token ? `Bearer ${token}` : '',
@@ -305,7 +307,7 @@ export default function SignalAnalysisPage() {
     if (!confirm('모든 MA 시그널을 삭제하시겠습니까?')) return;
     try {
       setIsDeletingMA(true);
-      const response = await fetch(`${API_URL}/api/signals/ma`, { method: 'DELETE' });
+      const response = await apiFetch(`${API_URL}/api/signals/ma`, { method: 'DELETE' });
       if (!response.ok) throw new Error('Failed to delete MA signals');
       toast.success('모든 MA 시그널이 삭제되었습니다');
       refetchMASignals();
