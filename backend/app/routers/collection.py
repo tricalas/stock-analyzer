@@ -5,11 +5,10 @@ from datetime import datetime
 import logging
 
 from app.config import settings
-from app.database import get_db
+from app.database import get_db, SessionLocal
 from app.models import Stock, StockPriceHistory, User, TaskProgress, StockCrawlLog
 from app import schemas
 from app.crawlers.crawler_manager import CrawlerManager
-from app.crawlers.price_history_crawler import price_history_crawler
 from app.scheduler import stock_scheduler
 from app.auth import get_current_user, get_admin_user
 from app.tasks import collect_history_task
@@ -346,71 +345,16 @@ def crawl_stock_price_history(
         if not stock:
             raise HTTPException(status_code=404, detail="Stock not found")
 
-        logger.info(f"Starting price history crawling for stock {stock.symbol}")
+        from app.crawlers.kis_history_crawler import kis_history_crawler
+        result = kis_history_crawler.collect_history_for_stock(stock, days=days, db=db)
+        if not result.get("success"):
+            raise HTTPException(status_code=502, detail=result.get("error", "History collection failed"))
+        count = result.get("records_saved", 0)
+        return {"success": count, "failed": 0, "total": count,
+                "message": f"Successfully crawled {count} price records for {stock.symbol}"}
 
-        # 기존 데이터 확인
-        latest_record = db.query(StockPriceHistory).filter(
-            StockPriceHistory.stock_id == stock_id
-        ).order_by(StockPriceHistory.date.desc()).first()
-
-        # 크롤링 실행
-        price_data = price_history_crawler.fetch_price_history(stock.symbol, days)
-
-        if not price_data:
-            return {
-                "success": 0,
-                "failed": 1,
-                "total": 1,
-                "message": f"No price data found for {stock.symbol}"
-            }
-
-        # 데이터베이스에 저장
-        success_count = 0
-        failed_count = 0
-
-        for data in price_data:
-            try:
-                # 기존 데이터 확인 (중복 방지)
-                existing = db.query(StockPriceHistory).filter(
-                    StockPriceHistory.stock_id == stock_id,
-                    StockPriceHistory.date == data['date']
-                ).first()
-
-                if existing:
-                    # 기존 데이터 업데이트
-                    existing.open_price = data['open_price']
-                    existing.high_price = data['high_price']
-                    existing.low_price = data['low_price']
-                    existing.close_price = data['close_price']
-                    existing.volume = data['volume']
-                    existing.updated_at = datetime.utcnow()
-                else:
-                    # 새 데이터 추가
-                    new_record = StockPriceHistory(
-                        stock_id=stock_id,
-                        **data
-                    )
-                    db.add(new_record)
-
-                success_count += 1
-
-            except Exception as e:
-                logger.error(f"Error saving price data for {data['date']}: {str(e)}")
-                failed_count += 1
-                continue
-
-        # 커밋
-        db.commit()
-
-        logger.info(f"Price history crawling completed for {stock.symbol}: {success_count} success, {failed_count} failed")
-
-        return {
-            "success": success_count,
-            "failed": failed_count,
-            "total": len(price_data),
-            "message": f"Successfully crawled {success_count} price records for {stock.symbol}"
-        }
-
+    except HTTPException:
+        raise
     except Exception as e:
         db.rollback()
         logger.error(f"Error crawling price history for stock {stock_id}: {str(e)}")

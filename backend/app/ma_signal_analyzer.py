@@ -84,16 +84,9 @@ class MASignalAnalyzer:
             logger.info(f"🔍 Starting MA signal analysis for {len(stock_ids)} stocks (mode: {mode})...")
 
             # TaskProgress 생성
-            task_progress = TaskProgress(
-                task_id=task_id,
-                task_type="ma_signal_analysis",
-                status="running",
-                total_items=len(stock_ids),
-                current_item=0,
-                message=f"MA 시그널 분석 시작 ({mode} 모드, {len(stock_ids)}개 종목)"
-            )
-            db.add(task_progress)
-            db.commit()
+            from app.task_progress import start_task
+            task_progress = start_task(db, task_id, "ma_signal_analysis", len(stock_ids),
+                                       f"MA 시그널 분석 시작 ({mode} 모드, {len(stock_ids)}개 종목)")
 
             total_stocks = len(stock_ids)
             signals_found = 0

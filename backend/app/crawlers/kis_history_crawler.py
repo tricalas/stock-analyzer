@@ -558,18 +558,9 @@ class KISHistoryCrawler:
         if task_id is None:
             task_id = str(uuid.uuid4())
 
-        task_progress = TaskProgress(
-            task_id=task_id,
-            task_type="history_collection",
-            status="running",
-            total_items=total,
-            current_item=0,
-            success_count=0,
-            failed_count=0,
-            message=f"히스토리 수집 시작 ({total}개 종목, {days}일)"
-        )
-        db.add(task_progress)
-        db.commit()
+        from app.task_progress import start_task
+        task_progress = start_task(db, task_id, "history_collection", total,
+                                   f"히스토리 수집 시작 ({total}개 종목, {days}일)")
 
         # 카운터
         counters = {

@@ -80,6 +80,38 @@ class Regressions(unittest.TestCase):
             signals.analyze_and_store_signals.assert_called_once_with(mode='all',days=180,force_full=False)
             ma.analyze_and_store_signals.assert_called_once_with(mode='all',days=180,force_full=False)
 
+    def test_task_redelivery_reuses_existing_progress(self):
+        from app.models import TaskProgress
+        crawler=KISHistoryCrawler()
+        for _ in range(2):
+            result=crawler._collect_history_for_stocks([],180,self.db,task_id='redelivery-history')
+            self.assertTrue(result['success'])
+            SignalAnalyzer().analyze_and_store_signals(task_id='redelivery-signals')
+            MASignalAnalyzer().analyze_and_store_signals(task_id='redelivery-ma')
+        self.assertEqual(self.db.query(TaskProgress).count(),3)
+        self.assertTrue(all(t.status=='completed' for t in self.db.query(TaskProgress).all()))
+
+    def test_background_quote_refresh_finishes_progress(self):
+        from app.models import TaskProgress
+        with patch('app.routers.collection.last_crawl_time',None), \
+             patch('app.routers.collection.crawler_manager.update_stock_list',
+                   return_value={'success':1,'failed':0,'total':1}):
+            response=self.client.post('/api/crawl/stocks?market=US',headers=self.headers())
+        self.assertEqual(response.status_code,200)
+        task=self.db.query(TaskProgress).filter_by(task_id=response.json()['task_id']).one()
+        self.assertEqual(task.status,'completed')
+
+    def test_compatibility_history_route_preserves_precision_and_404(self):
+        from app.crawlers.kis_history_crawler import kis_history_crawler
+        self.stock.history_precision_version=0;self.db.commit()
+        provider=SimpleNamespace(get_us_stock_ohlcv=lambda **kw:[{'xymd':date.today().strftime('%Y%m%d'),
+            'open':'0.75','high':'1.25','low':'0.50','clos':'0.99','tvol':'100'}])
+        with patch.object(kis_history_crawler,'kis_client',provider):
+            response=self.client.post(f'/api/stocks/{self.stock.id}/crawl-history',headers=self.headers())
+        self.assertEqual(response.status_code,200)
+        self.assertEqual(self.db.query(StockPriceHistory).one().close_price,0.99)
+        self.assertEqual(self.client.post('/api/stocks/9999/crawl-history',headers=self.headers()).status_code,404)
+
     def test_celery_redis_transport_loads(self):
         # This catches missing runtime dependencies that an HTTP test never imports.
         from kombu.transport import get_transport_cls
