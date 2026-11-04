@@ -69,6 +69,11 @@ class Regressions(unittest.TestCase):
         self.stock.history_records_count=count
         self.db.commit()
 
+    def test_celery_redis_transport_loads(self):
+        # This catches missing runtime dependencies that an HTTP test never imports.
+        from kombu.transport import get_transport_cls
+        self.assertEqual(get_transport_cls('redis').driver_type,'redis')
+
     def test_shared_data_writes_require_admin(self):
         routes=[('DELETE',f'/api/stocks/{self.stock.id}'),('DELETE','/api/signals'),
                 ('DELETE','/api/signals/ma'),('DELETE','/api/stocks/cleanup-etf'),
