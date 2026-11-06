@@ -145,13 +145,13 @@ def _collect(db, run, item, stock):
                     start_date=last_date + timedelta(days=1) if mode == 'incremental' else None, db=db)
         if not result.get('success'):
             raise RuntimeError(result.get('error', 'Collection failed'))
-    latest = db.query(func.max(StockPriceHistory.date)).filter_by(stock_id=stock.id).scalar()
+    latest = db.query(func.max(StockPriceHistory.date)).filter(StockPriceHistory.stock_id == stock.id, StockPriceHistory.date <= run.session_date).scalar()
     if latest is None or latest < run.session_date:
         raise RuntimeError(f'Stale history: last session {latest}, expected {run.session_date}')
     from app.market_clock import calendar
     close = calendar().session_close(str(run.session_date)).to_pydatetime().replace(tzinfo=None)
     if quoted_at is None or quoted_at < close:
-        prices = db.query(StockPriceHistory).filter_by(stock_id=stock.id).order_by(StockPriceHistory.date.desc()).limit(2).all()
+        prices = db.query(StockPriceHistory).filter(StockPriceHistory.stock_id == stock.id, StockPriceHistory.date <= run.session_date).order_by(StockPriceHistory.date.desc()).limit(2).all()
         stock.current_price = prices[0].close_price
         stock.trading_volume = prices[0].volume
         if len(prices) == 2 and prices[1].close_price:
@@ -212,9 +212,13 @@ def execute_unit(run_id):
                         elif item.history_status == 'failed' or stock.history_precision_version < 1:
                             status = 'skipped'
                         else:
+                            if stage == 'ma':
+                                from app.moving_averages import update_ma90
+                                update_ma90(stock.id, db, as_of=run.session_date)
                             minimum = 60 if stage == 'signals' else 90
                             count = db.query(StockPriceHistory).filter(StockPriceHistory.stock_id == stock.id,
-                                StockPriceHistory.date >= datetime.utcnow().date()-timedelta(days=run.days)).count()
+                                StockPriceHistory.date >= run.session_date-timedelta(days=run.days),
+                                StockPriceHistory.date <= run.session_date).count()
                             if count < minimum:
                                 status = 'skipped'
                             else:
@@ -222,7 +226,7 @@ def execute_unit(run_id):
                                     from app.signal_analyzer import signal_analyzer as analyzer
                                 else:
                                     from app.ma_signal_analyzer import ma_signal_analyzer as analyzer
-                                analyzer._analyze_stock(stock.id, run.days, db)
+                                analyzer._analyze_stock(stock.id, run.days, db, end_date=run.session_date)
                                 status = 'success'
                         setattr(item, stage+'_status', status)
                         run.next_attempt_at = None

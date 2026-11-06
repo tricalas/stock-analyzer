@@ -213,15 +213,17 @@ class SignalAnalyzer:
 
         return filtered_ids
 
-    def _analyze_stock(self, stock_id: int, days: int, db: Session) -> Dict:
+    def _analyze_stock(self, stock_id: int, days: int, db: Session, end_date: date = None) -> Dict:
         # Serialize competing analyses for this stock and replace signals atomically.
         stock = db.query(Stock).filter(Stock.id == stock_id).with_for_update().first()
         if stock is None:
             return {"signals_count": 0, "saved_count": 0}
         from datetime import timedelta
+        end_date = end_date or date.today()
         history = db.query(StockPriceHistory).filter(
             StockPriceHistory.stock_id == stock_id,
-            StockPriceHistory.date >= date.today() - timedelta(days=days)
+            StockPriceHistory.date >= end_date - timedelta(days=days),
+            StockPriceHistory.date <= end_date
         ).order_by(StockPriceHistory.date.asc()).all()
         if len(history) < 60:
             db.commit()

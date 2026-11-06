@@ -49,8 +49,8 @@ class Operations(unittest.TestCase):
         calls=[]
         with patch('app.crawlers.crawler_manager.CrawlerManager.update_stock_list',side_effect=lambda *_:calls.append('quotes') or {'success':1}), \
              patch('app.workflow._collect',side_effect=lambda *_:calls.append('history') or 'success'), \
-             patch('app.signal_analyzer.signal_analyzer._analyze_stock',side_effect=lambda *_:calls.append('signals') or {}), \
-             patch('app.ma_signal_analyzer.ma_signal_analyzer._analyze_stock',side_effect=lambda *_:calls.append('ma') or {}):
+             patch('app.signal_analyzer.signal_analyzer._analyze_stock',side_effect=lambda *_,**__:calls.append('signals') or {}), \
+             patch('app.ma_signal_analyzer.ma_signal_analyzer._analyze_stock',side_effect=lambda *_,**__:calls.append('ma') or {}):
             final=self.run_until_done(run.id)
             execute_unit(run.id)
         self.assertEqual(calls,['quotes','history','signals','ma'])
@@ -182,6 +182,22 @@ class Operations(unittest.TestCase):
         with patch('app.routers.operations.dispatch_run'):
             response=self.client.post(f'/api/tasks/{run.id}/restart',headers=self.headers())
         self.assertEqual(response.json()['new_task_id'],run.id)
+
+    def test_daily_analysis_and_ma90_exclude_the_open_trading_session(self):
+        from app.signal_analyzer import SignalAnalyzer
+        from app.ma_signal_analyzer import MASignalAnalyzer
+        from app.moving_averages import update_ma90
+        self.history(100)
+        today=self.db.query(StockPriceHistory).filter_by(stock_id=self.stock.id,date=date.today()).one()
+        today.close_price=99999;self.db.commit()
+        end=date.today()-timedelta(days=1)
+        for analyzer in (SignalAnalyzer(),MASignalAnalyzer()):
+            with patch.object(analyzer,'_run_signal_analysis',return_value=[]) as analysis:
+                analyzer._analyze_stock(self.stock.id,180,self.db,end_date=end)
+                rows=analysis.call_args.args[0]
+                self.assertTrue(all(row.date<=end for row in rows))
+                self.assertEqual(len(rows),99)
+        self.assertAlmostEqual(update_ma90(self.stock.id,self.db,as_of=end),123.89)
 
     def test_mapping_patch_is_allowed_by_production_cors(self):
         from app.config import settings
