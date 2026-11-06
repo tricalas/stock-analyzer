@@ -65,6 +65,7 @@ class Operations(unittest.TestCase):
              patch('app.ma_signal_analyzer.ma_signal_analyzer._analyze_stock') as ma:
             final=self.run_until_done(run.id)
         self.assertEqual(final.status,'partial')
+        self.assertIn('Provider omitted', final.error_message)
         signals.assert_not_called();ma.assert_not_called()
         issue=self.db.get(RecoveryIssue,self.stock.id)
         self.assertEqual(issue.reason,'missing_history')
@@ -198,6 +199,14 @@ class Operations(unittest.TestCase):
                 self.assertTrue(all(row.date<=end for row in rows))
                 self.assertEqual(len(rows),99)
         self.assertAlmostEqual(update_ma90(self.stock.id,self.db,as_of=end),123.89)
+
+    def test_actual_timeout_and_gateway_messages_are_retryable(self):
+        from app.workflow import classify_error
+        for message in ('timed out','SoftTimeLimitExceeded()', '503 Service unavailable',
+                        'Server disconnected without sending a response', 'Rate limit exceeded'):
+            self.assertEqual(classify_error(message),'temporary_error')
+        self.assertEqual(classify_error('No data received from API'),'provider_unavailable')
+        self.assertEqual(classify_error('Provider omitted 20 existing history dates'),'missing_history')
 
     def test_mapping_patch_is_allowed_by_production_cors(self):
         from app.config import settings

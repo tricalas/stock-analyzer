@@ -22,7 +22,9 @@ def classify_error(message):
         return "provider_unavailable"
     if "stale" in value:
         return "stale_history"
-    if "429" in value or "rate" in value or "초당" in value or "timeout" in value or "connection" in value:
+    if any(marker in value for marker in (
+            "429", "rate limit", "초당", "timeout", "timed out", "connection",
+            "disconnected", "time limit", "timelimit", "502", "503", "504")):
         return "temporary_error"
     return "collection_error"
 
@@ -190,7 +192,8 @@ def execute_unit(run_id):
                         run.status = 'partial' if has_failures else 'completed'
                         if has_failures:
                             errors = db.query(PipelineItem.error_message).filter(
-                                PipelineItem.run_id == run.id, PipelineItem.error_message != None).limit(3).all()
+                                PipelineItem.run_id == run.id, PipelineItem.error_message != None,
+                                or_(*(getattr(PipelineItem, s+'_status') == 'failed' for s in STAGES))).limit(3).all()
                             run.error_message = '일부 종목 처리 실패: ' + '; '.join(row[0] for row in errors)
                         run.stage = 'completed'
                         run.active_key = None
@@ -229,6 +232,8 @@ def execute_unit(run_id):
                                 analyzer._analyze_stock(stock.id, run.days, db, end_date=run.session_date)
                                 status = 'success'
                         setattr(item, stage+'_status', status)
+                        if not any(getattr(item, s+'_status') == 'failed' for s in STAGES):
+                            item.error_message = None
                         run.next_attempt_at = None
                     except Exception as error:
                         db.rollback()
