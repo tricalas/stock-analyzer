@@ -9,6 +9,19 @@ from celery.exceptions import SoftTimeLimitExceeded
 logger = logging.getLogger(__name__)
 
 
+@shared_task(name="pipeline_unit_task", soft_time_limit=240, time_limit=270,
+             acks_late=True, reject_on_worker_lost=True)
+def pipeline_unit_task(run_id):
+    from app.workflow import execute_unit
+    execute_unit(run_id)
+
+
+@shared_task(name="refresh_quotes_task", soft_time_limit=240, time_limit=270)
+def refresh_quotes_task(market, task_id):
+    from app.routers.collection import run_background_crawl
+    run_background_crawl(market, task_id)
+
+
 @shared_task(
     bind=True,
     name="collect_history_task",

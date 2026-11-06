@@ -1,5 +1,9 @@
 #!/bin/sh
 set -eu
+if [ "${APP_ROLE:-api}" = "scheduler" ]; then
+    python -m app.migrate
+    exec python -m app.monitoring
+fi
 if [ "${APP_ROLE:-api}" = "worker" ]; then
     exec sh start-worker.sh
 fi

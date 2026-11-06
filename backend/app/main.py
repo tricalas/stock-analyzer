@@ -12,7 +12,7 @@ from app.database import SessionLocal
 from app.bootstrap import seed_default_tags, reconcile_stale_tasks
 from app.cache import invalidate_cache
 from app.scheduler import stock_scheduler
-from app.routers import auth, tags, collection, maintenance, stocks, signals, tasks, admin
+from app.routers import auth, tags, collection, maintenance, stocks, signals, tasks, admin, operations
 
 logging.basicConfig(level=logging.INFO)
 
@@ -31,7 +31,7 @@ async def lifespan(app):
 app = FastAPI(title="Stock Analyzer API", version="1.1.0", default_response_class=ORJSONResponse, lifespan=lifespan)
 app.add_middleware(GZipMiddleware, minimum_size=1000)
 app.add_middleware(CORSMiddleware, allow_origins=settings.CORS_ORIGINS, allow_credentials=False,
-                   allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"], allow_headers=["Authorization", "Content-Type"])
+                   allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"], allow_headers=["Authorization", "Content-Type"])
 
 @app.get("/")
 def read_root():
@@ -43,5 +43,5 @@ def health():
         db.execute(text("SELECT 1"))
     return {"status": "ok", "version": "1.1.0"}
 
-for module in (auth, tags, collection, maintenance, stocks, signals, tasks, admin):
+for module in (auth, tags, collection, maintenance, stocks, signals, tasks, admin, operations):
     app.include_router(module.router)

@@ -7,7 +7,7 @@ export default function SettingsPage() {
   const router = useRouter();
 
   useEffect(() => {
-    router.replace('/settings/signals');
+    router.replace('/settings/operations');
   }, [router]);
 
   return (

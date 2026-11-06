@@ -15,6 +15,7 @@ interface SettingsLayoutProps {
 }
 
 const adminMenuItems = [
+  { name: '운영 상태·복구', href: '/settings/operations', icon: Shield },
   { name: '시그널 분석', href: '/settings/signals', icon: TrendingUp },
   { name: '종목 수집', href: '/settings/crawl', icon: RefreshCw },
   { name: '히스토리 수집', href: '/settings/data', icon: Database },

@@ -73,7 +73,7 @@ def reconcile_stale_tasks(db):
     from datetime import datetime, timedelta
     from app.models import TaskProgress
     cutoff = datetime.utcnow() - timedelta(hours=2)
-    db.query(TaskProgress).filter(TaskProgress.status == 'running', TaskProgress.updated_at < cutoff).update({
+    db.query(TaskProgress).filter(TaskProgress.status == 'running', ~TaskProgress.task_type.in_(['pipeline', 'stock_crawl']), TaskProgress.updated_at < cutoff).update({
         'status':'failed', 'error_message':'Worker stopped before completion; retry this task.',
         'completed_at':datetime.utcnow()}, synchronize_session=False)
     db.commit()

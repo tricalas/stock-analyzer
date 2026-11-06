@@ -95,9 +95,14 @@ class Regressions(unittest.TestCase):
         from app.models import TaskProgress
         with patch('app.routers.collection.last_crawl_time',None), \
              patch('app.routers.collection.crawler_manager.update_stock_list',
-                   return_value={'success':1,'failed':0,'total':1}):
+                   return_value={'success':1,'failed':0,'total':1}), \
+             patch('app.routers.collection.refresh_quotes_task') as queued:
             response=self.client.post('/api/crawl/stocks?market=US',headers=self.headers())
         self.assertEqual(response.status_code,200)
+        from app.routers.collection import run_background_crawl
+        queued.apply_async.assert_called_once()
+        with patch('app.routers.collection.crawler_manager.update_stock_list', return_value={'success':1,'failed':0,'total':1}):
+            run_background_crawl('US',response.json()['task_id'])
         task=self.db.query(TaskProgress).filter_by(task_id=response.json()['task_id']).one()
         self.assertEqual(task.status,'completed')
 

@@ -28,14 +28,8 @@ class KISHistoryCrawler:
         return update_ma90(stock_id, db)
 
     def _get_last_trading_day(self) -> date:
-        from zoneinfo import ZoneInfo
-        now = datetime.now(ZoneInfo("America/New_York"))
-        trading_day = now.date()
-        if now.hour < 16:
-            trading_day -= timedelta(days=1)
-        while trading_day.weekday() >= 5:
-            trading_day -= timedelta(days=1)
-        return trading_day
+        from app.market_clock import latest_session
+        return latest_session()[0]
 
     def _should_collect_history(
         self,
@@ -133,14 +127,14 @@ class KISHistoryCrawler:
             if stock.market == "KR":
                 ohlcv_data = self._collect_kr_stock_history(stock.symbol, start_date_str, end_date_str)
             elif stock.market == "US":
-                exchange = self._get_us_exchange_code(stock.exchange)
+                exchange = stock.provider_exchange or self._get_us_exchange_code(stock.exchange)
                 # Precision repair must cover all previously saved sessions.
                 cutoff = datetime.strptime(start_date_str, "%Y%m%d").date()
                 if (stock.history_precision_version or 0) < 1:
                     oldest = db.query(StockPriceHistory.date).filter(StockPriceHistory.stock_id == stock.id).order_by(StockPriceHistory.date.asc()).first()
                     if oldest:
                         cutoff = min(cutoff, oldest.date)
-                ohlcv_data = self._collect_us_stock_history(stock.symbol, exchange, cutoff)
+                ohlcv_data = self._collect_us_stock_history(stock.provider_symbol or stock.symbol, exchange, cutoff)
             else:
                 logger.warning(f"Unknown market: {stock.market} for {stock.symbol}")
                 return {"success": False, "error": f"Unknown market: {stock.market}"}

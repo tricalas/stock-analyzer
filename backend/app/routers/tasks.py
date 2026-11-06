@@ -126,6 +126,20 @@ def cancel_task(
     if not task:
         raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
 
+    if task.task_type == 'pipeline':
+        from app.models import PipelineRun
+        run = db.get(PipelineRun, task_id)
+        if run.status not in ('queued', 'running'):
+            return {'success': False, 'message': '이미 종료된 작업입니다.'}
+        run.cancel_requested = True
+        task.message = '현재 종목 처리 후 중단합니다. 완료된 단계는 보존됩니다.'
+        if run.lease_until is None or run.lease_until < datetime.utcnow():
+            run.status = task.status = 'cancelled'
+            run.active_key = None
+            run.completed_at = task.completed_at = datetime.utcnow()
+        db.commit()
+        return {'success': True, 'task_id': task_id, 'message': task.message}
+
     if task.status != "running":
         return {
             "success": False,
@@ -180,6 +194,11 @@ def restart_task(
 
     if not task:
         raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
+
+    if task.task_type == 'pipeline':
+        from app.routers.operations import resume_run
+        result = resume_run(task_id, db)
+        return {**result, 'new_task_id': result['task_id']}
 
     if task.status == "running":
         return {

@@ -28,6 +28,8 @@ class Stock(Base):
     name = Column(String(255), nullable=False)
     market = Column(String(10), nullable=False)  # KR, US
     exchange = Column(String(50))  # KOSPI, KOSDAQ, NASDAQ, NYSE
+    provider_symbol = Column(String(20))
+    provider_exchange = Column(String(3))
     sector = Column(String(100))
     industry = Column(String(100))
 
@@ -352,3 +354,75 @@ class ApiTokenCache(Base):
         UniqueConstraint('provider', 'cache_key', name='uq_provider_cache_key'),
         {'extend_existing': True}
     )
+
+
+class PipelineRun(Base):
+    __tablename__ = "pipeline_runs"
+    id = Column(String(100), primary_key=True, default=lambda: str(uuid.uuid4()))
+    daily_key = Column(String(40), unique=True)
+    active_key = Column(String(10), unique=True)
+    scope = Column(String(10), nullable=False, default="all")
+    session_date = Column(Date, nullable=False)
+    days = Column(Integer, nullable=False, default=180)
+    stage = Column(String(20), nullable=False, default="quotes")
+    status = Column(String(20), nullable=False, default="queued")
+    lease_token = Column(String(100))
+    lease_until = Column(DateTime)
+    next_attempt_at = Column(DateTime)
+    last_dispatched_at = Column(DateTime)
+    error_message = Column(Text)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    completed_at = Column(DateTime)
+    cancel_requested = Column(Boolean, nullable=False, default=False)
+
+
+class PipelineItem(Base):
+    __tablename__ = "pipeline_items"
+    id = Column(Integer, primary_key=True)
+    run_id = Column(String(100), ForeignKey("pipeline_runs.id"), nullable=False, index=True)
+    stock_id = Column(Integer, ForeignKey("stocks.id"), nullable=False)
+    history_status = Column(String(10), nullable=False, default="pending")
+    signals_status = Column(String(10), nullable=False, default="pending")
+    ma_status = Column(String(10), nullable=False, default="pending")
+    history_attempts = Column(Integer, nullable=False, default=0)
+    signals_attempts = Column(Integer, nullable=False, default=0)
+    ma_attempts = Column(Integer, nullable=False, default=0)
+    error_message = Column(Text)
+    __table_args__ = (UniqueConstraint("run_id", "stock_id", name="uq_pipeline_stock"),)
+
+
+class RecoveryIssue(Base):
+    __tablename__ = "recovery_issues"
+    stock_id = Column(Integer, ForeignKey("stocks.id"), primary_key=True)
+    reason = Column(String(40), nullable=False)
+    status = Column(String(20), nullable=False, default="open")
+    message = Column(Text)
+    notes = Column(Text)
+    attempts = Column(Integer, nullable=False, default=0)
+    first_seen_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    last_seen_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    resolved_at = Column(DateTime)
+
+
+class OperationalAlert(Base):
+    __tablename__ = "operational_alerts"
+    key = Column(String(100), primary_key=True)
+    severity = Column(String(10), nullable=False, default="warning")
+    title = Column(String(255), nullable=False)
+    detail = Column(Text)
+    status = Column(String(20), nullable=False, default="open")
+    acknowledged_at = Column(DateTime)
+    first_seen_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    last_seen_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    resolved_at = Column(DateTime)
+
+
+class ServiceCheck(Base):
+    __tablename__ = "service_checks"
+    name = Column(String(30), primary_key=True)
+    healthy = Column(Boolean, nullable=False, default=True)
+    failures = Column(Integer, nullable=False, default=0)
+    detail = Column(String(255))
+    checked_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    last_success_at = Column(DateTime)

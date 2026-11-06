@@ -16,8 +16,13 @@ def _delete(db, stocks):
     if not ids:
         return {"deleted_count":0, "deleted_history_count":0, "deleted_signal_count":0, "deleted_tag_count":0}
     result = {"deleted_count":len(ids)}
+    from app.models import PipelineRun, PipelineItem, RecoveryIssue
+    if db.query(PipelineItem).join(PipelineRun, PipelineRun.id == PipelineItem.run_id).filter(
+            PipelineItem.stock_id.in_(ids), PipelineRun.active_key != None).first():
+        raise HTTPException(409, '수집·분석 중인 종목입니다. 작업 종료 후 삭제해주세요.')
     try:
-        for model, key in ((StockPriceHistory,'deleted_history_count'),(StockSignal,'deleted_signal_count'),
+        for model, key in ((PipelineItem,'deleted_pipeline_items'),(RecoveryIssue,'deleted_recovery_issues'),
+                           (StockPriceHistory,'deleted_history_count'),(StockSignal,'deleted_signal_count'),
                            (StockTagAssignment,'deleted_tag_count'),(HistoryCollectionLog,'deleted_log_count'),
                            (StockPrice,'deleted_price_count'),(StockDailyData,'deleted_daily_count')):
             result[key] = db.query(model).filter(model.stock_id.in_(ids)).delete(synchronize_session=False)

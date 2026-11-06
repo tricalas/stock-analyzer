@@ -64,3 +64,16 @@ The first migration preserves existing rows and tags, upgrades OHLC columns to f
 After rollout, check the recovery count, history freshness, fractional prices, MA90 results and both signal categories. `TaskProgress` and per-stock logs retain progress and failures. Jobs older than the worker timeout are reconciled at API startup.
 
 Schema rollback is forward-only: restore the PostgreSQL backup together with the previous application version. Restoring a backup discards subsequent changes; do not do this automatically after the new application has accepted writes.
+
+## Durable operations (November 2026)
+
+- `stock-analyzer` now runs with `APP_ROLE=scheduler`, `ENABLE_AUTO_HISTORY_COLLECTION=true`, and `API_PUBLIC_URL` pointing to the public API. It probes API/Redis/worker health and dispatches due work every minute, independently of the web process and worker queue.
+- `Worker (Celery)` keeps `APP_ROLE=worker`. The API uses `APP_ROLE=api`, `ENABLE_AUTO_HISTORY_COLLECTION=false`. Co-locate all three with PostgreSQL and Redis.
+- NYSE calendar sessions (holidays, DST and early closes) determine the expected trading date. A daily run becomes eligible 20 minutes after its session closes; a restart catches up the most recent eligible session once.
+- The durable flow is quotes → per-stock history and MA90 → trend signals → MA signals. Each Celery message processes a bounded unit (240-second soft / 270-second hard deadline). A six-minute DB lease excludes duplicate execution. Saved stage results survive broker loss or worker replacement; the independent scheduler redispatches expired leases. Per-stock attempts are capped at three, including process deaths.
+- A failed stock is excluded from downstream analysis. Other stocks continue. A partial run reports failures rather than claiming full success. Quote-stage failure stops downstream stages and can be resumed by an administrator.
+- Administrators manage runs, incidents and recovery at `/settings/operations`. Provider symbol/exchange overrides preserve the original ticker, stock ID, tags and history. Changing an override invalidates analysis until prices have been recollected. Unsupported or unavailable symbols are never automatically labelled as delisted or deleted.
+- Alerts are delivered inside the administrator UI and persisted in PostgreSQL. Three consecutive failed dependency probes open an incident; recovery resolves it automatically. Data delay is checked two hours after the expected session close. The UI flags a scheduler heartbeat older than three minutes. External email/chat delivery is not configured.
+- Before upgrading, take a fresh `pg_dump -Fc` backup and test migration `0002_durable_operations` against a restored copy. This migration adds provider overrides and operational tables without rewriting price history or account data.
+
+References: [Celery task acknowledgement and worker-loss behavior](https://docs.celeryq.dev/en/stable/userguide/tasks.html), [exchange-calendars](https://pypi.org/project/exchange_calendars/).

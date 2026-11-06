@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Query, BackgroundTasks
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from typing import List
 from datetime import datetime
@@ -11,7 +11,7 @@ from app import schemas
 from app.crawlers.crawler_manager import CrawlerManager
 from app.scheduler import stock_scheduler
 from app.auth import get_current_user, get_admin_user
-from app.tasks import collect_history_task
+from app.tasks import refresh_quotes_task
 import uuid
 
 from app.cache import invalidate_cache
@@ -29,31 +29,14 @@ def collect_history_for_tagged_stocks_api(
     workers: int = Query(5, ge=1, le=20),
     current_user: User = Depends(get_current_user)
 ):
-    """태그된 종목 히스토리 수집 (Celery 백그라운드 작업)"""
-    task_id = str(uuid.uuid4())
-    collect_history_task.apply_async(
-        kwargs={
-            "days": days,
-            "task_id": task_id,
-            "mode": "tagged",
-            "max_workers": workers
-        },
-        task_id=task_id
-    )
-    return {
-        "success": True,
-        "message": f"히스토리 수집 작업이 시작되었습니다. (태그된 종목, {days}일치 데이터, 워커 {workers}개)",
-        "days": days,
-        "mode": "tagged",
-        "workers": workers,
-        "task_id": task_id,
-        "note": "브라우저를 닫아도 작업이 계속 실행됩니다."
-    }
+    from app.workflow import create_run
+    from app.routers.operations import enqueue
+    with SessionLocal() as db:
+        return enqueue(create_run(db, scope='tagged', days=max(180, days)))
 
 
 @router.post("/api/crawl/stocks")
 def crawl_stock_list(
-    background_tasks: BackgroundTasks,
     market: str = Query("ALL", pattern="^(ALL|KR|US)$"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
@@ -83,7 +66,7 @@ def crawl_stock_list(
     task_progress = TaskProgress(
         task_id=task_id,
         task_type="stock_crawl",
-        status="running",
+        status="queued",
         total_items=0,
         current_item=0,
         success_count=0,
@@ -101,7 +84,10 @@ def crawl_stock_list(
     db.commit()
 
     # 백그라운드 작업 추가 (task_id 포함)
-    background_tasks.add_task(run_background_crawl, market, task_id)
+    try:
+        refresh_quotes_task.apply_async(args=[market, task_id], task_id=task_id)
+    except Exception:
+        logger.warning("Quote refresh saved; scheduler will enqueue after broker recovery")
 
     # 즉시 응답 반환 (task_id 포함)
     return {
@@ -127,11 +113,15 @@ def get_crawl_logs(
 def get_scheduler_status():
     """스케줄러 상태 및 등록된 작업 목록 조회"""
     try:
+        from app.models import ServiceCheck
+        with SessionLocal() as db:
+            check = db.get(ServiceCheck, 'Scheduler')
+            running = bool(check and (datetime.utcnow()-check.checked_at).total_seconds() < 180)
         jobs = stock_scheduler.get_jobs()
         return {
-            "running": stock_scheduler.scheduler.running,
+            "running": running,
             "jobs": jobs,
-            "message": "Scheduler is running" if stock_scheduler.scheduler.running else "Scheduler is stopped"
+            "message": "Scheduler is running" if running else "Scheduler heartbeat missing"
         }
     except Exception as e:
         logger.error(f"Error getting scheduler status: {str(e)}")
@@ -154,27 +144,10 @@ def trigger_manual_crawl():
 
 @router.post("/api/scheduler/trigger-history")
 def trigger_manual_history_collection(
-    background_tasks: BackgroundTasks,
     days: int = Query(100, ge=1, le=365, description="Number of days to collect")
 ):
-    """수동으로 히스토리 수집 실행 (백그라운드 작업)"""
-    def run_collection():
-        try:
-            logger.info(f"🚀 Background history collection started ({days} days)...")
-            result = stock_scheduler.trigger_manual_history_collection(days=days)
-            logger.info(f"✅ Background history collection completed: {result}")
-        except Exception as e:
-            logger.error(f"❌ Error in background history collection: {str(e)}")
-
-    background_tasks.add_task(run_collection)
-
-    return {
-        "success": True,
-        "message": f"히스토리 수집 작업이 시작되었습니다 ({days}일치 데이터)",
-        "days": days,
-        "mode": settings.HISTORY_COLLECTION_MODE,
-        "note": "Check Railway logs for progress"
-    }
+    """종료된 단계부터 이어지는 영속 수집·분석 작업."""
+    return stock_scheduler.trigger_manual_history_collection(days=days)
 
 
 @router.post("/api/stocks/collect-history")
@@ -184,61 +157,12 @@ def collect_history_for_stocks(
     workers: int = Query(5, ge=1, le=20, description="병렬 워커 수 (1~20, 기본 5)"),
     current_user: User = Depends(get_current_user)
 ):
-    """
-    종목들의 히스토리 데이터 수집 (백그라운드 작업)
-
-    브라우저를 닫아도 작업이 계속 실행됩니다.
-    """
-    import threading
-    from app.crawlers.kis_history_crawler import kis_history_crawler
-
-    task_id = str(uuid.uuid4())
-
-    # Celery 태스크 시도, 실패 시 스레드로 폴백
-    try:
-        collect_history_task.apply_async(
-            kwargs={
-                "days": days,
-                "task_id": task_id,
-                "mode": mode,
-                "max_workers": workers
-            },
-            task_id=task_id
-        )
-        execution_mode = "celery"
-        logger.info(f"✅ History collection queued via Celery (task_id: {task_id})")
-    except Exception as e:
-        logger.warning(f"⚠️ Celery unavailable ({e}), falling back to thread")
-
-        # 스레드로 폴백 실행
-        def run_collection():
-            try:
-                if mode == "tagged":
-                    kis_history_crawler.collect_history_for_tagged_stocks(
-                        days=days, task_id=task_id, max_workers=workers
-                    )
-                else:
-                    kis_history_crawler.collect_history_for_all_stocks(
-                        days=days, task_id=task_id, max_workers=workers
-                    )
-            except Exception as ex:
-                logger.error(f"History collection failed: {ex}")
-
-        thread = threading.Thread(target=run_collection, daemon=True)
-        thread.start()
-        execution_mode = "thread"
-
-    mode_text = "전체 종목" if mode == "all" else "태그된 종목"
-    return {
-        "success": True,
-        "message": f"히스토리 수집 작업이 시작되었습니다. ({mode_text}, {days}일치 데이터, 워커 {workers}개)",
-        "days": days,
-        "mode": mode,
-        "workers": workers,
-        "task_id": task_id,
-        "execution_mode": execution_mode,
-        "note": "브라우저를 닫아도 작업이 계속 실행됩니다."
-    }
+    """수집 완료 후 두 시그널 전략을 순서대로 실행합니다."""
+    from app.workflow import create_run
+    from app.routers.operations import enqueue
+    with SessionLocal() as db:
+        run = create_run(db, scope=mode, days=max(180, days))
+        return {**enqueue(run), 'execution_mode': 'celery', 'mode': mode, 'days': max(180, days)}
 
 
 def run_background_crawl(market: str, task_id: str = None):
@@ -250,6 +174,7 @@ def run_background_crawl(market: str, task_id: str = None):
         # TaskProgress 업데이트: 시작
         if task_id:
             db.query(TaskProgress).filter(TaskProgress.task_id == task_id).update({
+                "status": "running",
                 "message": f"Naver Finance API에서 {market} 종목 가져오는 중... (약 20초 소요)",
                 "current_item": 0,
                 "total_items": 100  # 예상치

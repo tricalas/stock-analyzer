@@ -36,6 +36,9 @@ class Settings(BaseSettings):
 
     # 스케줄러 설정
     ENABLE_AUTO_HISTORY_COLLECTION: bool = False  # 자동 히스토리 수집 활성화 여부
+    API_PUBLIC_URL: str = ""
+    MONITOR_FAILURE_THRESHOLD: int = 3
+    DATA_DELAY_MINUTES: int = 120
     HISTORY_COLLECTION_DAYS: int = 100  # 수집할 히스토리 일수 (기본: 100일)
     HISTORY_COLLECTION_MODE: str = "all"  # "tagged": 태그 종목만, "all": 모든 활성 종목, "top": 시총 상위
     HISTORY_COLLECTION_LIMIT: int = 500  # "top" 모드일 때 상위 몇 개 종목만 수집할지 (시총 기준)

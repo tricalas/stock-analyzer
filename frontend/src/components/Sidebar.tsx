@@ -1,6 +1,8 @@
 'use client';
 
 import { useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { operationsRequest, OperationsOverview } from '@/lib/operations';
 import { Star, ThumbsDown, Settings, TrendingUp, ShoppingCart, ThumbsUp, Eye, AlertCircle, Trash2, LogOut, User, Globe, UserCircle, Menu, Moon, Sun, Target } from 'lucide-react';
 import { usePathname } from 'next/navigation';
 import Link from 'next/link';
@@ -33,6 +35,10 @@ export default function Sidebar({ favoriteCount = 0, dislikeCount = 0 }: Sidebar
   const { user, logout } = useAuth();
   const { theme, setTheme } = useTheme();
   const [isOpen, setIsOpen] = useState(false);
+  const { data: operations } = useQuery({
+    queryKey: ['operations', user?.id], enabled: !!user?.is_admin,
+    queryFn: () => operationsRequest<OperationsOverview>('/overview'), refetchInterval: 30000,
+  });
 
   const getTagIcon = (iconName?: string): React.ComponentType<{ className?: string }> => {
     switch (iconName) {
@@ -66,6 +72,8 @@ export default function Sidebar({ favoriteCount = 0, dislikeCount = 0 }: Sidebar
   ];
 
   if (user?.is_admin) {
+    bottomNavigation.push({ name: '운영 상태', href: '/settings/operations', icon: AlertCircle,
+      badge: (operations?.unacknowledged_alerts || 0) + (operations?.monitoring_stale ? 1 : 0) });
     bottomNavigation.push({ name: '설정', href: '/settings', icon: Settings });
   }
 
