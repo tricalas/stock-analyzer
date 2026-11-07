@@ -26,7 +26,7 @@ def stock_freshness(stock):
     current = completed is not None and completed >= expected
     repaired = stock.market != 'US' or stock.history_precision_version >= 1
     def analysis_current(as_of, timestamp):
-        return bool(current and repaired and as_of and as_of >= expected and timestamp and
+        return bool(current and repaired and as_of and as_of == expected and timestamp and
                     (stock.history_updated_at is None or timestamp >= stock.history_updated_at))
     return {
         'expected_session': iso(expected), 'history_session': iso(completed),

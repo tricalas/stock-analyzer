@@ -415,81 +415,32 @@ def detect_pullback(
             if i < len(df) - 1:
                 next_price = df[price_col].iloc[i + 1]
                 if next_price > current_price:
-                    return i
+                    return i + 1  # The confirming close is available only on the next bar.
 
     return None
 
 
-def generate_breakout_pullback_signals(
-    df: pd.DataFrame,
-    swing_window: int = 5,
-    trendline_points: int = 3,
-    volume_threshold: float = 1.5,
-    pullback_threshold: float = 0.02
-) -> pd.DataFrame:
-    """
-    추세선 돌파 + 되돌림 매수 시그널 생성
-
-    Args:
-        df: OHLCV 데이터프레임
-        swing_window: 스윙 고저점 인식 윈도우
-        trendline_points: 추세선 그릴 때 사용할 최근 포인트 개수
-        volume_threshold: 거래량 급증 기준 (평균 대비 배수)
-        pullback_threshold: 되돌림 비율
-
-    Returns:
-        시그널이 추가된 데이터프레임
-
-    추가 컬럼:
-        - breakout: 돌파 발생 여부
-        - pullback: 되돌림 발생 여부
-        - buy_signal: 매수 시그널 (0 or 1)
-    """
-    result = df.copy()
-
-    # 1. 스윙 고점/저점 찾기
-    swings = find_swing_highs_lows(df, window=swing_window)
-
-    # 2. 저항선 계산 (스윙 고점 연결)
-    resistance_line = None
-    if len(swings['swing_highs']) >= 2:
-        resistance_line = calculate_trendline(
-            swings['swing_highs'],
-            start_idx=trendline_points
-        )
-
-    # 3. 돌파 감지
-    breakouts = [False] * len(df)
-    if resistance_line:
-        breakout_series = detect_breakout(
-            df,
-            resistance_line,
-            volume_threshold=volume_threshold
-        )
-        breakouts = breakout_series.tolist()
-
-    result['breakout'] = breakouts
-
-    # 4. 되돌림 및 매수 시그널 생성
-    pullbacks = [False] * len(df)
-    buy_signals = [0] * len(df)
-
-    for i, is_breakout in enumerate(breakouts):
-        if is_breakout:
-            # 돌파 후 되돌림 찾기
-            pullback_idx = detect_pullback(
-                df,
-                i,
-                pullback_threshold=pullback_threshold
-            )
-
-            if pullback_idx is not None:
-                pullbacks[pullback_idx] = True
-                buy_signals[pullback_idx] = 1  # 매수 시그널
-
-    result['pullback'] = pullbacks
-    result['buy_signal'] = buy_signals
-
+def generate_breakout_pullback_signals(df, swing_window=5, trendline_points=3,
+                                       volume_threshold=1.5, pullback_threshold=.02):
+    from app.causal_signals import trend_features
+    result = trend_features(df, swing_window, trendline_points)
+    average = df['volume'].shift(1).rolling(20, min_periods=10).mean()
+    breaks = result['buy_signal'].astype(bool) & (df['volume'] >= average*volume_threshold)
+    pulls = [False]*len(df)
+    active = None
+    for i in range(len(df)):
+        if bool(breaks.iloc[i]):
+            active = (i, float(df['close'].iloc[i]))
+        elif active is not None:
+            previous = float(df['close'].iloc[i-1])
+            if i-active[0] >= 10:
+                active = None
+            elif i > active[0]+1 and previous <= active[1]*(1-pullback_threshold) and df['close'].iloc[i] > previous:
+                pulls[i] = True  # Record the confirmation day, never the preceding dip.
+                active = None
+    result['breakout'] = breaks
+    result['pullback'] = pulls
+    result['buy_signal'] = [int(value) for value in pulls]
     return result
 
 

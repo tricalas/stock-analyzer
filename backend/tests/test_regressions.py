@@ -309,7 +309,7 @@ class Regressions(unittest.TestCase):
         self.assertIn(self.stock.id,SignalAnalyzer()._get_stock_ids_by_mode('all',None,self.db))
 
     def test_analysis_failure_keeps_previous_signals_and_timestamp(self):
-        self.history(90)
+        self.history(91)
         self.db.add(StockSignal(stock_id=self.stock.id,signal_type='buy',signal_date=date.today(),
                                signal_price=100,strategy_name='ma_support',ma_period=20));self.db.commit()
         analyzer=MASignalAnalyzer()

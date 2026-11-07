@@ -219,7 +219,9 @@ class SignalAnalyzer:
         if stock is None:
             return {"signals_count": 0, "saved_count": 0}
         from datetime import timedelta
-        end_date = end_date or date.today()
+        from app.market_clock import latest_session
+        completed = latest_session(market=stock.market)[0]
+        end_date = min(end_date, completed) if end_date else completed
         history = db.query(StockPriceHistory).filter(
             StockPriceHistory.stock_id == stock_id,
             StockPriceHistory.date >= end_date - timedelta(days=days),

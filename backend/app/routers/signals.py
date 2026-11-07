@@ -442,7 +442,8 @@ def scan_all_tagged_stocks(
         stock_ids = [s.id for s in all_stocks]
 
     # 날짜 범위
-    end_date = date.today()
+    from app.market_clock import latest_session
+    end_date = latest_session(market=stock.market)[0]
     start_date = end_date - timedelta(days=days)
 
     stocks_with_signals = []
@@ -674,7 +675,8 @@ def get_trading_signals(
         raise HTTPException(status_code=404, detail="Stock not found")
 
     # 날짜 범위 계산
-    end_date = date.today()
+    from app.market_clock import latest_session
+    end_date = latest_session(market=stock.market)[0]
     start_date = end_date - timedelta(days=days)
 
     # 히스토리 조회

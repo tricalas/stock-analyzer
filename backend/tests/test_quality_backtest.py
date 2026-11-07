@@ -63,6 +63,16 @@ class Engine(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,'가격 단절'):validate_bars(bars([100]*100+[50]*80))
         validate_bars(bars([50]*180))  # The split-adjusted series is continuous.
 
+    def test_pullback_is_dated_at_confirmation_not_the_earlier_dip(self):
+        from app.technical_indicators import detect_pullback,generate_breakout_pullback_signals
+        frame=pd.DataFrame({'close':[100,95,96],'open':[100,95,96],'high':[101,96,97],
+                            'low':[99,94,95],'volume':[100,100,100]})
+        self.assertIsNone(detect_pullback(frame.iloc[:2],0))
+        self.assertEqual(detect_pullback(frame,0),2)
+        data=bars(n=180)
+        df=pd.DataFrame([dict(open=b['open_price'],high=b['high_price'],low=b['low_price'],close=b['close_price'],volume=b['volume']) for b in data])
+        pd.testing.assert_frame_equal(generate_breakout_pullback_signals(df.iloc[:150]),generate_breakout_pullback_signals(df).iloc[:150])
+
     def test_warmup_is_not_filled_with_future_prices(self):
         data=bars()
         with self.assertRaisesRegex(ValueError,'90거래일'):backtest(data,'golden_cross',data[10]['date'])
@@ -117,6 +127,24 @@ class QualityAPI(unittest.TestCase):
                 self.assertIn('freshness',response.json()['stocks'][0])
         response=self.client.get(f'/api/stocks/{self.stock.id}',headers=self.headers(self.user))
         self.assertIsNotNone(response.json()['freshness'])
+
+    def test_manual_analysis_cannot_use_an_open_or_future_session(self):
+        from app.signal_analyzer import SignalAnalyzer
+        from app.ma_signal_analyzer import MASignalAnalyzer
+        expected,_=latest_session()
+        for i in range(100):
+            self.db.add(StockPriceHistory(stock_id=self.stock.id,date=expected-timedelta(days=i),
+                open_price=100,high_price=101,low_price=99,close_price=100,volume=100))
+        self.db.add(StockPriceHistory(stock_id=self.stock.id,date=expected+timedelta(days=1),
+            open_price=999,high_price=1000,low_price=998,close_price=999,volume=100))
+        self.db.commit()
+        for analyzer in (SignalAnalyzer(),MASignalAnalyzer()):
+            with patch.object(analyzer,'_run_signal_analysis',return_value=[]) as compute:
+                analyzer._analyze_stock(self.stock.id,180,self.db,end_date=expected+timedelta(days=10))
+                self.assertTrue(all(row.date<=expected for row in compute.call_args.args[0]))
+        self.db.refresh(self.stock)
+        self.assertEqual(self.stock.signal_as_of_date,expected)
+        self.assertEqual(self.stock.ma_signal_as_of_date,expected)
 
     def test_data_status_separates_collection_from_analysis(self):
         expected,_=latest_session()

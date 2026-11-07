@@ -27,8 +27,8 @@ def data_status(db:Session=Depends(get_db)):
         expected,close=latest_session(market=market)
         valid=and_(Stock.history_completed_date>=expected,
                    or_(Stock.market!='US',Stock.history_precision_version>=1))
-        trend=and_(valid,Stock.signal_as_of_date>=expected,Stock.signal_analyzed_at>=Stock.history_updated_at)
-        ma=and_(valid,Stock.ma_signal_as_of_date>=expected,Stock.ma_signal_analyzed_at>=Stock.history_updated_at)
+        trend=and_(valid,Stock.signal_as_of_date==expected,Stock.signal_analyzed_at>=Stock.history_updated_at)
+        ma=and_(valid,Stock.ma_signal_as_of_date==expected,Stock.ma_signal_analyzed_at>=Stock.history_updated_at)
         counts=db.query(func.count(Stock.id),func.sum(case((valid,1),else_=0)),
                         func.sum(case((trend,1),else_=0)),func.sum(case((ma,1),else_=0)),
                         func.max(Stock.history_updated_at),func.max(Stock.quote_updated_at)).filter(

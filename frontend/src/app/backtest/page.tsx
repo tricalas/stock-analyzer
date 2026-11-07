@@ -9,6 +9,7 @@ import { Input } from '@/components/ui/input';
 import FreshnessDetails from '@/components/FreshnessDetails';
 import { ResponsiveContainer,LineChart,Line,XAxis,YAxis,Tooltip,CartesianGrid } from 'recharts';
 interface Result {
+  ma_period:number;
   fee_bps:number;slippage_bps:number;holding_sessions:number;initial_cash:number;
   stock:{symbol:string;name:string};strategy:string;start_date:string;end_date:string;
   return_pct:number;gross_return_pct:number;cost_drag_pct:number;benchmark_return_pct:number;
@@ -67,7 +68,7 @@ export default function BacktestPage() {
     </form>
     {error && <div role="alert" className="rounded-xl border border-destructive/40 bg-destructive/5 p-4 text-sm">{error}</div>}
     {result && <section className="space-y-5" aria-live="polite">
-      <div><h2 className="text-lg font-semibold">{result.stock.symbol} 검증 결과</h2><p className="text-xs text-muted-foreground mt-1">{result.start_date} ~ {result.end_date} · 준비 데이터 {result.warmup_sessions}거래일 · 수정주가 조회 {new Date(result.data_fetched_at).toLocaleString('ko-KR')}</p><p className="text-xs text-muted-foreground mt-1">실행 조건: {result.strategy} · 수수료 {result.fee_bps}bp · 슬리피지 {result.slippage_bps}bp · 보유 {result.holding_sessions}거래일 · 초기 {price(result.initial_cash)}</p></div>
+      <div><h2 className="text-lg font-semibold">{result.stock.symbol} 검증 결과</h2><p className="text-xs text-muted-foreground mt-1">{result.start_date} ~ {result.end_date} · 준비 데이터 {result.warmup_sessions}거래일 · 수정주가 조회 {new Date(result.data_fetched_at).toLocaleString('ko-KR')}</p><p className="text-xs text-muted-foreground mt-1">실행 조건: {result.strategy==='golden_cross' ? 'MA20/60 골든크로스' : result.strategy==='ma_breakout_up' ? `MA${result.ma_period} 상향 돌파` : '확인된 하락 추세선 돌파'} · 수수료 {result.fee_bps}bp · 슬리피지 {result.slippage_bps}bp · 보유 {result.holding_sessions}거래일 · 초기 {price(result.initial_cash)}</p></div>
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">{[
         ['비용 차감 수익률',pct(result.return_pct)],['비용 미반영',pct(result.gross_return_pct)],
         ['최대 낙폭',pct(result.max_drawdown_pct)],['매수 후 보유',pct(result.benchmark_return_pct)],
