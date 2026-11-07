@@ -1,5 +1,7 @@
 'use client';
 
+import FreshnessDetails from './FreshnessDetails';
+import Link from 'next/link';
 import React, { useState, useEffect } from 'react';
 import { Stock, stockApi, Tag } from '@/lib/api';
 import { ArrowUpIcon, ArrowDownIcon, BarChart3, TrendingUp, TrendingDown, Trash2, Star, ThumbsDown, ShoppingCart, ThumbsUp, Eye, AlertCircle, RefreshCw, ChevronRight } from 'lucide-react';
@@ -246,6 +248,7 @@ const StockItem = React.memo<StockItemProps>(({
           <ChevronRight className="w-4 h-4 text-muted-foreground/50 shrink-0" />
         </div>
 
+        <div className="px-4 pb-2"><FreshnessDetails value={stock.freshness}/>{stock.market==='US' && <Link href={`/backtest?stock_id=${stock.id}`} className="text-xs underline text-muted-foreground">이 종목 백테스트</Link>}</div>
         {/* Quick Actions Row */}
         <div className="flex items-center gap-1 px-4 pb-3 overflow-x-auto scrollbar-none">
           {/* Sync Button */}
@@ -375,6 +378,8 @@ const StockItem = React.memo<StockItemProps>(({
             </Button>
           </div>
         </div>
+        <FreshnessDetails value={stock.freshness}/>
+        {stock.market==='US' && <Link href={`/backtest?stock_id=${stock.id}`} onClick={e=>e.stopPropagation()} className="text-[11px] underline text-muted-foreground">백테스트</Link>}
       </td>
 
       <td className="px-4 py-3 whitespace-nowrap text-right">

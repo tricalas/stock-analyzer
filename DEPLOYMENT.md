@@ -78,3 +78,17 @@ Schema rollback is forward-only: restore the PostgreSQL backup together with the
 - Before upgrading, take a fresh `pg_dump -Fc` backup and test migration `0002_durable_operations` against a restored copy. This migration adds provider overrides and operational tables without rewriting price history or account data.
 
 References: [Celery task acknowledgement and worker-loss behavior](https://docs.celeryq.dev/en/stable/userguide/tasks.html), [exchange-calendars](https://pypi.org/project/exchange_calendars/).
+
+## Freshness and research validation
+
+Migration `0003_data_freshness` adds independent quote collection timestamps and closed-session/analysis dates. A candle is final only when it was fetched after its exchange session closed. Intraday rows are fetched again even if their date matches the expected session. The migration does not infer quote timestamps from general stock update times or invent missing analysis dates. US and Korean session calendars are evaluated separately; Korean stocks remain outside automatic collection.
+
+The stock and signal views expose the confirmed trading date, collection time and both analysis dates. `/api/data-status` reports actual coverage instead of presenting a single maximum date as proof that every stock is current. Administrator operations also supports an explicit recent-seven-day refresh, which can repair earlier intraday snapshots before rebuilding derived signals.
+
+Backtesting is available at `/backtest` and authenticated `POST /api/backtests`. It requests KIS `MODP=1` into a separate short-lived cache and never rewrites the raw chart database. Supported entries are MA20/60 golden cross, MA20/60/90 upward breakout and confirmed descending-trendline breakout. Swing highs are usable only after their confirmation window; appending future bars cannot rewrite previous decisions. Entry occurs at the next session open, costs apply on both sides, only one long fractional position is held, and both strategy and buy-and-hold benchmark liquidate at the declared period end. Signals stored by earlier analyzers are not used as historical backtest inputs.
+
+Results include net/gross return, cost drag, benchmark return, maximum drawdown, equity curve and the trade ledger. Required dates, finite positive OHLC values and large discontinuities are checked. Missing adjusted data never falls back silently to raw prices. The calculation is a provider-adjusted price-return simulation: cash dividends, taxes, FX and market impact are not separately credited or charged; it is not a historical-universe portfolio study. Default fees/slippage are editable examples, not broker pricing.
+
+Validate with backend regression tests, frontend transport/freshness tests, TypeScript/build checks and a restored PostgreSQL migration review. After rollout, use the recent-seven-day refresh and verify the expected completed session, post-close collection evidence and matching analysis dates on the live database.
+
+Data parameter reference: [KIS overseas daily-price provider implementation](https://github.com/koreainvestment/open-trading-api/blob/main/backtester/kis_backtest/providers/kis/data.py).

@@ -12,7 +12,7 @@ from app.database import SessionLocal
 from app.bootstrap import seed_default_tags, reconcile_stale_tasks
 from app.cache import invalidate_cache
 from app.scheduler import stock_scheduler
-from app.routers import auth, tags, collection, maintenance, stocks, signals, tasks, admin, operations
+from app.routers import auth, tags, collection, maintenance, stocks, signals, tasks, admin, operations, research
 
 logging.basicConfig(level=logging.INFO)
 
@@ -43,5 +43,5 @@ def health():
         db.execute(text("SELECT 1"))
     return {"status": "ok", "version": "1.1.0"}
 
-for module in (auth, tags, collection, maintenance, stocks, signals, tasks, admin, operations):
+for module in (auth, tags, collection, maintenance, stocks, signals, tasks, admin, operations, research):
     app.include_router(module.router)

@@ -61,6 +61,7 @@ export default function OperationsPage() {
       <div><h1 className="text-2xl font-semibold flex items-center gap-2"><Activity className="h-6 w-6"/>운영 상태</h1>
         <p className="text-sm text-muted-foreground mt-2">기준 거래일 {data.session_date} · 한국 시간 표시 · 15초마다 상태 갱신</p></div>
       <Button disabled={busy || running} onClick={() => action('/runs', { scope: 'all' })}><Play className="w-4 h-4 mr-2"/>{running ? '수집·분석 실행 중' : '전체 수집·분석'}</Button>
+      <Button variant="outline" disabled={busy || running} onClick={() => action('/runs', {scope:'all',refresh_days:7})}>최근 7일 일봉 재확인·분석</Button>
     </div>
     {data.monitoring_stale && <div role="alert" className="rounded-xl border border-destructive bg-destructive/10 p-4"><strong>상태 점검 서버의 응답이 늦습니다.</strong><p className="text-sm mt-1">마지막 점검이 3분을 넘었거나 아직 연결되지 않았습니다. 아래 상태는 최신이 아닐 수 있습니다.</p></div>}
     <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">{data.checks.map(check => <div key={check.name} className="rounded-xl border p-4">

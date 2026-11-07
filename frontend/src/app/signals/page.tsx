@@ -1,5 +1,7 @@
 'use client';
 
+import FreshnessDetails from '@/components/FreshnessDetails';
+import type { Freshness } from '@/lib/freshness';
 import { apiFetch, API_BASE_URL } from '@/lib/http';
 
 import { useState, useEffect, useRef } from 'react';
@@ -23,6 +25,7 @@ import {
 import { cn } from '@/lib/utils';
 
 interface Stock {
+  freshness?: Freshness;
   id: number;
   symbol: string;
   name: string;
@@ -32,6 +35,7 @@ interface Stock {
 }
 
 interface StockSignal {
+  freshness?: Freshness;
   id: number;
   stock_id: number;
   signal_type: string;
@@ -373,6 +377,7 @@ export default function SignalsPage() {
                             </a>
                             <div className="flex items-center gap-1.5 text-xs text-muted-foreground mt-0.5">
                               <span>{stockSymbol}</span>
+                        <FreshnessDetails value={signal.freshness || signal.stock?.freshness}/>
                               <a
                                 href={stockInfo ? getNaverChartUrl(stockInfo) : '#'}
                                 target="_blank"
@@ -462,6 +467,7 @@ export default function SignalsPage() {
                           </div>
                           <div className="flex items-center gap-2 text-xs text-muted-foreground">
                             <span>{stockSymbol}</span>
+                        <FreshnessDetails value={signal.freshness || signal.stock?.freshness}/>
                             <span className="text-muted-foreground/50">·</span>
                             <span>{stockExchange}</span>
                             <span className="text-muted-foreground/50">·</span>

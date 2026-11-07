@@ -170,6 +170,7 @@ class Operations(unittest.TestCase):
             self.assertEqual(latest_session(datetime.fromisoformat(now))[0].isoformat(),expected)
 
     def test_holiday_does_not_create_false_price_delay(self):
+        self.stock.history_completed_date=date(2026,11,25)
         self.db.add(StockPriceHistory(stock_id=self.stock.id,date=date(2026,11,25),close_price=123.4));self.db.commit()
         result=evaluate_data(self.db,datetime(2026,11,26,23,0));self.db.commit()
         self.assertEqual(result['stale_stocks'],0)

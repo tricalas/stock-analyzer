@@ -11,6 +11,7 @@ from app.models import Stock, StockTag, StockTagAssignment, User
 from app import schemas
 from app.auth import get_current_user
 
+from app.freshness import cache_epoch
 from app.cache import get_cache, set_cache, invalidate_cache
 logger = logging.getLogger(__name__)
 
@@ -60,6 +61,7 @@ def get_stocks_by_tag(
     # 캐시 키 생성
     user_token = current_user.user_token if current_user else "anonymous"
     cache_key_data = {
+        "freshness_epoch": cache_epoch(),
         "endpoint": "by-tag",
         "user": user_token,
         "tag_name": tag_name,
@@ -196,6 +198,7 @@ def get_stocks_by_tag(
             "foreign_ratio": stock.foreign_ratio,
             "history_records_count": stock.history_records_count or 0,
             "history_precision_version": stock.history_precision_version,
+            "freshness": stock.freshness,
             "history_latest_date": None,
             "history_oldest_date": None,
             "has_history_data": (stock.history_records_count or 0) > 0,

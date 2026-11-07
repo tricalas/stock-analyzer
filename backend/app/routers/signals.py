@@ -234,6 +234,7 @@ def get_ma_signals(
                 "id": signal.id,
                 "stock_id": signal.stock_id,
                 "symbol": stock.symbol,
+                "freshness": stock.freshness,
                 "name": stock.name,
                 "exchange": stock.exchange,
                 "signal_type": signal.signal_type,
@@ -350,6 +351,7 @@ def get_signal_dashboard(
             recent_signals_data.append({
                 "id": signal.id,
                 "symbol": stock.symbol,
+                "freshness": stock.freshness,
                 "name": stock.name,
                 "signal_type": signal.signal_type,
                 "signal_date": signal.signal_date.isoformat(),
@@ -496,6 +498,7 @@ def scan_all_tagged_stocks(
                 stocks_with_signals.append({
                     "stock_id": stock.id,
                     "symbol": stock.symbol,
+                "freshness": stock.freshness,
                     "name": stock.name,
                     "market": stock.market,
                     "latest_signal_date": last_signal['date'].strftime('%Y-%m-%d'),
@@ -735,6 +738,7 @@ def get_trading_signals(
     return {
         "stock_id": stock_id,
         "symbol": stock.symbol,
+                "freshness": stock.freshness,
         "name": stock.name,
         "analyzed_days": len(history),
         "latest_signal": latest_signal,

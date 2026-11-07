@@ -2,6 +2,7 @@
 
 import { ReactNode } from 'react';
 import Sidebar from './Sidebar';
+import DataStatusBanner from './DataStatusBanner';
 
 interface AppLayoutProps {
   children: ReactNode;
@@ -17,6 +18,7 @@ export default function AppLayout({ children, favoriteCount, dislikeCount }: App
       {/* Main Content */}
       <div className="lg:pl-56 pt-14 lg:pt-0 pb-20 lg:pb-0">
         <main className="min-h-screen">
+          <DataStatusBanner />
           {children}
         </main>
       </div>

@@ -36,6 +36,7 @@ class StockCreate(StockBase):
 
 class Stock(StockBase):
     id: int
+    freshness: Optional[Dict] = None
     history_precision_version: int = 0
     is_active: bool
     created_at: datetime

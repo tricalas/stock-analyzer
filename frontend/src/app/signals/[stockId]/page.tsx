@@ -1,5 +1,7 @@
 'use client';
 
+import FreshnessDetails from '@/components/FreshnessDetails';
+import type { Freshness } from '@/lib/freshness';
 import { apiFetch, API_BASE_URL } from '@/lib/http';
 
 import { useParams, useRouter } from 'next/navigation';
@@ -14,6 +16,7 @@ import { cn } from '@/lib/utils';
 import { getNaverChartUrl, getNaverInfoUrl } from '@/lib/naverStock';
 
 interface MAAnalysisResponse {
+  freshness?: Freshness;
   stock_id: number;
   symbol: string;
   name: string;
@@ -127,6 +130,7 @@ export default function StockMAAnalysisPage() {
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-3 flex-wrap">
                 <h1 className="text-xl font-bold truncate">{data.name}</h1>
+              <FreshnessDetails value={data?.freshness}/>
                 <span className="text-muted-foreground">{data.symbol}</span>
                 {getAlignmentBadge(data.alignment)}
               </div>

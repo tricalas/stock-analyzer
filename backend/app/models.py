@@ -64,6 +64,15 @@ class Stock(Base):
     signal_analyzed_at = Column(DateTime)    # 시그널 마지막 분석 시간
     ma_signal_analyzed_at = Column(DateTime)
     history_precision_version = Column(Integer, nullable=False, default=0, server_default="0")
+    quote_updated_at = Column(DateTime)
+    history_completed_date = Column(Date)
+    signal_as_of_date = Column(Date)
+    ma_signal_as_of_date = Column(Date)
+
+    @property
+    def freshness(self):
+        from app.freshness import stock_freshness
+        return stock_freshness(self)
 
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.utcnow)
@@ -364,6 +373,7 @@ class PipelineRun(Base):
     scope = Column(String(10), nullable=False, default="all")
     session_date = Column(Date, nullable=False)
     days = Column(Integer, nullable=False, default=180)
+    refresh_days = Column(Integer, nullable=False, default=0, server_default='0')
     stage = Column(String(20), nullable=False, default="quotes")
     status = Column(String(20), nullable=False, default="queued")
     lease_token = Column(String(100))

@@ -33,6 +33,7 @@ class RunRequest(BaseModel):
     scope: Literal['all', 'tagged', 'retry'] = 'all'
     days: int = Field(default=180, ge=180, le=500)
     stock_ids: list[int] | None = Field(default=None, max_length=500)
+    refresh_days: int = Field(default=0, ge=0, le=30)
 
 
 class MappingRequest(BaseModel):
@@ -74,7 +75,7 @@ def acknowledge(key: str, db: Session = Depends(get_db)):
 def start_run(request: RunRequest, db: Session = Depends(get_db)):
     if request.stock_ids is not None and request.scope != 'retry':
         raise HTTPException(422, '종목 선택은 재시도 모드에서 사용해주세요.')
-    run = create_run(db, request.scope, request.days, stock_ids=request.stock_ids)
+    run = create_run(db, request.scope, request.days, stock_ids=request.stock_ids, refresh_days=request.refresh_days)
     return enqueue(run)
 
 

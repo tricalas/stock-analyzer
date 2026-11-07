@@ -1,4 +1,5 @@
 import axios from 'axios';
+import type { Freshness } from './freshness';
 
 import { API_BASE_URL } from './http';
 
@@ -36,6 +37,7 @@ api.interceptors.response.use(
 );
 
 export interface Stock {
+  freshness?: Freshness;
   id: number;
   symbol: string;
   name: string;

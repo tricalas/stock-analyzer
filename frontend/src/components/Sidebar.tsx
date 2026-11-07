@@ -58,6 +58,7 @@ export default function Sidebar({ favoriteCount = 0, dislikeCount = 0 }: Sidebar
     { name: '종목', href: '/', icon: Globe },
     { name: '90일', href: '/ma90', icon: Target },
     { name: '시그널', href: '/signals', icon: TrendingUp },
+    { name: '백테스트', href: '/backtest', icon: TrendingUp },
   ];
 
   const visibleTags = tags.filter(tag => !['error', 'dislike'].includes(tag.name));

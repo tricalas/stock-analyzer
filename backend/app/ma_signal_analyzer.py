@@ -251,6 +251,7 @@ class MASignalAnalyzer:
         ).delete(synchronize_session=False)
         saved_count = self._save_signals(stock_id, signals, db)
         stock.ma_signal_analyzed_at = datetime.utcnow()
+        stock.ma_signal_as_of_date = history[-1].date
         db.commit()
         return {"signals_count": len(signals), "saved_count": saved_count}
 
@@ -642,11 +643,14 @@ class MASignalAnalyzer:
             if not stock:
                 return None
 
-            start_date = date.today() - timedelta(days=days + 90)  # MA 계산용 추가 데이터
+            from app.market_clock import latest_session
+            as_of = latest_session()[0]
+            start_date = as_of - timedelta(days=days + 90)  # MA 계산용 추가 데이터
 
             price_history = db.query(StockPriceHistory).filter(
                 StockPriceHistory.stock_id == stock_id,
-                StockPriceHistory.date >= start_date
+                StockPriceHistory.date >= start_date,
+                StockPriceHistory.date <= as_of
             ).order_by(StockPriceHistory.date.asc()).all()
 
             if len(price_history) < 90:
@@ -696,10 +700,10 @@ class MASignalAnalyzer:
             for idx, row in display_df.iterrows():
                 item = {
                     'date': row['date'],
-                    'open': int(row['open']) if pd.notna(row['open']) else None,
-                    'high': int(row['high']) if pd.notna(row['high']) else None,
-                    'low': int(row['low']) if pd.notna(row['low']) else None,
-                    'close': int(row['close']) if pd.notna(row['close']) else None,
+                    'open': float(row['open']) if pd.notna(row['open']) else None,
+                    'high': float(row['high']) if pd.notna(row['high']) else None,
+                    'low': float(row['low']) if pd.notna(row['low']) else None,
+                    'close': float(row['close']) if pd.notna(row['close']) else None,
                     'volume': int(row['volume']) if pd.notna(row['volume']) else 0,
                 }
                 for period in self.MA_PERIODS:
@@ -715,6 +719,7 @@ class MASignalAnalyzer:
             ).order_by(StockSignal.signal_date.desc()).limit(10).all()
 
             return {
+                'freshness': stock.freshness,
                 'stock_id': stock.id,
                 'symbol': stock.symbol,
                 'name': stock.name,

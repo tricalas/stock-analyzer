@@ -235,6 +235,7 @@ class SignalAnalyzer:
         ).delete(synchronize_session=False)
         saved_count = self._save_signals(stock_id, signals, db)
         stock.signal_analyzed_at = datetime.utcnow()
+        stock.signal_as_of_date = history[-1].date
         db.commit()
         return {"signals_count": len(signals), "saved_count": saved_count}
 
@@ -343,7 +344,7 @@ class SignalAnalyzer:
             signals = []
 
             # 90일 이동평균선 계산
-            sma_90_series = df['close'].rolling(window=90, min_periods=60).mean()
+            sma_90_series = df['close'].rolling(window=90, min_periods=90).mean()
 
             # 1. 실제 돌파 시그널
             breakout_df = generate_descending_trendline_breakout_signals(
@@ -355,8 +356,6 @@ class SignalAnalyzer:
 
             # 돌파 인덱스 추출 (되돌림 시그널에서 사용)
             breakout_indices = []
-            slope = breakout_df['trendline_slope'].iloc[0] if len(breakout_df) > 0 else 0
-            intercept = breakout_df['trendline_intercept'].iloc[0] if len(breakout_df) > 0 else 0
 
             buy_signals = breakout_df[breakout_df['buy_signal'] == 1].copy()
             for idx, row in buy_signals.iterrows():
@@ -393,14 +392,8 @@ class SignalAnalyzer:
                 signals.append(signal_info)
 
             # 1.5. 되돌림(Pullback) 시그널 (돌파가 있는 경우에만)
-            if breakout_indices and slope < 0:
-                pullback_df = generate_pullback_signals(
-                    df,
-                    breakout_indices=breakout_indices,
-                    slope=slope,
-                    intercept=intercept,
-                    pullback_threshold=3.0  # 추세선의 3% 이내
-                )
+            if breakout_indices:
+                pullback_df = breakout_df.copy()
                 pullback_df['sma_90'] = sma_90_series
 
                 # 최근 10일 데이터만 필터링 (최근 되돌림만)
@@ -432,8 +425,8 @@ class SignalAnalyzer:
                         'return_percent': float(round(return_pct, 2)),
                         'details': {
                             'strategy': 'pullback_buy',
-                            'trendline_slope': float(slope),
-                            'trendline_intercept': float(intercept),
+                            'trendline_slope': float(row.get('pullback_slope', 0)),
+                            'trendline_intercept': float(row.get('pullback_intercept', 0)),
                             'pullback_distance': float(round(distance, 2)) if distance else None,
                             'sma_90': float(sma_90) if sma_90 else None,
                             'sma_90_ratio': float(round(sma_90_ratio, 1)) if sma_90_ratio else None
@@ -511,7 +504,7 @@ class SignalAnalyzer:
         - 최근 3일 이내만 시그널로 기록
         """
         signals = []
-        today = date.today()
+        today = df.index[-1] if isinstance(df.index[-1], date) else df.index[-1].date()
 
         for i in range(1, len(df)):  # i=1부터 (전날 비교 필요)
             row = df.iloc[i]

@@ -68,7 +68,7 @@ def _add_items(db, run, stock_ids=None):
         db.add(PipelineItem(run_id=run.id, stock_id=stock_id))
 
 
-def create_run(db, scope='all', days=180, daily_key=None, stock_ids=None):
+def create_run(db, scope='all', days=180, daily_key=None, stock_ids=None, refresh_days=0):
     if daily_key:
         existing = db.query(PipelineRun).filter_by(daily_key=daily_key).first()
         if existing:
@@ -77,7 +77,7 @@ def create_run(db, scope='all', days=180, daily_key=None, stock_ids=None):
     if active:
         return active
     run = PipelineRun(id=str(uuid.uuid4()), active_key='US', daily_key=daily_key,
-                      scope=scope, days=days, session_date=latest_session()[0],
+                      scope=scope, days=days, refresh_days=refresh_days, session_date=latest_session()[0],
                       stage='history' if scope == 'retry' else 'quotes')
     db.add(run)
     try:
@@ -140,8 +140,10 @@ def sync_progress(db, run):
 
 def _collect(db, run, item, stock):
     from app.crawlers.kis_history_crawler import kis_history_crawler as crawler
-    quoted_at = stock.updated_at
+    quoted_at = stock.quote_updated_at
     should, mode, last_date = crawler._should_collect_history(stock, db)
+    if run.refresh_days and stock.history_precision_version >= 1:
+        should, mode, last_date = True, 'incremental', run.session_date-timedelta(days=run.refresh_days+1)
     if should:
         result = crawler.collect_history_for_stock(stock, days=run.days,
                     start_date=last_date + timedelta(days=1) if mode == 'incremental' else None, db=db)
@@ -152,9 +154,15 @@ def _collect(db, run, item, stock):
         raise RuntimeError(f'Stale history: last session {latest}, expected {run.session_date}')
     from app.market_clock import calendar
     close = calendar().session_close(str(run.session_date)).to_pydatetime().replace(tzinfo=None)
+    evidence = db.query(StockPriceHistory.updated_at).filter(
+        StockPriceHistory.stock_id == stock.id, StockPriceHistory.date == run.session_date).scalar()
+    if evidence is None or evidence < close:
+        raise RuntimeError('Stale history: candle was collected before the session close')
+    stock.history_completed_date = run.session_date
     if quoted_at is None or quoted_at < close:
         prices = db.query(StockPriceHistory).filter(StockPriceHistory.stock_id == stock.id, StockPriceHistory.date <= run.session_date).order_by(StockPriceHistory.date.desc()).limit(2).all()
         stock.current_price = prices[0].close_price
+        stock.quote_updated_at = prices[0].updated_at
         stock.trading_volume = prices[0].volume
         if len(prices) == 2 and prices[1].close_price:
             stock.previous_close = prices[1].close_price

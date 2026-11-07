@@ -13,6 +13,7 @@ from app import schemas
 from app.constants import ETF_KEYWORDS
 from app.auth import get_current_user, get_admin_user
 
+from app.freshness import cache_epoch
 from app.cache import get_cache, set_cache
 logger = logging.getLogger(__name__)
 
@@ -31,6 +32,7 @@ def search_stocks(
     # 캐시 키 생성
     user_token = current_user.user_token if current_user else "anonymous"
     cache_key_data = {
+        "freshness_epoch": cache_epoch(),
         "endpoint": "search",
         "user": user_token,
         "q": q.lower(),
@@ -174,6 +176,7 @@ def search_stocks(
             # 히스토리 데이터 상태
             "history_records_count": stock.history_records_count or 0,
             "history_precision_version": stock.history_precision_version,
+            "freshness": stock.freshness,
             "has_history_data": (stock.history_records_count or 0) > 0,
 
             # 호환성을 위한 최소 필드
@@ -208,6 +211,7 @@ def get_ma90_screener_stocks(
     # 캐시 키 생성
     user_token = current_user.user_token if current_user else "anonymous"
     cache_key_data = {
+        "freshness_epoch": cache_epoch(),
         "endpoint": "ma90-screener",
         "user": user_token,
         "skip": skip,
@@ -331,6 +335,7 @@ def get_ma90_screener_stocks(
             "latest_tag_date": None,
             "history_records_count": stock.history_records_count or 0,
             "history_precision_version": stock.history_precision_version,
+            "freshness": stock.freshness,
             "has_history_data": (stock.history_records_count or 0) > 0,
             "latest_price": stock.current_price,
             "latest_change": stock.change_amount,
@@ -426,6 +431,7 @@ def get_stocks(
     # 캐시 키 생성 (유저별, 조건별로 구분)
     user_token = current_user.user_token if current_user else "anonymous"
     cache_key_data = {
+        "freshness_epoch": cache_epoch(),
         "user": user_token,
         "market": market,
         "exchange": exchange,
@@ -609,6 +615,7 @@ def get_stocks(
             # 히스토리 데이터 상태
             "history_records_count": stock.history_records_count or 0,
             "history_precision_version": stock.history_precision_version,
+            "freshness": stock.freshness,
             "has_history_data": (stock.history_records_count or 0) > 0,
 
             # 호환성을 위한 최소 필드만 유지

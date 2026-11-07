@@ -70,14 +70,16 @@ class KISHistoryCrawler:
         ).order_by(StockPriceHistory.date.desc()).first()
 
         if last_record:
-            last_date = last_record[0]
-            last_trading_day = self._get_last_trading_day()
-
-            # 마지막 데이터가 최근 거래일 이후면 skip
-            if last_date >= last_trading_day:
-                return (False, "skip", last_date)
-            else:
-                return (True, "incremental", last_date)
+            from app.market_clock import latest_session
+            expected, close = latest_session(market=stock.market)
+            final = db.query(StockPriceHistory.updated_at).filter(
+                StockPriceHistory.stock_id == stock.id, StockPriceHistory.date == expected).first()
+            if final and final.updated_at and final.updated_at >= close:
+                return (False, "skip", expected)
+            if last_record[0] >= expected:
+                # The row may have been saved intraday; fetch that date again.
+                return (True, "incremental", expected-timedelta(days=1))
+            return (True, "incremental", last_record[0])
 
         # 레코드 카운트는 있지만 실제 데이터 없음 → 전체 수집
         return (True, "full", None)
@@ -167,6 +169,12 @@ class KISHistoryCrawler:
                 },
                 synchronize_session=False
             )
+            from app.market_clock import latest_session
+            expected, close = latest_session(market=stock.market)
+            final = db.query(StockPriceHistory.updated_at).filter(
+                StockPriceHistory.stock_id == stock.id, StockPriceHistory.date == expected).first()
+            if final and final.updated_at and final.updated_at >= close:
+                db.query(Stock).filter_by(id=stock.id).update({'history_completed_date': expected}, synchronize_session='fetch')
             ma90 = self._calculate_and_update_ma90(stock.id, db)
             db.commit()
             from app.cache import invalidate_cache
@@ -233,15 +241,15 @@ class KISHistoryCrawler:
             logger.error(f"Error fetching KR stock history: {str(e)}")
             return []
 
-    def _collect_us_stock_history(self, symbol: str, exchange: str, start_date: date = None) -> List[Dict]:
+    def _collect_us_stock_history(self, symbol: str, exchange: str, start_date: date = None, end_date: date = None, adjusted: bool = False) -> List[Dict]:
         """Fetch dated pages and preserve fractional OHLC values."""
         import math
         import time
         cutoff = start_date or (date.today() - timedelta(days=180))
         records = {}
-        cursor = ""
+        cursor = end_date.strftime("%Y%m%d") if end_date else ""
         for page in range(100):
-            raw_data = self.kis_client.get_us_stock_ohlcv(symbol=symbol, exchange=exchange, period="D", end_date=cursor)
+            raw_data = self.kis_client.get_us_stock_ohlcv(symbol=symbol, exchange=exchange, period="D", end_date=cursor, adjusted=adjusted)
             if not raw_data:
                 if page:
                     break  # Valid empty page: the listing has no earlier sessions.
@@ -265,7 +273,7 @@ class KISHistoryCrawler:
             time.sleep(0.1)
         else:
             raise RuntimeError(f"Price history exceeded pagination limit for {symbol}")
-        return [record for day, record in sorted(records.items()) if day >= cutoff]
+        return [record for day, record in sorted(records.items()) if day >= cutoff and (end_date is None or day <= end_date)]
 
     def _get_us_exchange_code(self, exchange: str) -> str:
         """

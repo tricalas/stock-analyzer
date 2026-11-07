@@ -1,5 +1,6 @@
 'use client';
 
+import FreshnessDetails from './FreshnessDetails';
 import React, { useState, useEffect } from 'react';
 import { TrendingUp, Calendar, Loader2 } from 'lucide-react';
 import { Stock, stockApi } from '@/lib/api';
@@ -75,7 +76,7 @@ const StockChartModal: React.FC<StockChartModalProps> = ({ stock, isOpen, onClos
 
           return {
             date: item.date,
-            displayDate: formatShortDate(item.date),
+            displayDate: formatShortDate(item.date) + (!stock.freshness?.history_session || item.date > stock.freshness.history_session ? ' · 미확정' : ''),
             open_price: item.open_price,
             high_price: item.high_price,
             low_price: item.low_price,
@@ -133,6 +134,7 @@ const StockChartModal: React.FC<StockChartModalProps> = ({ stock, isOpen, onClos
               <p className="text-sm text-muted-foreground font-normal">가격 역사</p>
             </div>
           </DialogTitle>
+            <FreshnessDetails value={stock?.freshness}/>
         </DialogHeader>
 
         {/* Body */}

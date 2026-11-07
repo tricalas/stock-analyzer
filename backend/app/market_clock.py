@@ -5,16 +5,16 @@ import exchange_calendars as calendars
 import pandas as pd
 
 
-@lru_cache(maxsize=1)
-def calendar():
-    return calendars.get_calendar("XNYS")
+@lru_cache(maxsize=2)
+def calendar(market='US'):
+    return calendars.get_calendar("XKRX" if market == 'KR' else "XNYS")
 
 
-def latest_session(now=None):
+def latest_session(now=None, market='US'):
     now = now or datetime.now(timezone.utc)
     if now.tzinfo is None:
         now = now.replace(tzinfo=timezone.utc)
-    cal = calendar()
+    cal = calendar(market)
     session = cal.date_to_session(pd.Timestamp(now.date()), direction="previous")
     close = cal.session_close(session).to_pydatetime()
     if now < close + timedelta(minutes=20):

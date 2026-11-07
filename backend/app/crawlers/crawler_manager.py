@@ -84,10 +84,11 @@ class CrawlerManager:
                         if hasattr(existing_stock, key):
                             setattr(existing_stock, key, value)
                     existing_stock.updated_at = datetime.utcnow()
+                    existing_stock.quote_updated_at = datetime.utcnow()
                     updates.append(existing_stock)
                 else:
                     # 새로운 종목
-                    new_stock = Stock(**stock_data)
+                    new_stock = Stock(**stock_data, quote_updated_at=datetime.utcnow())
                     inserts.append(new_stock)
 
             try:
@@ -117,8 +118,9 @@ class CrawlerManager:
                                 if hasattr(existing_stock, key):
                                     setattr(existing_stock, key, value)
                             existing_stock.updated_at = datetime.utcnow()
+                            existing_stock.quote_updated_at = datetime.utcnow()
                         else:
-                            new_stock = Stock(**stock_data)
+                            new_stock = Stock(**stock_data, quote_updated_at=datetime.utcnow())
                             db.add(new_stock)
 
                         db.commit()

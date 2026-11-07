@@ -82,7 +82,7 @@ def evaluate_data(db, now=None):
     latest = db.query(StockPriceHistory.stock_id, func.max(StockPriceHistory.date).label('date')).group_by(StockPriceHistory.stock_id).subquery()
     stale = db.query(Stock).outerjoin(latest, latest.c.stock_id == Stock.id).filter(
         Stock.market == 'US', Stock.is_active == True, Stock.history_precision_version >= 1,
-        or_(latest.c.date == None, latest.c.date < session)).count()
+        or_(Stock.history_completed_date == None, Stock.history_completed_date < session)).count()
     due = now >= close+timedelta(minutes=settings.DATA_DELAY_MINUTES)
     alert(db, 'data:stale', '가격 데이터 갱신 지연', f'{session} 기준 {stale}개 종목의 가격이 늦게 수집되고 있습니다.', due and stale > 0)
     pending = db.query(RecoveryIssue).filter_by(status='open').count()
