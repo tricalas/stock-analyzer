@@ -7,7 +7,7 @@ from app.config import settings
 from app.database import SessionLocal
 from app.models import ServiceCheck, OperationalAlert, PipelineRun, RecoveryIssue, Stock, StockPriceHistory
 from app.market_clock import latest_session
-from app.workflow import create_run, dispatch_run, seed_issues
+from app.workflow import create_run, dispatch_run, seed_issues, schedule_recovery
 
 logger = logging.getLogger(__name__)
 
@@ -114,6 +114,7 @@ def operational_tick():
             if settings.ENABLE_AUTO_HISTORY_COLLECTION:
                 session, _ = latest_session()
                 create_run(db, daily_key='daily:'+session.isoformat(), days=max(180, settings.HISTORY_COLLECTION_DAYS))
+                schedule_recovery(db)
             from app.models import TaskProgress, StockCrawlLog
             from app.tasks import refresh_quotes_task
             quotes = db.query(TaskProgress, StockCrawlLog).join(StockCrawlLog, StockCrawlLog.task_id == TaskProgress.task_id).filter(

@@ -16,6 +16,9 @@ TERMINAL = ("completed", "partial", "failed", "cancelled")
 
 def classify_error(message):
     value = message.lower()
+    if ('kis token' in value or 'oauth2/token' in value or
+            ('403' in value and 'koreainvestment' in value)):
+        return 'token_error'
     if "omitted" in value or "incomplete" in value:
         return "missing_history"
     if "no data" in value:
@@ -23,7 +26,7 @@ def classify_error(message):
     if "stale" in value:
         return "stale_history"
     if any(marker in value for marker in (
-            "429", "rate limit", "초당", "timeout", "timed out", "connection",
+            "429", "egw00201", "rate limit", "초당", "timeout", "timed out", "connection",
             "disconnected", "time limit", "timelimit", "502", "503", "504")):
         return "temporary_error"
     return "collection_error"
@@ -96,6 +99,39 @@ def create_run(db, scope='all', days=180, daily_key=None, stock_ids=None, refres
         if run is None:
             raise
     return run
+
+
+def schedule_recovery(db, now=None):
+    """At most three durable recovery rounds per session, with increasing delays.
+
+    Empty provider responses get one extra attempt; unsafe/incomplete historical
+    replacements remain in the review queue. Daily collection still tries them.
+    """
+    now = now or datetime.utcnow()
+    session = latest_session(now)[0]
+    if db.query(PipelineRun).filter_by(active_key='US').first():
+        return None
+    daily = db.query(PipelineRun).filter_by(daily_key='daily:'+session.isoformat()).first()
+    if daily is None or daily.status != 'partial' or daily.completed_at is None:
+        return None
+    prefix = 'recovery:'+session.isoformat()+':'
+    previous = db.query(PipelineRun).filter(PipelineRun.daily_key.like(prefix+'%')).order_by(PipelineRun.created_at).all()
+    round_number = len(previous)
+    if round_number >= 3:
+        return None
+    last = previous[-1] if previous else daily
+    if last.completed_at is None or now < last.completed_at+timedelta(minutes=(5,15,60)[round_number]):
+        return None
+    stock_ids = []
+    for issue, stock in db.query(RecoveryIssue, Stock).join(Stock, Stock.id == RecoveryIssue.stock_id).filter(
+            RecoveryIssue.status == 'open', Stock.market == 'US', Stock.is_active == True).all():
+        reason = classify_error(issue.message or '')
+        if reason in ('token_error','temporary_error','stale_history') or (round_number == 0 and reason == 'provider_unavailable'):
+            stock_ids.append(stock.id)
+    if not stock_ids:
+        return None
+    return create_run(db, scope='retry', days=max(180,daily.days),
+                      daily_key=prefix+str(round_number+1), stock_ids=stock_ids)
 
 
 def dispatch_run(run_id):
@@ -246,13 +282,17 @@ def execute_unit(run_id):
                     except Exception as error:
                         db.rollback()
                         message = str(error)[:1000]
-                        temporary = classify_error(message) == 'temporary_error'
+                        reason = classify_error(message)
+                        temporary = reason in ('temporary_error','token_error')
                         if temporary and getattr(item, attempts_key) < 3:
-                            run.next_attempt_at = datetime.utcnow()+timedelta(seconds=30*getattr(item, attempts_key))
+                            delay = max(65 if reason == 'token_error' else 0, 30*getattr(item, attempts_key))
+                            run.next_attempt_at = datetime.utcnow()+timedelta(seconds=delay)
                         else:
                             setattr(item, stage+'_status', 'failed')
                         item.error_message = message
                         if stage == 'history' and stock is not None:
+                            if reason == 'missing_history':
+                                stock.history_completed_date = None
                             record_issue(db, stock.id, message)
             db.refresh(run, attribute_names=['cancel_requested'])
             if run.cancel_requested:

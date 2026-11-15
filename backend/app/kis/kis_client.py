@@ -63,159 +63,103 @@ class KISClient:
         """앱키 기반 캐시 키 생성 (여러 계정 구분용)"""
         return hashlib.md5(f"{self.app_key}:{self.is_mock}".encode()).hexdigest()[:8]
 
-    def _ensure_table_exists(self) -> None:
-        """토큰 캐시 테이블이 존재하는지 확인하고 없으면 생성"""
+    def _load_cached_token(self, rejected_token=None) -> bool:
+        from app.database import SessionLocal
+        from app.models import ApiTokenCache
         try:
-            from app.database import engine
-            from app.models import ApiTokenCache
-            ApiTokenCache.__table__.create(bind=engine, checkfirst=True)
-        except Exception as e:
-            logger.warning(f"Could not ensure table exists: {e}")
-
-    def _load_cached_token(self) -> bool:
-        """DB에서 캐시된 토큰 로드"""
-        try:
-            from app.database import SessionLocal
-            from app.models import ApiTokenCache
-
-            # 테이블 존재 확인
-            self._ensure_table_exists()
-
-            db = SessionLocal()
-            try:
-                cache_key = self._get_cache_key()
-                logger.info(f"[KIS Token] Loading from DB (cache_key: {cache_key})")
-
-                cached = db.query(ApiTokenCache).filter(
-                    ApiTokenCache.provider == 'kis',
-                    ApiTokenCache.cache_key == cache_key
-                ).first()
-
-                if not cached:
-                    logger.info("[KIS Token] No cached token in DB, will issue new one")
+            with SessionLocal() as db:
+                cached = db.query(ApiTokenCache).filter_by(provider='kis', cache_key=self._get_cache_key()).first()
+                if not cached or cached.access_token == rejected_token:
                     return False
-
-                # 만료 5분 전까지만 유효하게 처리 (UTC 기준)
-                now_utc = datetime.utcnow()
-                time_until_expiry = cached.expired_at - now_utc
-                logger.info(f"[KIS Token] Found! expires at {cached.expired_at} (UTC), now: {now_utc} (UTC), time until expiry: {time_until_expiry}")
-
-                if now_utc >= (cached.expired_at - timedelta(minutes=5)):
-                    logger.info("[KIS Token] Cached token is expired or expiring soon, will issue new one")
+                if datetime.utcnow() >= cached.expired_at - timedelta(seconds=30):
                     return False
-
                 self.access_token = cached.access_token
                 self.token_expired_at = cached.expired_at
-
-                logger.info(f"[KIS Token] SUCCESS: Using cached token (expires at {self.token_expired_at})")
                 return True
-
-            finally:
-                db.close()
-
-        except Exception as e:
-            logger.error(f"[KIS Token] Failed to load cached token from DB: {str(e)}")
-            import traceback
-            logger.error(traceback.format_exc())
+        except Exception:
+            logger.warning('KIS shared token cache unavailable')
             return False
 
     def _save_token_cache(self) -> None:
-        """토큰을 DB에 캐시"""
-        try:
-            from app.database import SessionLocal
-            from app.models import ApiTokenCache
-
-            # 테이블 존재 확인
-            self._ensure_table_exists()
-
-            db = SessionLocal()
-            try:
-                cache_key = self._get_cache_key()
-                logger.info(f"[KIS Token] Saving to DB (cache_key: {cache_key})")
-
-                # 기존 캐시 확인
-                cached = db.query(ApiTokenCache).filter(
-                    ApiTokenCache.provider == 'kis',
-                    ApiTokenCache.cache_key == cache_key
-                ).first()
-
-                if cached:
-                    # 업데이트
-                    cached.access_token = self.access_token
-                    cached.expired_at = self.token_expired_at
-                    cached.updated_at = datetime.utcnow()
-                    logger.info(f"[KIS Token] Updating existing cache entry")
-                else:
-                    # 새로 생성
-                    cached = ApiTokenCache(
-                        provider='kis',
-                        cache_key=cache_key,
-                        access_token=self.access_token,
-                        expired_at=self.token_expired_at
-                    )
-                    db.add(cached)
-                    logger.info(f"[KIS Token] Creating new cache entry")
-
-                db.commit()
-                logger.info(f"[KIS Token] SUCCESS: Saved to DB (expires at {self.token_expired_at})")
-
-            finally:
-                db.close()
-
-        except Exception as e:
-            logger.error(f"[KIS Token] Failed to save to DB: {str(e)}")
-            import traceback
-            logger.error(traceback.format_exc())
+        from app.database import SessionLocal
+        from app.models import ApiTokenCache
+        with SessionLocal() as db:
+            cached = db.query(ApiTokenCache).filter_by(provider='kis', cache_key=self._get_cache_key()).first()
+            if cached is None:
+                cached = ApiTokenCache(provider='kis', cache_key=self._get_cache_key())
+                db.add(cached)
+            cached.access_token = self.access_token
+            cached.expired_at = self.token_expired_at
+            db.commit()
 
     def _ensure_token(self) -> None:
-        """토큰이 유효한지 확인하고, 필요 시 갱신"""
         if self.access_token is None or self._is_token_expired():
             self._issue_token()
 
     def _is_token_expired(self) -> bool:
-        """토큰 만료 여부 확인 (UTC 기준)"""
-        if self.token_expired_at is None:
-            return True
-        # 만료 5분 전에 미리 갱신 (UTC 기준)
-        return datetime.utcnow() >= (self.token_expired_at - timedelta(minutes=5))
+        return self.token_expired_at is None or datetime.utcnow() >= self.token_expired_at - timedelta(seconds=30)
 
-    def _issue_token(self) -> None:
-        """접근 토큰 발급 (신규 발급 - 문자 발송됨)"""
-        logger.warning("[KIS Token] *** ISSUING NEW TOKEN *** (SMS will be sent)")
+    def _issue_token(self, rejected_token=None) -> None:
+        from app.kis.token_refresh import refresh_token
+        refresh_token(self, rejected_token=rejected_token)
 
-        # 모의투자: tokenP, 실전투자: token
-        endpoint = "/oauth2/tokenP" if self.is_mock else "/oauth2/token"
-        url = f"{self.base_url}{endpoint}"
-
-        headers = {
-            "content-type": "application/json"
-        }
-
-        data = {
-            "grant_type": "client_credentials",
-            "appkey": self.app_key,
-            "appsecret": self.app_secret
-        }
-
+    def _request_new_token(self) -> None:
+        from zoneinfo import ZoneInfo
+        from datetime import timezone
+        from app.kis.token_refresh import KISTokenRetry
+        import re
+        # Official KIS personal-client samples use tokenP for both real and paper servers.
         try:
-            response = self.client.post(url, headers=headers, json=data)
-            response.raise_for_status()
-
+            response = self.client.post(self.base_url + '/oauth2/tokenP',
+                headers={'content-type':'application/json'},
+                json={'grant_type':'client_credentials','appkey':self.app_key,'appsecret':self.app_secret})
+        except httpx.RequestError:
+            raise KISTokenRetry('KIS token refresh network failure; retry later') from None
+        try:
             result = response.json()
-            self.access_token = result["access_token"]
+        except ValueError:
+            result = {}
+        code = str(result.get('error_code') or result.get('msg_cd') or 'unknown')
+        code = code if re.fullmatch(r'[A-Za-z0-9_]{1,40}', code) else 'unknown'
+        if response.status_code != 200 or not isinstance(result.get('access_token'), str) or not result['access_token']:
+            raise KISTokenRetry(f'KIS token refresh rejected (HTTP {response.status_code}, code {code}); retry later')
+        try:
+            expires = datetime.utcnow() + timedelta(seconds=min(int(result.get('expires_in',86400)),172800))
+            if result.get('access_token_token_expired'):
+                reported = datetime.fromisoformat(result['access_token_token_expired'])
+                if reported.tzinfo is None:
+                    reported = reported.replace(tzinfo=ZoneInfo('Asia/Seoul'))
+                expires = min(expires, reported.astimezone(timezone.utc).replace(tzinfo=None))
+            if expires <= datetime.utcnow() + timedelta(seconds=30):
+                raise ValueError('expired response')
+        except (ValueError,TypeError,OverflowError):
+            raise KISTokenRetry('KIS token refresh returned invalid expiry; retry later') from None
+        self.access_token = result['access_token']
+        self.token_expired_at = expires
+        logger.info('KIS shared token renewed; expires at %s UTC', expires)
 
-            # 토큰 만료 시간 설정 (24시간, UTC 기준)
-            expires_in = int(result.get("expires_in", 86400))  # 기본 24시간
-            self.token_expired_at = datetime.utcnow() + timedelta(seconds=expires_in)
-
-            logger.info(f"[KIS Token] New token issued (expires at {self.token_expired_at} UTC)")
-
-            # 토큰 캐시 저장
-            self._save_token_cache()
-
-        except Exception as e:
-            logger.error(f"[KIS Token] Failed to issue token: {str(e)}")
-            raise
+    def _get_market_response(self, url, tr_id, params):
+        """Retry a rejected bearer token once; do not turn auth failures into empty history."""
+        from app.kis.token_refresh import KISTokenRetry
+        headers = self._get_headers(tr_id)
+        response = self.client.get(url, headers=headers, params=params)
+        try:
+            code = response.json().get('msg_cd')
+        except ValueError:
+            code = None
+        if response.status_code == 401 or code in ('EGW00121','EGW00123'):
+            rejected = self.access_token
+            self.access_token = None
+            self.token_expired_at = None
+            self._issue_token(rejected_token=rejected)
+            response = self.client.get(url, headers=self._get_headers(tr_id), params=params)
+            try:
+                code = response.json().get('msg_cd')
+            except ValueError:
+                code = None
+            if response.status_code == 401 or code in ('EGW00121','EGW00123'):
+                raise KISTokenRetry('KIS token rejected after refresh; retry later')
+        return response
 
     def _get_headers(self, tr_id: str, tr_cont: str = "") -> Dict[str, str]:
         """공통 헤더 생성"""
@@ -413,10 +357,8 @@ class KISClient:
             "MODP": "1" if adjusted else "0"  # Keep raw and adjusted requests explicit
         }
 
-        headers = self._get_headers(tr_id)
-
         try:
-            response = self.client.get(url, headers=headers, params=params)
+            response = self._get_market_response(url, tr_id, params)
             response.raise_for_status()
 
             result = response.json()

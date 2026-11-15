@@ -31,6 +31,19 @@ class KISHistoryCrawler:
         from app.market_clock import latest_session
         return latest_session()[0]
 
+    def _missing_sessions(self, stock, db, days=180):
+        """A later successful candle must not conceal gaps left by earlier failures."""
+        from app.market_clock import latest_session, calendar
+        expected = latest_session(market=stock.market)[0]
+        dates = {r.date for r in db.query(StockPriceHistory.date).filter(
+            StockPriceHistory.stock_id == stock.id,
+            StockPriceHistory.date >= expected-timedelta(days=days),
+            StockPriceHistory.date <= expected).all()}
+        if not dates:
+            return []
+        sessions = calendar(stock.market).sessions_in_range(str(min(dates)),str(expected))
+        return sorted(s.date() for s in sessions if s.date() not in dates)
+
     def _should_collect_history(
         self,
         stock: Stock,
@@ -74,6 +87,9 @@ class KISHistoryCrawler:
             expected, close = latest_session(market=stock.market)
             final = db.query(StockPriceHistory.updated_at).filter(
                 StockPriceHistory.stock_id == stock.id, StockPriceHistory.date == expected).first()
+            missing = self._missing_sessions(stock, db)
+            if missing:
+                return (True, 'incremental', missing[0]-timedelta(days=1))
             if final and final.updated_at and final.updated_at >= close:
                 return (False, "skip", expected)
             if last_record[0] >= expected:
@@ -154,6 +170,10 @@ class KISHistoryCrawler:
 
             # 데이터 저장
             saved_count = self._save_price_history(stock.id, ohlcv_data, db)
+            if stock.market == 'US':
+                missing = self._missing_sessions(stock, db, days=days)
+                if missing:
+                    raise RuntimeError(f'Incomplete closed-session history: {len(missing)} missing sessions, first {missing[0]}')
 
             # Stock 테이블의 history_records_count 업데이트 (직접 UPDATE 쿼리 사용)
             total_records = db.query(StockPriceHistory).filter(

@@ -365,6 +365,14 @@ class ApiTokenCache(Base):
     )
 
 
+class TokenRefreshState(Base):
+    """Durable provider cooldown survives worker restarts and failed requests."""
+    __tablename__ = "token_refresh_states"
+    key = Column(String(64), primary_key=True)
+    next_attempt_at = Column(DateTime)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
 class PipelineRun(Base):
     __tablename__ = "pipeline_runs"
     id = Column(String(100), primary_key=True, default=lambda: str(uuid.uuid4()))

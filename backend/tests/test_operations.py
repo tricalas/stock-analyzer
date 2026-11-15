@@ -198,7 +198,7 @@ class Operations(unittest.TestCase):
                 analyzer._analyze_stock(self.stock.id,180,self.db,end_date=end)
                 rows=analysis.call_args.args[0]
                 self.assertTrue(all(row.date<=end for row in rows))
-                self.assertEqual(len(rows),99)
+                self.assertEqual(len(rows),100-(date.today()-min(end,latest_session()[0])).days)
         self.assertAlmostEqual(update_ma90(self.stock.id,self.db,as_of=end),123.89)
 
     def test_actual_timeout_and_gateway_messages_are_retryable(self):
