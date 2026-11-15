@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import desc
-from typing import Optional
+from typing import Optional, Literal
 from datetime import datetime, date, timedelta
 import logging
 import hashlib
@@ -169,95 +169,17 @@ def refresh_signals(
     }
 
 
-@router.get("/api/signals/ma")
+@router.get("/api/signals/ma", response_model=schemas.SignalListResponse)
 def get_ma_signals(
-    skip: int = Query(0, ge=0),
-    limit: int = Query(30, ge=1, le=100),
-    strategy: Optional[str] = Query(None, description="전략 필터 (golden_cross, death_cross, ma_support, ma_resistance, ma_breakout_up, ma_breakout_down, ma_bullish_alignment, ma_bearish_alignment)"),
-    signal_type: Optional[str] = Query(None, pattern="^(buy|sell)$"),
-    db: Session = Depends(get_db)
+    skip: int = Query(0, ge=0), limit: int = Query(30, ge=1, le=100),
+    strategy: Optional[str] = None,
+    signal_type: Optional[Literal['buy','sell','approaching','pullback']] = None,
+    return_filter: Literal['all','positive','negative','flat','unknown'] = 'all',
+    search: str = Query('', max_length=50), days: int = Query(10, ge=1, le=30),
+    sort: Literal['latest','return_desc','return_asc'] = 'latest', db: Session = Depends(get_db)
 ):
-    """
-    MA 기반 시그널 목록 조회
-
-    Args:
-        skip: 오프셋
-        limit: 페이지 크기
-        strategy: 전략 필터 (선택적)
-        signal_type: buy/sell 필터 (선택적)
-
-    Returns:
-        시그널 목록과 통계
-    """
-    # MA 시그널 전략명 목록
-    ma_strategies = [
-        'golden_cross', 'death_cross',
-        'ma_support', 'ma_resistance',
-        'ma_breakout_up', 'ma_breakout_down',
-        'ma_bullish_alignment', 'ma_bearish_alignment'
-    ]
-
-    # 최근 10일 시그널만
-    ten_days_ago = date.today() - timedelta(days=10)
-
-    query = db.query(StockSignal).filter(
-        StockSignal.is_active == True,
-        StockSignal.strategy_name.in_(ma_strategies),
-        StockSignal.signal_date >= ten_days_ago
-    )
-
-    if strategy:
-        query = query.filter(StockSignal.strategy_name == strategy)
-
-    if signal_type:
-        query = query.filter(StockSignal.signal_type == signal_type)
-
-    # 전체 개수
-    total = query.count()
-
-    # 통계
-    all_signals = query.all()
-    positive_count = sum(1 for s in all_signals if s.return_percent and s.return_percent > 0)
-    negative_count = sum(1 for s in all_signals if s.return_percent and s.return_percent < 0)
-    returns = [s.return_percent for s in all_signals if s.return_percent is not None]
-    avg_return = sum(returns) / len(returns) if returns else 0
-
-    # 페이지네이션
-    signals = query.order_by(desc(StockSignal.signal_date), desc(StockSignal.id)).offset(skip).limit(limit).all()
-
-    # 종목 정보 조인
-    result_signals = []
-    for signal in signals:
-        stock = db.query(Stock).filter(Stock.id == signal.stock_id).first()
-        if stock:
-            result_signals.append({
-                "id": signal.id,
-                "stock_id": signal.stock_id,
-                "symbol": stock.symbol,
-                "freshness": stock.freshness,
-                "name": stock.name,
-                "exchange": stock.exchange,
-                "signal_type": signal.signal_type,
-                "signal_date": signal.signal_date.isoformat(),
-                "signal_price": signal.signal_price,
-                "strategy_name": signal.strategy_name,
-                "current_price": signal.current_price,
-                "return_percent": signal.return_percent,
-                "details": json.loads(signal.details) if signal.details else {},
-                "analyzed_at": signal.analyzed_at.isoformat() if signal.analyzed_at else None
-            })
-
-    return {
-        "signals": result_signals,
-        "total": total,
-        "stats": {
-            "total_signals": total,
-            "positive_returns": positive_count,
-            "negative_returns": negative_count,
-            "avg_return": round(avg_return, 2)
-        },
-        "analyzed_at": max((s.analyzed_at for s in all_signals if s.analyzed_at), default=None)
-    }
+    from app.signal_feed import signal_feed
+    return signal_feed(db,'ma',skip,limit,strategy,signal_type,return_filter,search,days,sort)
 
 
 @router.delete("/api/signals/ma", dependencies=[Depends(get_admin_user)])
@@ -535,96 +457,15 @@ def scan_all_tagged_stocks(
 
 @router.get("/api/signals", response_model=schemas.SignalListResponse)
 def get_stored_signals(
-    signal_type: Optional[str] = Query(None, description="Signal type filter (buy, sell)"),
-    skip: int = Query(0, ge=0, description="Number of records to skip (for pagination)"),
-    limit: int = Query(30, ge=1, le=500),
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    signal_type: Optional[Literal['buy','sell','approaching','pullback']] = None,
+    skip: int = Query(0, ge=0), limit: int = Query(30, ge=1, le=500),
+    strategy: Optional[str] = None,
+    return_filter: Literal['all','positive','negative','flat','unknown'] = 'all',
+    search: str = Query('', max_length=50), days: int = Query(10, ge=1, le=30),
+    sort: Literal['latest','return_desc','return_asc'] = 'latest', db: Session = Depends(get_db)
 ):
-    """
-    저장된 매매 시그널 조회 (DB에서 읽기만 함 - 빠름, 페이지네이션 지원)
-
-    Args:
-        signal_type: 시그널 타입 필터
-        skip: 건너뛸 레코드 수 (페이지네이션용)
-        limit: 최대 조회 개수
-
-    Returns:
-        저장된 시그널 목록 (최근 10일 이내)
-    """
-    from datetime import timedelta
-
-    # 최근 10일 이내 시그널만 조회
-    ten_days_ago = date.today() - timedelta(days=10)
-
-    # 활성 시그널 조회 (최근 10일)
-    query = db.query(StockSignal).filter(
-        StockSignal.is_active == True,
-        StockSignal.signal_date >= ten_days_ago
-    )
-
-    if signal_type:
-        query = query.filter(StockSignal.signal_type == signal_type)
-
-    # 최신 시그널부터 정렬된 쿼리
-    ordered_query = query.order_by(desc(StockSignal.signal_date))
-
-    # 첫 페이지에서는 전체 조회 후 슬라이싱 (중복 쿼리 방지)
-    if skip == 0:
-        all_signals = ordered_query.all()
-        total = len(all_signals)
-        signals = all_signals[:limit]
-        # 통계 계산 (전체 데이터 기준)
-        stats = {
-            "total_signals": total,
-            "positive_returns": len([s for s in all_signals if s.return_percent and s.return_percent > 0]),
-            "negative_returns": len([s for s in all_signals if s.return_percent and s.return_percent < 0]),
-            "avg_return": sum([s.return_percent or 0 for s in all_signals]) / total if total > 0 else 0
-        }
-    else:
-        # 이후 페이지에서는 개별 쿼리
-        total = query.count()
-        signals = ordered_query.offset(skip).limit(limit).all()
-        stats = None
-
-    # 종목 정보 로드
-    stock_ids = [s.stock_id for s in signals]
-    stocks_map = {}
-    if stock_ids:
-        stocks = db.query(Stock).filter(Stock.id.in_(stock_ids)).all()
-        stocks_map = {s.id: s for s in stocks}
-
-    # 응답 생성
-    signal_responses = []
-    for signal in signals:
-        signal_dict = {
-            "id": signal.id,
-            "stock_id": signal.stock_id,
-            "signal_type": signal.signal_type,
-            "signal_date": signal.signal_date,
-            "signal_price": signal.signal_price,
-            "strategy_name": signal.strategy_name,
-            "current_price": signal.current_price,
-            "return_percent": signal.return_percent,
-            "details": signal.details,
-            "is_active": signal.is_active,
-            "analyzed_at": signal.analyzed_at,
-            "updated_at": signal.updated_at,
-            "stock": stocks_map.get(signal.stock_id)
-        }
-        signal_responses.append(signal_dict)
-
-    # 마지막 분석 시간
-    latest_analyzed = db.query(StockSignal).order_by(
-        desc(StockSignal.analyzed_at)
-    ).first()
-
-    return {
-        "total": total,
-        "signals": signal_responses,
-        "analyzed_at": latest_analyzed.analyzed_at if latest_analyzed else None,
-        "stats": stats
-    }
+    from app.signal_feed import signal_feed
+    return signal_feed(db,'trendline',skip,limit,strategy,signal_type,return_filter,search,days,sort)
 
 
 @router.delete("/api/signals", dependencies=[Depends(get_admin_user)])

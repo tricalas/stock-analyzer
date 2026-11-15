@@ -18,3 +18,9 @@ test('freshness never calls stale or unknown data current',()=>{
 test('insufficient MA history is distinct from an analysis delay',()=>{
  assert.equal(freshnessLabel({history_status:'current',ma_status:'insufficient_history'}),'확정 일봉 최신 · MA 자료 부족');
 });
+test('signal freshness checks only the selected family',()=>{
+ const v={history_status:'current',trend_current:true,ma_current:false,ma_status:'insufficient_history'};
+ assert.equal(freshnessLabel(v,'trendline'),'추세 분석 최신');assert.equal(freshnessLabel(v,'ma'),'MA 자료 부족');
+ assert.equal(freshnessLabel({...v,trend_current:false,ma_current:true},'ma'),'MA 분석 최신');
+ assert.equal(freshnessLabel({...v,history_status:'stale'},'trendline'),'확정 일봉 지연');
+});

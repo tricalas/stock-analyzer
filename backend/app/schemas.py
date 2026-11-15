@@ -1,6 +1,6 @@
 from pydantic import BaseModel, Field, field_validator
 from datetime import datetime, date
-from typing import Optional, List, Dict
+from typing import Optional, List, Dict, Union
 import re
 
 class StockBase(BaseModel):
@@ -238,6 +238,13 @@ class StockSignal(StockSignalBase):
 class StockSignalWithStock(StockSignal):
     """종목 정보를 포함한 시그널"""
     stock: Optional[Stock] = None
+    details: Optional[Union[str, dict]] = None
+    symbol: Optional[str] = None
+    name: Optional[str] = None
+    market: Optional[str] = None
+    exchange: Optional[str] = None
+    freshness: Optional[dict] = None
+    price_as_of: Optional[datetime] = None
 
 class SignalListResponse(BaseModel):
     """시그널 목록 응답"""
@@ -245,6 +252,11 @@ class SignalListResponse(BaseModel):
     signals: List[StockSignalWithStock]
     analyzed_at: Optional[datetime] = None  # 마지막 분석 시간
     stats: Optional[dict] = None  # 통계 정보
+    excluded_stale: int = 0
+    expected_sessions: dict = Field(default_factory=dict)
+    next_skip: Optional[int] = None
+    category: Optional[str] = None
+    days: int = 10
 
 # ===== Task Progress Schemas =====
 

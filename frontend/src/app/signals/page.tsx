@@ -1,571 +1,138 @@
 'use client';
 
-import FreshnessDetails from '@/components/FreshnessDetails';
-import type { Freshness } from '@/lib/freshness';
-import { apiFetch, API_BASE_URL } from '@/lib/http';
-
-import { useState, useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import Link from 'next/link';
 import { useInfiniteQuery } from '@tanstack/react-query';
-import AppLayout from '@/components/AppLayout';
-import { TrendingUp, TrendingDown, Activity, Clock, Star, BarChart3, ChevronRight } from 'lucide-react';
+import { Activity, ArrowDown, ArrowUp, BarChart3, RefreshCw, Search, Star } from 'lucide-react';
 import { Toaster, toast } from 'sonner';
-import { getNaverChartUrl, getNaverInfoUrl, openNaverChartPopup } from '@/lib/naverStock';
-import { stockApi } from '@/lib/api';
+import AppLayout from '@/components/AppLayout';
+import FreshnessDetails from '@/components/FreshnessDetails';
 import ScrollToTopButton from '@/components/atoms/ScrollToTopButton';
-import { useTimezone } from '@/hooks/useTimezone';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
+import { useTimezone } from '@/hooks/useTimezone';
+import { apiFetch, API_BASE_URL } from '@/lib/http';
+import { stockApi } from '@/lib/api';
+import { getNaverChartUrl } from '@/lib/naverStock';
+import { FeedSignal, SignalCategory, SignalFeed, ma90Distance, signalFeedPath, signalLabel, strategies } from '@/lib/signal-feed';
 import { cn } from '@/lib/utils';
 
-interface Stock {
-  freshness?: Freshness;
-  id: number;
-  symbol: string;
-  name: string;
-  market: string;
-  exchange?: string;
-  current_price?: number;
+const fieldClass = 'h-10 w-full rounded-md border border-input bg-background px-3 text-sm';
+function money(value: number | null, market: string) { return value == null ? '—' : market === 'KR' ? `₩${value.toLocaleString('ko-KR', { maximumFractionDigits: 0 })}` : `$${value.toFixed(2)}`; }
+function Change({ value }: { value: number | null }) {
+  return value == null ? <span className="text-muted-foreground">미확인</span> : <span className={cn('font-semibold tabular-nums', value > 0 ? 'text-green-600 dark:text-green-400' : value < 0 ? 'text-red-600 dark:text-red-400' : 'text-muted-foreground')}>
+    {value > 0 ? '+' : ''}{value.toFixed(2)}%
+  </span>;
 }
-
-interface StockSignal {
-  freshness?: Freshness;
-  id: number;
-  stock_id: number;
-  signal_type: string;
-  signal_date: string;
-  signal_price: number;
-  strategy_name: string;
-  current_price?: number;
-  return_percent?: number;
-  details?: string | Record<string, unknown>;
-  is_active: boolean;
-  analyzed_at: string;
-  updated_at: string;
-  // MA API returns flat structure
-  symbol?: string;
-  name?: string;
-  exchange?: string;
-  // Trendline API returns nested stock object
-  stock?: Stock;
+function SignalType({ signal }: { signal: FeedSignal }) {
+  const sell = signal.signal_type === 'sell';
+  return <Badge variant="outline" className={cn('text-xs whitespace-normal text-left', sell ? 'border-red-500/30 text-red-600 dark:text-red-400' : 'border-primary/30')}>
+    {signalLabel(signal)}
+  </Badge>;
 }
-
-interface SignalListResponse {
-  total: number;
-  signals: StockSignal[];
-  analyzed_at?: string;
-  stats?: {
-    total_signals: number;
-    positive_returns: number;
-    negative_returns: number;
-    avg_return: number;
-  };
-}
-
-type SignalCategory = 'trendline' | 'ma';
-type SignalFilter = 'all' | 'breakout' | 'approaching' | 'pullback' | 'golden_cross' | 'death_cross' | 'ma_support' | 'ma_resistance' | 'ma_breakout_up' | 'ma_breakout_down' | 'ma_bullish_alignment' | 'ma_bearish_alignment';
-type ReturnFilter = 'all' | 'positive' | 'negative';
-
-// 전략명 매핑
-const TRENDLINE_STRATEGIES = ['descending_trendline_breakout', 'approaching_breakout', 'pullback_buy', 'doji_star'];
-const MA_STRATEGIES = ['golden_cross', 'death_cross', 'ma_support', 'ma_resistance', 'ma_breakout_up', 'ma_breakout_down', 'ma_bullish_alignment', 'ma_bearish_alignment'];
-
-const PAGE_SIZE = 30;
 
 export default function SignalsPage() {
-  const loadMoreRef = useRef<HTMLDivElement>(null);
-  const [signalCategory, setSignalCategory] = useState<SignalCategory>('ma');
-  const [signalFilter, setSignalFilter] = useState<SignalFilter>('all');
-  const [returnFilter, setReturnFilter] = useState<ReturnFilter>('all');
+  const [category, setCategory] = useState<SignalCategory>('ma');
+  const [strategy, setStrategy] = useState('all');
+  const [returnFilter, setReturnFilter] = useState('all');
+  const [search, setSearch] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+  const [days, setDays] = useState(10);
+  const [sort, setSort] = useState('latest');
+  const sentinel = useRef<HTMLDivElement>(null);
   const { formatShortDate, formatShortDateTime } = useTimezone();
+  useEffect(() => { const timer = setTimeout(() => setDebouncedSearch(search.trim()), 300); return () => clearTimeout(timer); }, [search]);
 
-  // 카테고리 변경 시 필터 초기화
-  const handleCategoryChange = (category: SignalCategory) => {
-    setSignalCategory(category);
-    setSignalFilter('all');
-  };
-
-  const {
-    data,
-    isLoading,
-    error,
-    fetchNextPage,
-    hasNextPage,
-    isFetchingNextPage,
-  } = useInfiniteQuery({
-    queryKey: ['stored-signals-infinite', signalCategory],
-    queryFn: async ({ pageParam = 0 }) => {
-      // MA 카테고리면 /api/signals/ma 사용, 아니면 기존 /api/signals 사용
-      const endpoint = signalCategory === 'ma'
-        ? `${API_BASE_URL}/api/signals/ma?skip=${pageParam}&limit=${PAGE_SIZE}`
-        : `${API_BASE_URL}/api/signals?skip=${pageParam}&limit=${PAGE_SIZE}`;
-      const response = await apiFetch(endpoint);
-      if (!response.ok) throw new Error('Failed to fetch signals');
-      return response.json() as Promise<SignalListResponse>;
+  const { data, isLoading, error, fetchNextPage, hasNextPage, isFetchingNextPage, isFetchNextPageError,
+    isRefetchError, isFetching, refetch } = useInfiniteQuery({
+    queryKey: ['signal-feed-v2', category, strategy, returnFilter, debouncedSearch, days, sort],
+    queryFn: async ({ pageParam = 0, signal }) => {
+      const response = await apiFetch(API_BASE_URL + signalFeedPath({ category, strategy, returnFilter, search: debouncedSearch, days, sort }, pageParam), { signal });
+      if (!response.ok) throw new Error('시그널을 불러오지 못했습니다.');
+      const result = await response.json() as SignalFeed;
+      if (result.category !== category || !result.expected_sessions) throw new Error('조회 서버 갱신 중입니다. 잠시 후 다시 시도해주세요.');
+      return result;
     },
-    getNextPageParam: (lastPage, allPages) => {
-      const loadedCount = allPages.reduce((sum, page) => sum + page.signals.length, 0);
-      return loadedCount < lastPage.total ? loadedCount : undefined;
-    },
+    getNextPageParam: last => last.next_skip ?? undefined,
     initialPageParam: 0,
+    staleTime: 15000,
     refetchInterval: 60000,
   });
-
   useEffect(() => {
-    if (!loadMoreRef.current) return;
-
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (entries[0].isIntersecting && hasNextPage && !isFetchingNextPage) {
-          fetchNextPage();
-        }
-      },
-      { threshold: 0.1 }
-    );
-
-    observer.observe(loadMoreRef.current);
+    if (!sentinel.current || !hasNextPage || isFetchNextPageError) return;
+    const observer = new IntersectionObserver(entries => {
+      if (entries[0].isIntersecting && !isFetching) void fetchNextPage();
+    }, { rootMargin: '200px' });
+    observer.observe(sentinel.current);
     return () => observer.disconnect();
-  }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
+  }, [hasNextPage, isFetching, isFetchNextPageError, fetchNextPage]);
 
-  const allSignals = data?.pages.flatMap(page => page.signals) || [];
-  const stats = data?.pages[0]?.stats;
-  const analyzedAt = data?.pages[0]?.analyzed_at;
-  const total = data?.pages[0]?.total || 0;
+  const summary = data?.pages[0];
+  // A refresh may overlap a page boundary; never render the same persisted ID twice.
+  const signals = [...new Map((data?.pages.flatMap(page => page.signals) || []).map(signal => [signal.id, signal])).values()];
+  const stats = summary?.stats;
+  const reset = () => { setStrategy('all'); setReturnFilter('all'); setSearch(''); setDebouncedSearch(''); setDays(10); setSort('latest'); };
+  const hasFilters = strategy !== 'all' || returnFilter !== 'all' || !!search || days !== 10 || sort !== 'latest';
+  async function favorite(signal: FeedSignal) {
+    try { await stockApi.addToFavorites(signal.stock_id); toast.success(`${signal.name} 관심종목 추가`); }
+    catch { toast.error('관심종목 추가에 실패했습니다.'); }
+  }
+  const chart = (signal: FeedSignal) => signal.market === 'KR' ? `https://m.stock.naver.com/domestic/stock/${encodeURIComponent(signal.symbol)}/total` : getNaverChartUrl({ symbol: signal.symbol, market: signal.market, exchange: signal.exchange || undefined });
+  const actions = (signal: FeedSignal) => <div className="flex items-center justify-end gap-1">
+    <Button variant="ghost" size="icon" asChild className="h-8 w-8"><Link href={`/signals/${signal.stock_id}`} aria-label={`${signal.name} 분석 상세`}><Activity className="h-4 w-4"/></Link></Button>
+    <Button variant="ghost" size="icon" asChild className="h-8 w-8"><a href={chart(signal)} target="_blank" rel="noopener noreferrer" aria-label={`${signal.name} 외부 차트`}><BarChart3 className="h-4 w-4"/></a></Button>
+    <Button variant="ghost" size="icon" onClick={() => void favorite(signal)} className="h-8 w-8" aria-label={`${signal.name} 관심종목 추가`}><Star className="h-4 w-4"/></Button>
+  </div>;
 
-  const formatPrice = (price: number) => `$${price.toFixed(2)}`;
-
-  const filteredSignals = allSignals.filter(signal => {
-    // 시그널 필터
-    if (signalFilter !== 'all') {
-      // 기존 추세선 시그널 필터
-      if (signalFilter === 'breakout' && signal.strategy_name !== 'descending_trendline_breakout') return false;
-      if (signalFilter === 'approaching' && signal.strategy_name !== 'approaching_breakout') return false;
-      if (signalFilter === 'pullback' && signal.strategy_name !== 'pullback_buy') return false;
-      // MA 시그널 필터
-      if (signalFilter === 'golden_cross' && signal.strategy_name !== 'golden_cross') return false;
-      if (signalFilter === 'death_cross' && signal.strategy_name !== 'death_cross') return false;
-      if (signalFilter === 'ma_support' && signal.strategy_name !== 'ma_support') return false;
-      if (signalFilter === 'ma_resistance' && signal.strategy_name !== 'ma_resistance') return false;
-      if (signalFilter === 'ma_breakout_up' && signal.strategy_name !== 'ma_breakout_up') return false;
-      if (signalFilter === 'ma_breakout_down' && signal.strategy_name !== 'ma_breakout_down') return false;
-      if (signalFilter === 'ma_bullish_alignment' && signal.strategy_name !== 'ma_bullish_alignment') return false;
-      if (signalFilter === 'ma_bearish_alignment' && signal.strategy_name !== 'ma_bearish_alignment') return false;
-    }
-    // 수익률 필터
-    if (returnFilter !== 'all') {
-      if (returnFilter === 'positive' && (signal.return_percent ?? 0) < 0) return false;
-      if (returnFilter === 'negative' && (signal.return_percent ?? 0) >= 0) return false;
-    }
-    return true;
-  });
-
-  const getSignalBadge = (strategyName: string) => {
-    // 기존 추세선 시그널
-    if (strategyName === 'approaching_breakout') {
-      return <Badge className="bg-yellow-500/20 text-yellow-600 dark:text-yellow-400 hover:bg-yellow-500/30 text-[10px] px-1.5 h-5">임박</Badge>;
-    }
-    if (strategyName === 'pullback_buy') {
-      return <Badge className="bg-purple-500/20 text-purple-600 dark:text-purple-400 hover:bg-purple-500/30 text-[10px] px-1.5 h-5">되돌림</Badge>;
-    }
-    if (strategyName === 'descending_trendline_breakout') {
-      return <Badge className="bg-green-500/20 text-green-600 dark:text-green-400 hover:bg-green-500/30 text-[10px] px-1.5 h-5">돌파</Badge>;
-    }
-    if (strategyName === 'doji_star') {
-      return <Badge className="bg-pink-500/20 text-pink-600 dark:text-pink-400 hover:bg-pink-500/30 text-[10px] px-1.5 h-5">도지</Badge>;
-    }
-    // MA 시그널
-    if (strategyName === 'golden_cross') {
-      return <Badge className="bg-amber-500/20 text-amber-600 dark:text-amber-400 hover:bg-amber-500/30 text-[10px] px-1.5 h-5">골든</Badge>;
-    }
-    if (strategyName === 'death_cross') {
-      return <Badge className="bg-slate-500/20 text-slate-600 dark:text-slate-400 hover:bg-slate-500/30 text-[10px] px-1.5 h-5">데드</Badge>;
-    }
-    if (strategyName === 'ma_support') {
-      return <Badge className="bg-blue-500/20 text-blue-600 dark:text-blue-400 hover:bg-blue-500/30 text-[10px] px-1.5 h-5">지지</Badge>;
-    }
-    if (strategyName === 'ma_resistance') {
-      return <Badge className="bg-orange-500/20 text-orange-600 dark:text-orange-400 hover:bg-orange-500/30 text-[10px] px-1.5 h-5">저항</Badge>;
-    }
-    if (strategyName === 'ma_breakout_up') {
-      return <Badge className="bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/30 text-[10px] px-1.5 h-5">상향돌파</Badge>;
-    }
-    if (strategyName === 'ma_breakout_down') {
-      return <Badge className="bg-rose-500/20 text-rose-600 dark:text-rose-400 hover:bg-rose-500/30 text-[10px] px-1.5 h-5">하향돌파</Badge>;
-    }
-    if (strategyName === 'ma_bullish_alignment') {
-      return <Badge className="bg-teal-500/20 text-teal-600 dark:text-teal-400 hover:bg-teal-500/30 text-[10px] px-1.5 h-5">정배열</Badge>;
-    }
-    if (strategyName === 'ma_bearish_alignment') {
-      return <Badge className="bg-red-500/20 text-red-600 dark:text-red-400 hover:bg-red-500/30 text-[10px] px-1.5 h-5">역배열</Badge>;
-    }
-    return <Badge className="bg-gray-500/20 text-gray-600 dark:text-gray-400 hover:bg-gray-500/30 text-[10px] px-1.5 h-5">{strategyName}</Badge>;
-  };
-
-  const handleAddToFavorites = async (e: React.MouseEvent, signal: StockSignal) => {
-    e.stopPropagation();
-    if (signal.stock_id) {
-      try {
-        await stockApi.addToFavorites(signal.stock_id);
-        const stockName = signal.name || signal.stock?.name || '종목';
-        toast.success(`${stockName} 관심종목 추가`);
-      } catch {
-        toast.error('추가 실패');
-      }
-    }
-  };
-
-  return (
-    <AppLayout>
-      <div className="p-4 lg:p-6 space-y-4">
-        {/* Header */}
-        <div className="flex flex-col lg:flex-row lg:items-center gap-3">
-          {/* Filters */}
-          <div className="flex items-center gap-2 flex-1 flex-wrap">
-            {/* 카테고리 선택 */}
-            <Select value={signalCategory} onValueChange={(v) => handleCategoryChange(v as SignalCategory)}>
-              <SelectTrigger className="w-[100px] h-9">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="ma">MA 시그널</SelectItem>
-                <SelectItem value="trendline">추세선</SelectItem>
-              </SelectContent>
-            </Select>
-
-            {/* 시그널 타입 필터 - 카테고리에 따라 다른 옵션 */}
-            <Select value={signalFilter} onValueChange={(v) => setSignalFilter(v as SignalFilter)}>
-              <SelectTrigger className="w-[120px] h-9">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">전체</SelectItem>
-                {signalCategory === 'ma' ? (
-                  <>
-                    <SelectItem value="golden_cross">골든크로스</SelectItem>
-                    <SelectItem value="death_cross">데드크로스</SelectItem>
-                    <SelectItem value="ma_support">지지</SelectItem>
-                    <SelectItem value="ma_resistance">저항</SelectItem>
-                    <SelectItem value="ma_breakout_up">상향돌파</SelectItem>
-                    <SelectItem value="ma_breakout_down">하향돌파</SelectItem>
-                    <SelectItem value="ma_bullish_alignment">정배열</SelectItem>
-                    <SelectItem value="ma_bearish_alignment">역배열</SelectItem>
-                  </>
-                ) : (
-                  <>
-                    <SelectItem value="breakout">돌파</SelectItem>
-                    <SelectItem value="approaching">임박</SelectItem>
-                    <SelectItem value="pullback">되돌림</SelectItem>
-                  </>
-                )}
-              </SelectContent>
-            </Select>
-
-            <Select value={returnFilter} onValueChange={(v) => setReturnFilter(v as ReturnFilter)}>
-              <SelectTrigger className="w-[110px] h-9">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">전체 수익</SelectItem>
-                <SelectItem value="positive">수익 중</SelectItem>
-                <SelectItem value="negative">손실 중</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-
-          {/* Stats */}
-          {stats && (
-            <div className="flex items-center gap-3 text-sm">
-              <div className="flex items-center gap-1 text-muted-foreground">
-                <Activity className="h-4 w-4" />
-                <span>{stats.total_signals || 0}</span>
-              </div>
-              <div className="flex items-center gap-1 text-green-600 dark:text-green-400">
-                <TrendingUp className="h-4 w-4" />
-                <span>{stats.positive_returns || 0}</span>
-              </div>
-              <div className="flex items-center gap-1 text-red-600 dark:text-red-400">
-                <TrendingDown className="h-4 w-4" />
-                <span>{stats.negative_returns || 0}</span>
-              </div>
-              {analyzedAt && (
-                <div className="text-muted-foreground hidden lg:flex items-center gap-1 text-xs">
-                  <Clock className="h-3.5 w-3.5" />
-                  {formatShortDateTime(analyzedAt)}
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-
-        {/* Content */}
-        <div className="bg-card rounded-xl overflow-hidden border border-border">
-          {isLoading ? (
-            <div className="flex flex-col items-center justify-center py-20">
-              <div className="animate-spin rounded-full h-10 w-10 border-2 border-primary border-t-transparent"></div>
-              <p className="mt-4 text-sm text-muted-foreground">시그널 로딩 중...</p>
-            </div>
-          ) : error ? (
-            <div className="text-center py-20">
-              <div className="inline-flex items-center justify-center w-14 h-14 rounded-full bg-destructive/10 mb-4">
-                <TrendingUp className="w-6 h-6 text-destructive" />
-              </div>
-              <p className="text-destructive font-medium">로드 실패</p>
-            </div>
-          ) : filteredSignals.length > 0 ? (
-            <>
-              {/* Desktop Table */}
-              <div className="hidden lg:block overflow-x-auto">
-                <table className="w-full">
-                  <thead className="bg-muted/50 border-b">
-                    <tr>
-                      <th className="h-10 px-4 text-center text-xs font-medium text-muted-foreground uppercase">시그널일</th>
-                      <th className="h-10 px-4 text-left text-xs font-medium text-muted-foreground uppercase">종목</th>
-                      <th className="h-10 px-4 text-right text-xs font-medium text-muted-foreground uppercase">시그널가</th>
-                      <th className="h-10 px-4 text-right text-xs font-medium text-muted-foreground uppercase">90일선</th>
-                      <th className="h-10 px-4 text-right text-xs font-medium text-muted-foreground uppercase">현재가</th>
-                      <th className="h-10 px-4 text-right text-xs font-medium text-muted-foreground uppercase">수익률</th>
-                      <th className="h-10 px-4 text-center text-xs font-medium text-muted-foreground uppercase">거래소</th>
-                      <th className="h-10 px-4 text-center text-xs font-medium text-muted-foreground uppercase">관심</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y">
-                    {filteredSignals.map((signal) => {
-                      // MA API는 flat structure, Trendline API는 nested stock object
-                      const stockName = signal.name || signal.stock?.name || '종목명 없음';
-                      const stockSymbol = signal.symbol || signal.stock?.symbol || '';
-                      const stockExchange = signal.exchange || signal.stock?.exchange || signal.stock?.market || '';
-
-                      const stockInfo = stockSymbol ? {
-                        symbol: stockSymbol,
-                        market: signal.stock?.market || 'US',
-                        exchange: stockExchange
-                      } : null;
-
-                      let ma90Diff: number | null = null;
-                      try {
-                        const details = typeof signal.details === 'string' ? JSON.parse(signal.details) : signal.details;
-                        if (details?.sma_90_ratio) ma90Diff = details.sma_90_ratio - 100;
-                      } catch {}
-
-                      return (
-                        <tr
-                          key={signal.id}
-                          className="hover:bg-muted/50 cursor-pointer"
-                          onClick={() => stockInfo && openNaverChartPopup(stockInfo)}
-                        >
-                          <td className="px-4 py-3 text-center">
-                            <div className="flex flex-col items-center gap-1">
-                              <span className="text-sm">{formatShortDate(signal.signal_date)}</span>
-                              {getSignalBadge(signal.strategy_name)}
-                            </div>
-                          </td>
-                          <td className="px-4 py-3">
-                            <a
-                              href={stockInfo ? getNaverInfoUrl(stockInfo) : '#'}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="font-semibold hover:text-primary hover:underline"
-                              onClick={(e) => e.stopPropagation()}
-                            >
-                              {stockName}
-                            </a>
-                            <div className="flex items-center gap-1.5 text-xs text-muted-foreground mt-0.5">
-                              <span>{stockSymbol}</span>
-                        <FreshnessDetails value={signal.freshness || signal.stock?.freshness}/>
-                              <a
-                                href={stockInfo ? getNaverChartUrl(stockInfo) : '#'}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                onClick={(e) => e.stopPropagation()}
-                                className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full border border-border text-muted-foreground hover:text-foreground transition-colors"
-                              >
-                                <BarChart3 className="h-3 w-3" />
-                                차트
-                              </a>
-                            </div>
-                          </td>
-                          <td className="px-4 py-3 text-right font-mono text-sm">{formatPrice(signal.signal_price)}</td>
-                          <td className="px-4 py-3 text-right">
-                            {ma90Diff !== null ? (
-                              <span className={cn("text-sm font-medium", ma90Diff >= 0 ? "text-green-600" : "text-red-600")}>
-                                {ma90Diff >= 0 ? '+' : ''}{ma90Diff.toFixed(1)}%
-                              </span>
-                            ) : (
-                              <span className="text-muted-foreground">-</span>
-                            )}
-                          </td>
-                          <td className="px-4 py-3 text-right font-mono text-sm">
-                            {signal.current_price ? formatPrice(signal.current_price) : '-'}
-                          </td>
-                          <td className="px-4 py-3 text-right">
-                            {signal.return_percent != null ? (
-                              <span className={cn(
-                                "inline-flex items-center gap-1 text-sm font-bold",
-                                signal.return_percent >= 0 ? "text-green-600" : "text-red-600"
-                              )}>
-                                {signal.return_percent >= 0 ? <TrendingUp className="h-3.5 w-3.5" /> : <TrendingDown className="h-3.5 w-3.5" />}
-                                {signal.return_percent >= 0 ? '+' : ''}{signal.return_percent.toFixed(2)}%
-                              </span>
-                            ) : '-'}
-                          </td>
-                          <td className="px-4 py-3 text-center">
-                            <span className="text-xs text-muted-foreground">{stockExchange}</span>
-                          </td>
-                          <td className="px-4 py-3 text-center">
-                            <Button variant="ghost" size="icon" onClick={(e) => handleAddToFavorites(e, signal)} className="h-8 w-8">
-                              <Star className="h-4 w-4 text-muted-foreground hover:text-yellow-500 hover:fill-yellow-500" />
-                            </Button>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-
-              {/* Mobile List View */}
-              <div className="lg:hidden divide-y">
-                {filteredSignals.map((signal) => {
-                  // MA API는 flat structure, Trendline API는 nested stock object
-                  const stockName = signal.name || signal.stock?.name || '종목명 없음';
-                  const stockSymbol = signal.symbol || signal.stock?.symbol || '';
-                  const stockExchange = signal.exchange || signal.stock?.exchange || signal.stock?.market || '';
-
-                  const stockInfo = stockSymbol ? {
-                    symbol: stockSymbol,
-                    market: signal.stock?.market || 'US',
-                    exchange: stockExchange
-                  } : null;
-
-                  let ma90Diff: number | null = null;
-                  try {
-                    const details = typeof signal.details === 'string' ? JSON.parse(signal.details) : signal.details;
-                    if (details?.sma_90_ratio) ma90Diff = details.sma_90_ratio - 100;
-                  } catch {}
-
-                  return (
-                    <div
-                      key={signal.id}
-                      className="active:bg-muted/50 transition-colors"
-                    >
-                      {/* Main Row */}
-                      <div
-                        className="flex items-center gap-3 py-3 px-4"
-                        onClick={() => stockInfo && openNaverChartPopup(stockInfo)}
-                      >
-                        {/* Left: Signal Info */}
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2 mb-0.5">
-                            <span className="font-semibold text-[15px] truncate">{stockName}</span>
-                            {getSignalBadge(signal.strategy_name)}
-                          </div>
-                          <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                            <span>{stockSymbol}</span>
-                        <FreshnessDetails value={signal.freshness || signal.stock?.freshness}/>
-                            <span className="text-muted-foreground/50">·</span>
-                            <span>{stockExchange}</span>
-                            <span className="text-muted-foreground/50">·</span>
-                            <span>{formatShortDate(signal.signal_date)}</span>
-                          </div>
-                        </div>
-
-                        {/* Right: Return */}
-                        <div className="text-right shrink-0">
-                          {signal.return_percent != null ? (
-                            <div className={cn(
-                              "text-[15px] font-semibold tabular-nums",
-                              signal.return_percent >= 0 ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"
-                            )}>
-                              {signal.return_percent >= 0 ? '+' : ''}{signal.return_percent.toFixed(2)}%
-                            </div>
-                          ) : (
-                            <div className="text-muted-foreground">-</div>
-                          )}
-                          <div className="text-xs text-muted-foreground tabular-nums">
-                            {formatPrice(signal.signal_price)} → {signal.current_price ? formatPrice(signal.current_price) : '-'}
-                          </div>
-                        </div>
-
-                        <ChevronRight className="w-4 h-4 text-muted-foreground/50 shrink-0" />
-                      </div>
-
-                      {/* Quick Actions Row */}
-                      <div className="flex items-center gap-1 px-4 pb-3 overflow-x-auto scrollbar-none">
-                        {ma90Diff !== null && (
-                          <span className={cn(
-                            "shrink-0 text-xs px-2 py-1 rounded-full border",
-                            ma90Diff >= 0
-                              ? "border-green-500/30 text-green-600 dark:text-green-400"
-                              : "border-red-500/30 text-red-600 dark:text-red-400"
-                          )}>
-                            90일선 {ma90Diff >= 0 ? '+' : ''}{ma90Diff.toFixed(1)}%
-                          </span>
-                        )}
-                        <a
-                          href={stockInfo ? getNaverChartUrl(stockInfo) : '#'}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          onClick={(e) => e.stopPropagation()}
-                          className="shrink-0 flex items-center gap-1 text-xs px-2 py-1 rounded-full border border-border text-muted-foreground hover:text-foreground transition-colors"
-                        >
-                          <BarChart3 className="h-3 w-3" />
-                          차트
-                        </a>
-                        <button
-                          onClick={(e) => handleAddToFavorites(e, signal)}
-                          className="shrink-0 flex items-center gap-1 text-xs px-2 py-1 rounded-full border border-yellow-500/30 text-yellow-600 dark:text-yellow-400 hover:bg-yellow-500/10 transition-colors"
-                        >
-                          <Star className="h-3 w-3" />
-                          관심
-                        </button>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-
-              {/* Load More */}
-              <div ref={loadMoreRef} className="py-4 text-center border-t">
-                {isFetchingNextPage ? (
-                  <div className="inline-flex items-center gap-2 text-muted-foreground">
-                    <div className="animate-spin rounded-full h-4 w-4 border-2 border-primary border-t-transparent"></div>
-                    <span className="text-sm">더 불러오는 중...</span>
-                  </div>
-                ) : hasNextPage ? (
-                  <span className="text-muted-foreground text-sm">스크롤하여 더 보기 ({allSignals.length} / {total})</span>
-                ) : (
-                  <span className="text-muted-foreground text-sm">
-                    {signalFilter !== 'all' || returnFilter !== 'all'
-                      ? `필터 결과: ${filteredSignals.length}개`
-                      : `모든 시그널 로드 완료 (${total})`}
-                  </span>
-                )}
-              </div>
-            </>
-          ) : (
-            <div className="text-center py-20">
-              <div className="inline-flex items-center justify-center w-14 h-14 rounded-full bg-muted mb-4">
-                <TrendingUp className="w-6 h-6 text-muted-foreground" />
-              </div>
-              <p className="font-medium">
-                {signalFilter !== 'all' || returnFilter !== 'all' ? '필터 조건에 맞는 시그널이 없습니다' : '시그널이 없습니다'}
-              </p>
-              <p className="text-sm text-muted-foreground mt-1">
-                {signalFilter !== 'all' || returnFilter !== 'all' ? '다른 필터를 선택해보세요' : '설정에서 시그널 분석을 실행하세요'}
-              </p>
-            </div>
-          )}
-        </div>
+  return <AppLayout><div className="p-4 lg:p-6 space-y-5 max-w-[1600px] mx-auto">
+    <div className="flex items-start justify-between gap-3">
+      <div><h1 className="text-xl font-semibold">시그널 탐색</h1><p className="mt-1 text-sm text-muted-foreground">확정 일봉과 최신 분석으로 확인된 신호를 찾아보세요.</p></div>
+      <Button variant="outline" size="sm" onClick={() => void refetch()} disabled={isFetching} aria-label="시그널 새로고침"><RefreshCw className={cn('h-4 w-4 mr-2', isFetching && 'animate-spin')}/>새로고침</Button>
+    </div>
+    <div className="flex gap-2" role="group" aria-label="분석 종류">
+      {(['ma','trendline'] as const).map(value => <Button key={value} variant={category === value ? 'default' : 'outline'} aria-pressed={category === value} onClick={() => { setCategory(value); setStrategy('all'); }}>{value === 'ma' ? '이동평균 MA' : '추세선·패턴'}</Button>)}
+    </div>
+    <section aria-label="신호 필터" className="rounded-xl border bg-card p-4 space-y-3">
+      <div className="grid grid-cols-2 lg:grid-cols-6 gap-3">
+        <label className="col-span-2 text-xs text-muted-foreground space-y-1.5"><span>종목 검색</span><div className="relative"><Search className="absolute left-3 top-3 h-4 w-4"/><input className={cn(fieldClass,'pl-9 text-foreground')} aria-label="종목 검색" placeholder="티커 또는 종목명" value={search} onChange={e => setSearch(e.target.value)} maxLength={50}/></div></label>
+        <label className="text-xs text-muted-foreground space-y-1.5"><span>전략</span><select aria-label="전략" className={cn(fieldClass,'text-foreground')} value={strategy} onChange={e => setStrategy(e.target.value)}><option value="all">전체 전략</option>{Object.entries(strategies[category]).map(([value,label]) => <option key={value} value={value}>{label}</option>)}</select></label>
+        <label className="text-xs text-muted-foreground space-y-1.5"><span>발생 기간</span><select aria-label="발생 기간" className={cn(fieldClass,'text-foreground')} value={days} onChange={e => setDays(Number(e.target.value))}>{[3,10,30].map(value => <option key={value} value={value}>최근 {value}일</option>)}</select></label>
+        <label className="text-xs text-muted-foreground space-y-1.5"><span>발생 후 등락</span><select aria-label="발생 후 등락" className={cn(fieldClass,'text-foreground')} value={returnFilter} onChange={e => setReturnFilter(e.target.value)}><option value="all">전체 등락</option><option value="positive">상승 (&gt;0%)</option><option value="negative">하락 (&lt;0%)</option><option value="flat">보합 (=0%)</option><option value="unknown">등락 미확인</option></select></label>
+        <label className="text-xs text-muted-foreground space-y-1.5"><span>정렬</span><select aria-label="정렬" className={cn(fieldClass,'text-foreground')} value={sort} onChange={e => setSort(e.target.value)}><option value="latest">최근 발생순</option><option value="return_desc">등락 높은순</option><option value="return_asc">등락 낮은순</option></select></label>
       </div>
-
-      <ScrollToTopButton />
-      <Toaster position="top-center" richColors />
-    </AppLayout>
-  );
+      <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground"><span>기준 거래일까지 최근 {days}일 · 주말·공휴일을 포함한 날짜 범위</span><Button variant="ghost" size="sm" disabled={!hasFilters} onClick={reset}>필터 초기화</Button></div>
+    </section>
+    {summary && <div className="rounded-lg border bg-muted/20 p-3 text-xs text-muted-foreground space-y-1" aria-live="polite">
+      <p>기준 거래일: 미국 {summary.expected_sessions.US} · 한국 {summary.expected_sessions.KR} · 최신 일봉·{category === 'ma' ? 'MA' : '추세'} 분석 확인</p>
+      <p>현재 조건에서 지연·미확인 분석 <strong className="text-foreground">{summary.excluded_stale.toLocaleString()}개</strong> 제외 · 최근 분석 {summary.analyzed_at ? formatShortDateTime(summary.analyzed_at) : '해당 신호 없음'}</p>
+    </div>}
+    {stats && <div className="grid grid-cols-2 lg:grid-cols-4 gap-3" aria-label="전체 필터 결과 통계">
+      <div className="rounded-lg border p-3"><p className="text-xs text-muted-foreground">조건에 맞는 전체 신호</p><p className="text-xl font-semibold mt-1">{stats.total_signals.toLocaleString()}<span className="text-xs text-muted-foreground ml-2">{stats.stock_count.toLocaleString()}종목</span></p></div>
+      <div className="rounded-lg border p-3"><p className="text-xs text-muted-foreground flex items-center gap-1"><ArrowUp className="h-3 w-3"/>상승 / 하락</p><p className="text-xl font-semibold mt-1"><span className="text-green-600 dark:text-green-400">{stats.positive_returns.toLocaleString()}</span> / <span className="text-red-600 dark:text-red-400">{stats.negative_returns.toLocaleString()}</span></p></div>
+      <div className="rounded-lg border p-3"><p className="text-xs text-muted-foreground">평균 등락률</p><p className="text-xl mt-1"><Change value={stats.avg_return}/></p></div>
+      <div className="rounded-lg border p-3"><p className="text-xs text-muted-foreground flex items-center gap-1"><ArrowDown className="h-3 w-3"/>보합 / 미확인</p><p className="text-xl font-semibold mt-1">{stats.flat_returns.toLocaleString()} / {stats.unknown_returns.toLocaleString()}</p></div>
+    </div>}
+    <p className="text-xs text-muted-foreground">등락률은 신호일 종가 대비 분석 시점 가격의 변화입니다. 매도 신호도 같은 기준이며, 거래 비용은 별도입니다. <Link href="/backtest" className="underline underline-offset-2 text-foreground">비용을 반영한 백테스트</Link></p>
+    {isRefetchError && <p role="alert" className="rounded-md border border-amber-500/30 p-3 text-sm text-amber-600">새로고침에 실패해 이전 조회 결과를 표시합니다. 다시 새로고침해주세요.</p>}
+    <section className="rounded-xl border bg-card overflow-hidden" aria-label="시그널 목록" aria-busy={isLoading}>
+      {isLoading ? <p className="py-16 text-center text-muted-foreground" role="status">시그널을 불러오는 중입니다…</p> : error && !summary ? <div className="py-16 text-center space-y-3" role="alert"><p>시그널을 불러오지 못했습니다.</p><Button variant="outline" onClick={() => void refetch()}>다시 시도</Button></div> : signals.length === 0 ? <div className="py-16 px-4 text-center space-y-2"><p className="font-medium">현재 조건에 맞는 최신 신호가 없습니다.</p><p className="text-sm text-muted-foreground">기간이나 필터를 바꿔보세요. 지연된 분석 신호는 제외됩니다.</p>{hasFilters && <Button variant="outline" onClick={reset}>필터 초기화</Button>}</div> : <>
+        <div className="hidden lg:block overflow-x-auto"><table className="w-full text-sm"><caption className="sr-only">필터 조건과 최신성 검증을 통과한 신호</caption><thead className="bg-muted/50 border-b"><tr>{['발생일 / 전략','종목 / 분석 기준','신호일 종가','분석 시점 가격','발생 후 등락','상세·차트·관심'].map(label => <th key={label} className="px-4 py-3 text-left font-medium text-muted-foreground">{label}</th>)}</tr></thead><tbody className="divide-y">{signals.map(signal => <tr key={signal.id} className="hover:bg-muted/30">
+          <td className="px-4 py-3 space-y-1"><div>{formatShortDate(signal.signal_date)}</div><SignalType signal={signal}/></td>
+          <td className="px-4 py-3"><Link className="font-semibold hover:underline" href={`/signals/${signal.stock_id}`}>{signal.name}</Link><div className="text-xs text-muted-foreground mt-1">{signal.symbol} · {signal.exchange || signal.market}</div><FreshnessDetails value={signal.freshness} category={category}/></td>
+          <td className="px-4 py-3 tabular-nums">{money(signal.signal_price, signal.market)}{ma90Distance(signal.details) != null && <div className="text-xs text-muted-foreground mt-1">당시 MA90 대비 <Change value={ma90Distance(signal.details)}/></div>}</td>
+          <td className="px-4 py-3 tabular-nums">{money(signal.current_price, signal.market)}<div className="text-xs text-muted-foreground mt-1">{formatShortDateTime(signal.price_as_of)}</div></td>
+          <td className="px-4 py-3"><Change value={signal.return_percent}/></td><td className="px-4 py-3">{actions(signal)}</td>
+        </tr>)}</tbody></table></div>
+        <div className="lg:hidden divide-y">{signals.map(signal => <article key={signal.id} className="p-4 space-y-3"><div className="flex items-start justify-between gap-3"><div className="min-w-0"><Link href={`/signals/${signal.stock_id}`} className="font-semibold hover:underline">{signal.name}</Link><p className="text-xs text-muted-foreground mt-1">{signal.symbol} · {signal.exchange || signal.market} · {formatShortDate(signal.signal_date)}</p></div><div className="text-right shrink-0"><Change value={signal.return_percent}/></div></div><SignalType signal={signal}/><div className="text-xs text-muted-foreground">신호일 {money(signal.signal_price, signal.market)} → 분석 시점 {money(signal.current_price, signal.market)}<span className="block mt-1">가격 기준 {formatShortDateTime(signal.price_as_of)}</span></div><FreshnessDetails value={signal.freshness} category={category}/>{actions(signal)}</article>)}</div>
+        <div ref={sentinel} className="border-t p-4 text-center space-y-2">
+          <p className="text-xs text-muted-foreground" aria-live="polite">{signals.length.toLocaleString()} / {summary?.total.toLocaleString()}개 표시</p>
+          {isFetchNextPageError ? <><p role="alert" className="text-sm text-destructive">다음 목록을 불러오지 못했습니다.</p><Button variant="outline" onClick={() => void fetchNextPage()}>다음 목록 다시 시도</Button></> : hasNextPage ? <Button variant="outline" disabled={isFetching} onClick={() => void fetchNextPage()}>{isFetchingNextPage ? '불러오는 중…' : '더 보기'}</Button> : <p className="text-xs text-muted-foreground">조건에 맞는 전체 신호를 확인했습니다.</p>}
+        </div>
+      </>}
+    </section>
+    <details className="rounded-lg border p-4 text-sm"><summary className="cursor-pointer font-medium">이 신호는 어떻게 계산하나요?</summary><div className="mt-3 space-y-2 text-muted-foreground">
+      {category === 'ma' ? <><p>골든·데드크로스: MA20과 MA60이 교차한 날입니다.</p><p>지지·저항: MA20·60·90의 2% 이내에서 저가·고가가 닿고, 종가와 양봉·음봉 조건을 만족한 날입니다.</p><p>상향·하향돌파: 전일과 당일 종가가 이평선의 반대편으로 이동한 날입니다. 정배열·역배열은 MA20·60·90의 순서가 새로 바뀐 날입니다.</p></> : <><p>추세선: 이후 5개 봉으로 확정한 고점 3개 이상에서 하락선을 계산합니다. 고가가 선을 넘으면 돌파, 선 아래 3% 이내의 양봉이면 접근 신호입니다.</p><p>되돌림: 돌파 당시의 추세선을 유지하며 저가가 선 위 0~3% 범위, 종가가 선 위에 있는 경우입니다.</p><p>도지: 시가 대비 몸통 1% 이내, 위·아래 꼬리와 전일 대비 종가 상승 조건입니다. 추세선 신호에 거래량 확인 조건은 적용하지 않습니다.</p></>}
+      <p>기간은 각 시장의 최신 완료 거래일까지 계산합니다. 화면은 60초마다 저장된 분석을 다시 조회합니다.</p>
+    </div></details>
+  </div><ScrollToTopButton/><Toaster position="top-center" richColors/></AppLayout>;
 }

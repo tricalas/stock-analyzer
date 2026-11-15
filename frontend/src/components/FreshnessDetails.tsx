@@ -1,13 +1,13 @@
 'use client';
 import { Freshness, freshnessLabel, sessionLabel } from '@/lib/freshness';
 import { useTimezone } from '@/hooks/useTimezone';
-export default function FreshnessDetails({ value }: { value?: Freshness | null }) {
+export default function FreshnessDetails({ value, category }: { value?: Freshness | null; category?: 'ma' | 'trendline' }) {
   const { formatShortDateTime } = useTimezone();
   const timestamp = (v?: string | null) => v ? formatShortDateTime(v) : '미확인';
-  const good = value?.history_status === 'current' && value.trend_current && value.ma_current;
+  const good = value?.history_status === 'current' && (category==='ma' ? value.ma_current : category==='trendline' ? value.trend_current : value.trend_current && value.ma_current);
   return <details className="text-[11px] mt-1 max-w-full" onClick={e=>e.stopPropagation()}>
     <summary className={`cursor-pointer select-none ${good ? 'text-green-600 dark:text-green-400' : 'text-amber-600 dark:text-amber-400'}`}>
-      {freshnessLabel(value)} · 일봉 {sessionLabel(value?.history_session)}
+      {freshnessLabel(value, category)} · 일봉 {sessionLabel(value?.history_session)}
     </summary>
     <dl className="mt-2 rounded-md border bg-muted/30 p-2 space-y-1 text-muted-foreground whitespace-normal min-w-48">
       <div>기준 거래일: {value?.expected_session || '미확인'}</div>
