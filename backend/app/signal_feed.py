@@ -66,7 +66,8 @@ def signal_feed(db,category,skip=0,limit=30,strategy=None,signal_type=None,
             except (ValueError,TypeError):details={}
         signals.append({**{c.name:getattr(row,c.name) for c in row.__table__.columns},'details':details,
             'stock':stock,'symbol':stock.symbol,'name':stock.name,'market':stock.market,
-            'exchange':stock.exchange,'freshness':stock.freshness,'price_as_of':iso(row.analyzed_at)})
+            'exchange':stock.exchange,'naver_symbol':stock.naver_symbol,
+            'freshness':stock.freshness,'price_as_of':iso(row.analyzed_at)})
     return {'total':count,'signals':signals,'analyzed_at':iso(last),
         'stats':{'total_signals':count,'stock_count':stock_count,'positive_returns':positive or 0,
                  'negative_returns':negative or 0,'flat_returns':flat or 0,'unknown_returns':unknown or 0,

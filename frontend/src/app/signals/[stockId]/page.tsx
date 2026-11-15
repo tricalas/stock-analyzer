@@ -20,6 +20,9 @@ interface MAAnalysisResponse {
   stock_id: number;
   symbol: string;
   name: string;
+  market: string;
+  exchange: string | null;
+  naver_symbol?: string | null;
   current_price: number | null;
   ma_values: Record<number, number>;
   alignment: 'bullish' | 'bearish' | 'neutral';
@@ -137,7 +140,7 @@ export default function StockMAAnalysisPage() {
               <div className="flex items-center gap-4 mt-1 text-sm text-muted-foreground">
                 <span className="font-mono">{formatPrice(data.current_price)}</span>
                 <a
-                  href={getNaverInfoUrl({ symbol: data.symbol, market: 'US' })}
+                  href={getNaverInfoUrl(data)}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="inline-flex items-center gap-1 hover:text-foreground transition-colors"
@@ -146,7 +149,7 @@ export default function StockMAAnalysisPage() {
                   네이버
                 </a>
                 <a
-                  href={getNaverChartUrl({ symbol: data.symbol, market: 'US' })}
+                  href={getNaverChartUrl(data)}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="inline-flex items-center gap-1 hover:text-foreground transition-colors"

@@ -37,6 +37,7 @@ api.interceptors.response.use(
 );
 
 export interface Stock {
+  naver_symbol?: string | null;
   freshness?: Freshness;
   id: number;
   symbol: string;

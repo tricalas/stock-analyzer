@@ -70,6 +70,22 @@ class Regressions(unittest.TestCase):
         self.stock.history_records_count=count
         self.db.commit()
 
+    def test_ma_detail_exposes_market_exchange_and_official_naver_identifier(self):
+        self.history(120)
+        self.stock.exchange='NASDAQ';self.stock.sector='TEST.O';self.db.commit()
+        response=self.client.get(f'/api/stocks/{self.stock.id}/ma-analysis',headers=self.headers())
+        self.assertEqual(response.status_code,200,response.text)
+        data=response.json()
+        self.assertEqual((data['market'],data['exchange'],data['naver_symbol']),('US','NASDAQ','TEST.O'))
+
+    def test_naver_identifier_accepts_verified_aliases_but_not_industry_names(self):
+        self.stock.symbol='TCBI';self.stock.provider_symbol='TXCP';self.stock.sector='TXCP.K'
+        self.assertEqual(self.stock.naver_symbol,'TXCP.K')
+        for sector in ('Financial Services','TECHNOLOGY','https://other.example/'):
+            self.stock.sector=sector;self.assertIsNone(self.stock.naver_symbol)
+        self.stock.symbol='ET PR I';self.stock.provider_symbol='ET/I';self.stock.sector='ET_pi'
+        self.assertEqual(self.stock.naver_symbol,'ET_pi')
+
     def test_partial_recovery_analyzes_successful_repairs_before_reporting_failure(self):
         from app.recover_history import recover_history
         with patch('app.recover_history.kis_history_crawler') as crawler, \

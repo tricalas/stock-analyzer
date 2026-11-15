@@ -1,11 +1,12 @@
 /**
- * 네이버 주식 URL 생성 유틸리티 (미국 주식 전용)
+ * 네이버 주식 URL 생성 유틸리티
  */
 
 interface StockInfo {
   symbol: string;
   market: string;
-  exchange?: string;
+  exchange?: string | null;
+  naver_symbol?: string | null;
 }
 
 /**
@@ -14,16 +15,19 @@ interface StockInfo {
  * - NYSE 종목은 그대로
  */
 export function getNaverSymbol(stock: StockInfo): string {
-  if (stock.exchange === 'NASDAQ') {
-    return `${stock.symbol}.O`;
+  if (stock.naver_symbol) return stock.naver_symbol;
+  const symbol = stock.symbol.trim();
+  if (stock.market === 'US' && ['NASDAQ', 'NAS'].includes((stock.exchange || '').toUpperCase())) {
+    return symbol.endsWith('.O') ? symbol : `${symbol}.O`;
   }
-  return stock.symbol;
+  return symbol;
 }
 
 /**
  * 네이버 차트 URL 생성
  */
 export function getNaverChartUrl(stock: StockInfo): string {
+  if (stock.market === 'KR') return `https://m.stock.naver.com/fchart/domestic/stock/${encodeURIComponent(stock.symbol)}`;
   const naverSymbol = getNaverSymbol(stock);
   return `https://m.stock.naver.com/fchart/foreign/stock/${naverSymbol}`;
 }
@@ -32,6 +36,7 @@ export function getNaverChartUrl(stock: StockInfo): string {
  * 네이버 종목 정보 URL 생성
  */
 export function getNaverInfoUrl(stock: StockInfo): string {
+  if (stock.market === 'KR') return `https://m.stock.naver.com/domestic/stock/${encodeURIComponent(stock.symbol)}/total`;
   const naverSymbol = getNaverSymbol(stock);
   return `https://m.stock.naver.com/worldstock/stock/${naverSymbol}/total`;
 }

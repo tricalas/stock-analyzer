@@ -36,6 +36,7 @@ class StockCreate(StockBase):
 
 class Stock(StockBase):
     id: int
+    naver_symbol: Optional[str] = None
     freshness: Optional[Dict] = None
     history_precision_version: int = 0
     is_active: bool
@@ -243,6 +244,7 @@ class StockSignalWithStock(StockSignal):
     name: Optional[str] = None
     market: Optional[str] = None
     exchange: Optional[str] = None
+    naver_symbol: Optional[str] = None
     freshness: Optional[dict] = None
     price_as_of: Optional[datetime] = None
 

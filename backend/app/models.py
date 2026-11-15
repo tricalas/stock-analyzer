@@ -87,6 +87,23 @@ class Stock(Base):
     def collection_paused(self):
         return self.recovery_issue is not None and self.recovery_issue.status == 'reviewed'
 
+    @property
+    def naver_symbol(self):
+        """The Naver US crawler stores its Reuters identifier in sector."""
+        import re
+        if self.market == 'KR':
+            return self.symbol
+        candidate = (self.sector or '').strip()
+        if not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._-]{0,39}', candidate):
+            return None
+        symbols = [s for s in (self.symbol, self.provider_symbol) if s]
+        normalized = {re.sub(r'[\s/]', '', s).upper() for s in symbols}
+        roots = {re.split(r'[\s/.]', s)[0].upper() for s in symbols}
+        base = candidate.split('.')[0]
+        if base.upper() in normalized or base.split('_')[0].upper() in roots:
+            return candidate
+        return None
+
 class StockPrice(Base):
     __tablename__ = "stock_prices"
 

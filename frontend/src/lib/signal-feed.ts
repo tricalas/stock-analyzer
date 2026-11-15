@@ -2,6 +2,7 @@ import type { Freshness } from './freshness';
 export type SignalCategory = 'ma' | 'trendline';
 export interface FeedFilters { category: SignalCategory; strategy: string; returnFilter: string; search: string; days: number; sort: string }
 export interface FeedSignal {
+  naver_symbol?: string | null;
   id: number; stock_id: number; symbol: string; name: string; market: string; exchange?: string | null;
   signal_type: string; signal_date: string; signal_price: number; strategy_name: string; ma_period: number;
   current_price: number | null; return_percent: number | null; analyzed_at: string; price_as_of: string;

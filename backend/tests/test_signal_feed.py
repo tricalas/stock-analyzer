@@ -25,6 +25,13 @@ class SignalFeed(unittest.TestCase):
     def get(self,path='/api/signals/ma'):
         r=self.client.get(path,headers=self.headers());self.assertEqual(r.status_code,200,r.text);return r.json()
 
+    def test_feed_retains_naver_alias_in_flat_and_nested_stock_metadata(self):
+        self.stock.symbol='TCBI';self.stock.provider_symbol='TXCP';self.stock.exchange='NASDAQ';self.stock.sector='TXCP.K'
+        self.db.commit();self.add()
+        row=self.get()['signals'][0]
+        self.assertEqual(row['naver_symbol'],'TXCP.K')
+        self.assertEqual(row['stock']['naver_symbol'],'TXCP.K')
+
     def test_categories_cannot_mix(self):
         self.add();trend=self.add('doji_star')
         ma=self.get();tr=self.get('/api/signals')

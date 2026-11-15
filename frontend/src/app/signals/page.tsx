@@ -77,7 +77,7 @@ export default function SignalsPage() {
     try { await stockApi.addToFavorites(signal.stock_id); toast.success(`${signal.name} 관심종목 추가`); }
     catch { toast.error('관심종목 추가에 실패했습니다.'); }
   }
-  const naver = (signal: FeedSignal) => signal.market === 'KR' ? `https://m.stock.naver.com/domestic/stock/${encodeURIComponent(signal.symbol)}/total` : getNaverInfoUrl({ symbol: signal.symbol, market: signal.market, exchange: signal.exchange || undefined });
+  const naver = (signal: FeedSignal) => getNaverInfoUrl(signal);
   const actions = (signal: FeedSignal) => <div className="flex items-center justify-end gap-1">
     <Button variant="ghost" size="icon" asChild className="h-8 w-8"><Link href={`/signals/${signal.stock_id}`} aria-label={`${signal.name} 분석 상세`}><Activity className="h-4 w-4"/></Link></Button>
     <Button variant="ghost" size="icon" asChild className="h-8 w-8"><a href={naver(signal)} target="_blank" rel="noopener noreferrer" aria-label={`${signal.name} 네이버 종목 페이지 (새 탭)`} title="네이버 종목 페이지 (새 탭)"><ExternalLink className="h-4 w-4"/></a></Button>
