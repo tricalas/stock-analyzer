@@ -40,6 +40,9 @@ class MappingRequest(BaseModel):
     provider_symbol: str | None = Field(default=None, max_length=20, pattern=r'^[A-Z0-9./-]+$')
     provider_exchange: Literal['NAS', 'NYS', 'AMS'] | None = None
     notes: str = Field(default='', max_length=1000)
+    preserve_validated_history: bool = False
+    reviewed: bool | None = None
+    review_reason: Literal['listing_ended', 'ticker_changed', 'trading_halted', 'provider_unsupported'] | None = None
 
 
 @router.get('/overview')
@@ -53,6 +56,7 @@ def overview(db: Session = Depends(get_db)):
             'alerts': [serialize(a) for a in open_alerts],
             'unacknowledged_alerts': sum(a.acknowledged_at is None for a in open_alerts),
             'recovery_count': db.query(RecoveryIssue).filter_by(status='open').count(),
+            'reviewed_count': db.query(RecoveryIssue).filter_by(status='reviewed').count(),
             'runs': [{**serialize(run), 'progress': serialize(db.query(TaskProgress).filter_by(task_id=run.id).one())} for run in runs]}
 
 
@@ -106,9 +110,11 @@ def resume_run(run_id: str, db: Session = Depends(get_db)):
 
 
 @router.get('/recovery')
-def recovery(reason: str | None = None, search: str = '', skip: int = Query(0, ge=0),
+def recovery(reason: str | None = None, search: str = '', status: Literal['open','reviewed','resolved','all'] = 'open', skip: int = Query(0, ge=0),
              limit: int = Query(100, ge=1, le=500), db: Session = Depends(get_db)):
-    query = db.query(RecoveryIssue, Stock).join(Stock, Stock.id == RecoveryIssue.stock_id).filter(RecoveryIssue.status == 'open')
+    query = db.query(RecoveryIssue, Stock).join(Stock, Stock.id == RecoveryIssue.stock_id)
+    if status != 'all':
+        query = query.filter(RecoveryIssue.status == status)
     if reason:
         query = query.filter(RecoveryIssue.reason == reason)
     if search:
@@ -128,12 +134,22 @@ def update_mapping(stock_id: int, request: MappingRequest, db: Session = Depends
         raise HTTPException(404, '복구 대상 종목을 찾을 수 없습니다.')
     if db.query(PipelineRun).filter_by(active_key='US').first():
         raise HTTPException(409, '수집·분석 작업 종료 후 공급사 코드를 수정해주세요.')
+    if (request.reviewed or request.preserve_validated_history) and 'https://' not in request.notes:
+        raise HTTPException(422, '확인 근거의 HTTPS 주소와 검토 내용을 메모에 남겨주세요.')
+    if request.reviewed and not request.review_reason:
+        raise HTTPException(422, '자동 수집 중단 사유를 선택해주세요.')
+    if request.preserve_validated_history and stock.history_precision_version < 1:
+        raise HTTPException(422, '가격 정밀도 검증을 마친 과거 이력만 보존할 수 있습니다.')
+    was_reviewed = issue.status == 'reviewed'
     changed = (stock.provider_symbol, stock.provider_exchange) != (request.provider_symbol, request.provider_exchange)
     stock.provider_symbol = request.provider_symbol
     stock.provider_exchange = request.provider_exchange
     issue.notes = request.notes
-    if changed:
-        stock.history_precision_version = 0
+    if changed or request.reviewed is True or (was_reviewed and request.reviewed is False):
+        if changed and not request.preserve_validated_history:
+            stock.history_precision_version = 0
+        stock.history_completed_date = None
+        stock.quote_updated_at = None
         stock.ma90_price = None
         stock.signal_analyzed_at = None
         stock.ma_signal_analyzed_at = None
@@ -142,6 +158,13 @@ def update_mapping(stock_id: int, request: MappingRequest, db: Session = Depends
         issue.message = '공급사 코드가 수정되었습니다. 재수집 후 분석에 반영됩니다.'
         issue.resolved_at = None
         db.query(StockSignal).filter_by(stock_id=stock_id).update({'is_active': False})
+    if request.reviewed is True:
+        issue.status = 'reviewed'
+        issue.reason = request.review_reason
+        issue.message = '공식 근거를 확인해 자동 수집을 중단했습니다. 종목·태그·과거 기록은 보존됩니다.'
+        issue.resolved_at = None
+    elif was_reviewed and request.reviewed is None:
+        issue.status = 'reviewed'
     db.commit()
     from app.cache import invalidate_cache
     invalidate_cache()

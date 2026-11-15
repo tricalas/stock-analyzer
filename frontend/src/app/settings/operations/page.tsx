@@ -17,6 +17,10 @@ export default function OperationsPage() {
   const client = useQueryClient();
   const [busy, setBusy] = useState(false);
   const [reason, setReason] = useState('');
+  const [reviewStatus, setReviewStatus] = useState('open');
+  const [paused, setPaused] = useState(false);
+  const [reviewReason, setReviewReason] = useState('listing_ended');
+  const [preserve, setPreserve] = useState(false);
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(0);
   const [edit, setEdit] = useState<Recovery | null>(null);
@@ -28,8 +32,8 @@ export default function OperationsPage() {
     queryFn: () => operationsRequest<OperationsOverview>('/overview'), refetchInterval: 15000,
   });
   const recovery = useQuery({
-    queryKey: ['operations-recovery', user?.id, reason, search, page], enabled: !!user?.is_admin,
-    queryFn: () => operationsRequest<{ total: number; items: Recovery[] }>(`/recovery?reason=${encodeURIComponent(reason)}&search=${encodeURIComponent(search)}&skip=${page*50}&limit=50`),
+    queryKey: ['operations-recovery', user?.id, reason, search, page, reviewStatus], enabled: !!user?.is_admin,
+    queryFn: () => operationsRequest<{ total: number; items: Recovery[] }>(`/recovery?status=${reviewStatus}&reason=${encodeURIComponent(reason)}&search=${encodeURIComponent(search)}&skip=${page*50}&limit=50`),
     refetchInterval: 30000,
   });
   const incidents = useQuery({
@@ -86,16 +90,17 @@ export default function OperationsPage() {
         {run.error_message && <p className="text-sm text-destructive">{run.error_message}</p>}
       </div>)}
     </section>
-    <section className="space-y-3"><div className="flex flex-wrap items-center justify-between gap-2"><h2 className="text-lg font-semibold">수집 실패 종목 <span className="text-muted-foreground">{recovery.data?.total ?? data.recovery_count}</span></h2>
+    <section className="space-y-3"><div className="flex flex-wrap items-center justify-between gap-2"><h2 className="text-lg font-semibold">수집 실패·검토 기록 <span className="text-muted-foreground">{recovery.data?.total ?? data.recovery_count}</span></h2>
       <Button variant="outline" disabled={busy || running || !data.recovery_count} onClick={() => action('/runs', { scope: 'retry' })}><RefreshCw className="h-4 w-4 mr-2"/>실패 종목 전체 재시도</Button></div>
       <p className="text-xs text-muted-foreground">원래 종목코드·태그·과거 기록은 보존됩니다. 공급사 코드 변경은 확인된 값으로 수정하고 재수집해주세요.</p>
       <div className="flex flex-wrap gap-2"><Input aria-label="종목 검색" className="max-w-xs" value={search} placeholder="종목코드·이름 검색" onChange={e => {setSearch(e.target.value);setPage(0);}}/>
+        <select aria-label="검토 상태" className="rounded-md border bg-background px-3 text-sm h-10" value={reviewStatus} onChange={e=>{setReviewStatus(e.target.value);setPage(0);}}><option value="open">복구 필요</option><option value="reviewed">검토 완료·수집 중단</option><option value="resolved">수집 복구 완료</option><option value="all">전체 기록</option></select>
         <select aria-label="실패 원인" className="rounded-md border bg-background px-3 text-sm h-10 max-w-full" value={reason} onChange={e => {setReason(e.target.value);setPage(0);}}><option value="">모든 원인</option>{Object.entries(reasons).map(([key,label]) => <option key={key} value={key}>{label}</option>)}</select></div>
       {recovery.error && <p role="alert" className="text-sm text-destructive">실패 종목을 불러오지 못했습니다.</p>}
       {recovery.data?.items.map(stock => <div key={stock.stock_id} className="rounded-xl border p-4 space-y-2">
-        <div className="flex flex-wrap justify-between gap-3"><div><strong>{stock.symbol}</strong><span className="ml-2 text-sm text-muted-foreground">{stock.name}</span><p className="text-sm mt-1">{reasons[stock.reason] || stock.reason} · 시도 {stock.attempts}회</p></div>
-          <div className="flex gap-2"><Button size="sm" variant="outline" disabled={busy || running} onClick={() => {setEdit(stock);setSymbol(stock.provider_symbol || '');setExchange(stock.provider_exchange || '');setNotes(stock.notes || '');}}><Pencil className="h-3 w-3 mr-1"/>코드·메모</Button>
-            <Button size="sm" disabled={busy || running} onClick={() => action('/runs', {scope:'retry',stock_ids:[stock.stock_id]})}>재시도</Button></div></div>
+        <div className="flex flex-wrap justify-between gap-3"><div><strong>{stock.symbol}</strong><span className="ml-2 text-sm text-muted-foreground">{stock.name}</span><p className="text-sm mt-1">{stock.status==='reviewed'?'검토 완료·수집 중단':stock.status==='resolved'?'수집 복구 완료':'복구 필요'} · {reasons[stock.reason] || stock.reason} · 시도 {stock.attempts}회</p></div>
+          <div className="flex gap-2"><Button size="sm" variant="outline" disabled={busy || running} onClick={() => {setEdit(stock);setSymbol(stock.provider_symbol || '');setExchange(stock.provider_exchange || '');setNotes(stock.notes || '');setPaused(stock.status==='reviewed');setReviewReason(['listing_ended','ticker_changed','trading_halted','provider_unsupported'].includes(stock.reason)?stock.reason:'listing_ended');setPreserve(false);}}><Pencil className="h-3 w-3 mr-1"/>코드·검토</Button>
+            <Button size="sm" disabled={busy || running || stock.status!=='open'} onClick={() => action('/runs', {scope:'retry',stock_ids:[stock.stock_id]})}>재시도</Button></div></div>
         <p className="text-xs text-muted-foreground break-words">{stock.message}</p>
         {stock.provider_symbol && <p className="text-xs">공급사 코드: {stock.provider_symbol} · {stock.provider_exchange || stock.exchange}</p>}
         {stock.notes && <p className="text-sm">메모: {stock.notes}</p>}
@@ -105,11 +110,15 @@ export default function OperationsPage() {
       {recovery.data && recovery.data.total > 50 && <div className="flex justify-between"><Button variant="outline" disabled={page===0} onClick={() => setPage(p=>p-1)}>이전</Button><span className="text-sm">{page+1} / {Math.ceil(recovery.data.total/50)}</span><Button variant="outline" disabled={(page+1)*50>=recovery.data.total} onClick={() => setPage(p=>p+1)}>다음</Button></div>}
     </section>
     <details className="rounded-xl border p-4"><summary className="cursor-pointer text-sm font-medium">최근 알림 이력</summary><div className="space-y-3 mt-3">{incidents.data?.map(a => <p className="text-sm" key={a.key}><span className={a.status==='resolved' ? 'text-green-600' : 'text-amber-600'}>{a.status==='resolved' ? '해결' : '발생'}</span> · {a.title} · {time(a.last_seen_at)}</p>)}</div></details>
-    {edit && <div role="dialog" aria-modal="true" aria-label="공급사 코드·메모 수정" className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4"><form className="rounded-xl bg-background border p-6 w-full max-w-md space-y-4" onSubmit={async e => {e.preventDefault();if (await action(`/recovery/${edit.stock_id}`,{provider_symbol:symbol.trim().toUpperCase() || null,provider_exchange:exchange || null,notes},'PATCH')) setEdit(null);}}>
+    {edit && <div role="dialog" aria-modal="true" aria-label="공급사 코드·메모 수정" className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4"><form className="rounded-xl bg-background border p-6 w-full max-w-md space-y-4 max-h-[90vh] overflow-y-auto" onSubmit={async e => {e.preventDefault();if (await action(`/recovery/${edit.stock_id}`,{provider_symbol:symbol.trim().toUpperCase() || null,provider_exchange:exchange || null,notes,reviewed:paused,review_reason:paused?reviewReason:null,preserve_validated_history:preserve},'PATCH')) setEdit(null);}}>
       <div className="flex justify-between items-center"><h2 className="font-semibold">{edit.symbol} 공급사 코드·메모</h2><Button type="button" size="icon" variant="ghost" aria-label="닫기" onClick={()=>setEdit(null)}><X className="w-4 h-4"/></Button></div>
       <p className="text-xs text-muted-foreground">코드를 바꾸면 가격 재수집 전까지 분석에서 제외됩니다. 비워두면 원래 종목코드를 사용합니다.</p>
       <label className="block text-sm">공급사 종목코드<Input value={symbol} onChange={e=>setSymbol(e.target.value.toUpperCase())} placeholder={edit.symbol} maxLength={20}/></label>
-      <label className="block text-sm">공급사 거래소<select className="block border rounded-md w-full h-10 bg-background px-2" value={exchange} onChange={e=>setExchange(e.target.value)}><option value="">기존 거래소 사용 ({edit.exchange})</option><option value="NAS">NASDAQ</option><option value="NYS">NYSE</option><option value="AMS">AMEX</option></select></label>
+      <label className="block text-sm">공급사 거래소<select className="block border rounded-md w-full h-10 bg-background px-2" value={exchange} onChange={e=>setExchange(e.target.value)}><option value="">기존 거래소 사용 ({edit.exchange})</option><option value="NAS">NASDAQ</option><option value="NYS">NYSE</option><option value="AMS">AMS (AMEX·TXSE 공급사 코드)</option></select></label>
+      <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={preserve} onChange={e=>setPreserve(e.target.checked)}/>검증된 기존 일봉 보존 (동일 종목·거래소 이전 확인 시)</label>
+      <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={paused} onChange={e=>setPaused(e.target.checked)}/>공식 근거를 확인해 자동 수집 중단</label>
+      {paused && <label className="block text-sm">중단 사유<select aria-label="수집 중단 사유" className="block border rounded-md w-full h-10 bg-background px-2" value={reviewReason} onChange={e=>setReviewReason(e.target.value)}>{['listing_ended','ticker_changed','trading_halted','provider_unsupported'].map(key=><option key={key} value={key}>{reasons[key]}</option>)}</select></label>}
+      <p className="text-xs text-muted-foreground">과거 이력 보존 또는 수집 중단 시 공식 근거의 HTTPS 주소를 메모에 입력해주세요. 수집 중단은 복구 성공으로 처리하지 않습니다.</p>
       <label className="block text-sm">확인 내용·메모<textarea className="block border rounded-md w-full p-2 bg-background" rows={3} value={notes} maxLength={1000} onChange={e=>setNotes(e.target.value)}/></label>
       <Button className="w-full" disabled={busy || running}>저장</Button>
     </form></div>}

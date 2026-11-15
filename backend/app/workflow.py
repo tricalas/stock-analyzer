@@ -53,6 +53,7 @@ def seed_issues(db):
         latest, latest.c.stock_id == Stock.id).outerjoin(HistoryCollectionLog, HistoryCollectionLog.id == latest.c.id).outerjoin(
         RecoveryIssue, RecoveryIssue.stock_id == Stock.id).filter(
         Stock.market == 'US', Stock.is_active == True, Stock.history_precision_version < 1,
+        ~Stock.recovery_issue.has(RecoveryIssue.status == 'reviewed'),
         RecoveryIssue.stock_id == None).all()
     for stock_id, error in rows:
         record_issue(db, stock_id, error or "No data: price precision recovery required")
@@ -60,7 +61,8 @@ def seed_issues(db):
 
 
 def _add_items(db, run, stock_ids=None):
-    query = db.query(Stock.id).filter(Stock.market == 'US', Stock.is_active == True)
+    query = db.query(Stock.id).filter(Stock.market == 'US', Stock.is_active == True,
+        ~Stock.recovery_issue.has(RecoveryIssue.status == 'reviewed'))
     if stock_ids is not None:
         query = query.filter(Stock.id.in_(stock_ids))
     elif run.scope == 'tagged':
@@ -195,7 +197,7 @@ def _collect(db, run, item, stock):
     if evidence is None or evidence < close:
         raise RuntimeError('Stale history: candle was collected before the session close')
     stock.history_completed_date = run.session_date
-    if quoted_at is None or quoted_at < close:
+    if stock.provider_symbol or stock.provider_exchange or quoted_at is None or quoted_at < close:
         prices = db.query(StockPriceHistory).filter(StockPriceHistory.stock_id == stock.id, StockPriceHistory.date <= run.session_date).order_by(StockPriceHistory.date.desc()).limit(2).all()
         stock.current_price = prices[0].close_price
         stock.quote_updated_at = prices[0].updated_at
@@ -252,7 +254,7 @@ def execute_unit(run_id):
                     try:
                         if getattr(item, attempts_key) > 3:
                             raise RuntimeError('Worker repeatedly stopped while processing this stock')
-                        if stock is None or not stock.is_active:
+                        if stock is None or not stock.is_active or stock.collection_paused:
                             status = 'skipped'
                         elif stage == 'history':
                             status = _collect(db, run, item, stock)

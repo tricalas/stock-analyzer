@@ -216,7 +216,7 @@ class SignalAnalyzer:
     def _analyze_stock(self, stock_id: int, days: int, db: Session, end_date: date = None) -> Dict:
         # Serialize competing analyses for this stock and replace signals atomically.
         stock = db.query(Stock).filter(Stock.id == stock_id).with_for_update().first()
-        if stock is None:
+        if stock is None or stock.collection_paused:
             return {"signals_count": 0, "saved_count": 0}
         from datetime import timedelta
         from app.market_clock import latest_session

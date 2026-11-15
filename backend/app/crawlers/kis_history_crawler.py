@@ -64,6 +64,9 @@ class KISHistoryCrawler:
             - mode: "full" | "incremental" | "skip"
             - last_date: 마지막 수집 날짜 (증분 수집용)
         """
+        issue = getattr(stock, 'recovery_issue', None)
+        if issue is not None and issue.status == 'open' and issue.reason == 'symbol_review':
+            return (True, "full", None)
         if stock.market == "US" and (stock.history_precision_version or 0) < 1:
             return (True, "full", None)
 
@@ -119,6 +122,8 @@ class KISHistoryCrawler:
         Returns:
             수집 결과 딕셔너리
         """
+        if getattr(stock, 'collection_paused', False):
+            return {"success": False, "error": "Collection paused after verified listing review"}
         if self.kis_client is None:
             logger.error("KIS client not initialized. Check API keys in .env")
             return {"success": False, "error": "KIS API not configured"}
@@ -160,6 +165,12 @@ class KISHistoryCrawler:
             if not ohlcv_data:
                 logger.warning(f"No data received for {stock.symbol}")
                 return {"success": False, "error": "No data received from API"}
+
+            if stock.market == 'US':
+                from app.market_clock import latest_session
+                expected = latest_session(market=stock.market)[0]
+                if expected not in {row['date'] for row in ohlcv_data}:
+                    raise RuntimeError(f'Stale history: provider omitted expected session {expected}')
 
             if stock.market == "US" and (stock.history_precision_version or 0) < 1:
                 existing_dates = {row.date for row in db.query(StockPriceHistory.date).filter(StockPriceHistory.stock_id == stock.id).all()}
@@ -368,7 +379,8 @@ class KISHistoryCrawler:
             stocks = db.query(Stock).filter(
                 Stock.id.in_(tagged_stock_ids),
                 Stock.is_active == True,
-                Stock.market == 'US'
+                Stock.market == 'US',
+                ~Stock.recovery_issue.has(status='reviewed')
             ).all()
 
             logger.info(f"Found {len(stocks)} tagged stocks to process (workers: {max_workers})")
@@ -414,7 +426,8 @@ class KISHistoryCrawler:
             # 모든 활성 US 종목 조회 (시총 기준 내림차순)
             query = db.query(Stock).filter(
                 Stock.is_active == True,
-                Stock.market == 'US'
+                Stock.market == 'US',
+                ~Stock.recovery_issue.has(status='reviewed')
             ).order_by(Stock.market_cap.desc().nullslast())
 
             if limit:

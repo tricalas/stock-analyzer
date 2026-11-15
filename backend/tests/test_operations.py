@@ -138,6 +138,106 @@ class Operations(unittest.TestCase):
         invalid=self.client.patch(f'/api/operations/recovery/{self.stock.id}',json={'provider_symbol':'https://evil.example'},headers=self.headers())
         self.assertEqual(invalid.status_code,422)
 
+    def test_verified_listing_review_preserves_stock_and_excludes_automatic_work(self):
+        record_issue(self.db,self.stock.id,'No data');self.db.commit()
+        before=self.db.query(StockTagAssignment).count()
+        response=self.client.patch(f'/api/operations/recovery/{self.stock.id}',json={
+            'reviewed':True,'review_reason':'ticker_changed',
+            'notes':'Issuer changed ticker; https://example.com/issuer-notice'},headers=self.headers())
+        self.assertEqual(response.status_code,200)
+        self.db.expire_all()
+        issue=self.db.get(RecoveryIssue,self.stock.id)
+        self.assertEqual(issue.status,'reviewed');self.assertIsNone(issue.resolved_at)
+        self.assertTrue(self.stock.is_active);self.assertTrue(self.stock.collection_paused)
+        self.assertEqual(self.db.query(StockTagAssignment).count(),before)
+        self.assertEqual(self.stock.freshness['history_status'],'reviewed')
+        self.assertFalse(self.stock.freshness['automatic_collection'])
+        self.assertEqual(self.client.get('/api/operations/recovery',headers=self.headers()).json()['total'],0)
+        reviewed=self.client.get('/api/operations/recovery?status=reviewed',headers=self.headers()).json()
+        self.assertEqual(reviewed['items'][0]['stock_id'],self.stock.id)
+        run=create_run(self.db,scope='retry',stock_ids=[self.stock.id])
+        self.assertEqual(self.db.query(PipelineItem).filter_by(run_id=run.id).count(),0)
+        data=self.client.get('/api/data-status',headers=self.headers()).json()['markets'][0]
+        self.assertEqual((data['total'],data['collection_total'],data['reviewed_count']),(1,0,1))
+        response=self.client.post('/api/backtests',json={'stock_id':self.stock.id},headers=self.headers())
+        self.assertEqual(response.status_code,422)
+
+    def test_review_requires_evidence_and_can_be_reopened(self):
+        record_issue(self.db,self.stock.id,'No data');self.db.commit()
+        path=f'/api/operations/recovery/{self.stock.id}'
+        for body in ({'reviewed':True,'review_reason':'listing_ended'},
+                     {'reviewed':True,'notes':'https://example.com/notice'}):
+            self.assertEqual(self.client.patch(path,json=body,headers=self.headers()).status_code,422)
+        self.client.patch(path,json={'reviewed':True,'review_reason':'trading_halted',
+            'notes':'Trading halted: https://example.com/notice'},headers=self.headers())
+        self.assertEqual(self.client.patch(path,json={'reviewed':False},headers=self.headers()).status_code,200)
+        self.db.expire_all()
+        self.assertEqual(self.db.get(RecoveryIssue,self.stock.id).status,'open')
+        self.assertIsNone(self.stock.history_completed_date)
+
+    def test_explicit_verified_precision_preservation_for_venue_transfer(self):
+        from app.crawlers.kis_history_crawler import KISHistoryCrawler
+        record_issue(self.db,self.stock.id,'No data');self.db.commit()
+        response=self.client.patch(f'/api/operations/recovery/{self.stock.id}',json={
+            'provider_exchange':'AMS','preserve_validated_history':True,
+            'notes':'Same shares moved venue: https://example.com/transfer'},headers=self.headers())
+        self.assertEqual(response.status_code,200);self.db.expire_all()
+        self.assertEqual(self.stock.history_precision_version,1)
+        self.assertIsNone(self.stock.quote_updated_at)
+        with patch('app.crawlers.kis_history_crawler.get_kis_client',return_value=None):
+            self.assertEqual(KISHistoryCrawler()._should_collect_history(self.stock,self.db),(True,'full',None))
+        self.stock.history_precision_version=0;self.db.commit()
+        response=self.client.patch(f'/api/operations/recovery/{self.stock.id}',json={
+            'provider_exchange':'AMS','preserve_validated_history':True,
+            'notes':'https://example.com/transfer'},headers=self.headers())
+        self.assertEqual(response.status_code,422)
+
+    def test_reviewed_symbol_never_receives_other_issuer_quotes_or_analysis(self):
+        from app.crawlers.crawler_manager import CrawlerManager
+        from app.signal_analyzer import SignalAnalyzer
+        from app.ma_signal_analyzer import MASignalAnalyzer
+        record_issue(self.db,self.stock.id,'No data').status='reviewed';self.db.commit()
+        with patch('app.crawlers.naver_us_crawler.NaverUSStockCrawler.fetch_all_us_stocks',
+                   return_value=[dict(symbol=self.stock.symbol,current_price=999999,name='Other issuer')]):
+            CrawlerManager().update_stock_list('US')
+        self.db.expire_all();self.assertEqual(self.stock.current_price,123.45)
+        self.assertEqual(self.stock.name,'Test stock')
+        for analyzer in (SignalAnalyzer(),MASignalAnalyzer()):
+            with patch.object(analyzer,'_run_signal_analysis') as analyze:
+                analyzer._analyze_stock(self.stock.id,180,self.db)
+                analyze.assert_not_called()
+
+    def test_mapping_forces_fresh_expected_session_without_trusting_old_cached_row(self):
+        from app.crawlers.kis_history_crawler import KISHistoryCrawler
+        from app.workflow import _collect
+        from app.market_clock import calendar
+        expected=latest_session()[0]
+        sessions=calendar().sessions_in_range(str(expected-timedelta(days=180)),str(expected))[-100:]
+        self.db.add_all([StockPriceHistory(stock_id=self.stock.id,date=x.date(),open_price=10.11,
+            high_price=11.22,low_price=9.33,close_price=10.44,volume=100,updated_at=datetime.utcnow()) for x in sessions])
+        self.stock.history_records_count=100;self.db.commit()
+        record_issue(self.db,self.stock.id,'No data');self.db.commit()
+        self.client.patch(f'/api/operations/recovery/{self.stock.id}',json={
+            'provider_exchange':'AMS','preserve_validated_history':True,
+            'notes':'https://example.com/transfer'},headers=self.headers())
+        self.db.expire_all();run=create_run(self.db,scope='retry',stock_ids=[self.stock.id])
+        bars=[dict(date=x.date(),open_price=20.11,high_price=21.22,low_price=19.33,
+            close_price=20.44,volume=200) for x in sessions[-5:]]
+        with patch('app.crawlers.kis_history_crawler.get_kis_client',return_value=object()):
+            crawler=KISHistoryCrawler()
+        with patch('app.crawlers.kis_history_crawler.kis_history_crawler',crawler),patch.object(crawler,'_collect_us_stock_history',return_value=bars[:-1]):
+            with self.assertRaisesRegex(RuntimeError,'expected session'):_collect(self.db,run,None,self.stock)
+        self.db.expire_all()
+        with patch('app.crawlers.kis_history_crawler.kis_history_crawler',crawler),patch.object(crawler,'_collect_us_stock_history',return_value=bars):
+            self.assertEqual(_collect(self.db,run,None,self.stock),'success');self.db.commit()
+        self.db.expire_all()
+        self.assertEqual(self.stock.current_price,20.44)
+        self.assertEqual(self.stock.history_records_count,100)
+        self.assertEqual(self.stock.history_precision_version,1)
+        self.assertEqual(self.db.get(RecoveryIssue,self.stock.id).status,'resolved')
+        original=self.db.query(StockPriceHistory).filter_by(stock_id=self.stock.id,date=sessions[0].date()).one()
+        self.assertEqual(original.close_price,10.44)
+
     def test_admin_api_and_acknowledgement_are_protected(self):
         for method,path,body in [('GET','/api/operations/overview',None),('GET','/api/operations/recovery',None),('GET','/api/operations/alerts',None),('POST','/api/operations/runs',{'scope':'all'}),('PATCH',f'/api/operations/recovery/{self.stock.id}',{})]:
             for headers,code in [({},401),(self.headers(self.user),403)]:

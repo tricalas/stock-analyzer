@@ -81,6 +81,11 @@ class Stock(Base):
     price_data = relationship("StockPrice", back_populates="stock", cascade="all, delete-orphan")
     daily_data = relationship("StockDailyData", back_populates="stock", cascade="all, delete-orphan")
     price_history = relationship("StockPriceHistory", back_populates="stock", cascade="all, delete-orphan")
+    recovery_issue = relationship("RecoveryIssue", uselist=False, lazy="selectin", viewonly=True)
+
+    @property
+    def collection_paused(self):
+        return self.recovery_issue is not None and self.recovery_issue.status == 'reviewed'
 
 class StockPrice(Base):
     __tablename__ = "stock_prices"

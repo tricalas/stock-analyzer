@@ -32,6 +32,7 @@ def signal_feed(db,category,skip=0,limit=30,strategy=None,signal_type=None,
                           or_(Stock.market!='US',Stock.history_precision_version>=1)))
     query=db.query(StockSignal).join(Stock,Stock.id==StockSignal.stock_id).filter(
         StockSignal.is_active==True,Stock.is_active==True,
+        ~Stock.recovery_issue.has(status='reviewed'),
         StockSignal.strategy_name.in_(strategies),or_(*windows))
     if strategy:query=query.filter(StockSignal.strategy_name==strategy)
     if signal_type:query=query.filter(StockSignal.signal_type==signal_type)

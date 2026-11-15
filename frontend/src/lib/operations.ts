@@ -15,12 +15,13 @@ export interface OperationsOverview {
   alerts: Incident[]; runs: Run[];
 }
 export interface Recovery {
-  stock_id: number; symbol: string; name: string; reason: string; message: string; notes: string;
+  status: 'open' | 'reviewed' | 'resolved'; stock_id: number; symbol: string; name: string; reason: string; message: string; notes: string;
   attempts: number; last_seen_at: string; exchange: string;
   provider_symbol: string | null; provider_exchange: string | null;
 }
 export const reasons: Record<string, string> = {
-  provider_unavailable: '공급사 미응답·지원 여부 확인', missing_history: '과거 날짜 누락',
+  listing_ended: '상장·거래 종료 확인', ticker_changed: '티커 변경 · 현재 종목 별도 등록', trading_halted: '거래 정지 확인', provider_unsupported: '공급사 지원 범위 밖',
+  token_error: '인증 토큰 오류', provider_unavailable: '공급사 미응답·지원 여부 확인', missing_history: '과거 날짜 누락',
   stale_history: '최근 거래일 누락', temporary_error: '일시적 통신·요청 제한',
   symbol_review: '공급사 코드 확인', collection_error: '수집 오류',
 };

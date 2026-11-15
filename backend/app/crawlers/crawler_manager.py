@@ -80,6 +80,9 @@ class CrawlerManager:
                 if stock_data["symbol"] in existing_symbols:
                     # 업데이트 대상
                     existing_stock = existing_symbols[stock_data["symbol"]]
+                    # A reviewed/overridden listing must not receive quotes for a reused ticker.
+                    if existing_stock.collection_paused or existing_stock.provider_symbol or existing_stock.provider_exchange:
+                        continue
                     for key, value in stock_data.items():
                         if hasattr(existing_stock, key):
                             setattr(existing_stock, key, value)
@@ -114,6 +117,8 @@ class CrawlerManager:
                         existing_stock = db.query(Stock).filter_by(symbol=stock_data["symbol"]).first()
 
                         if existing_stock:
+                            if existing_stock.collection_paused or existing_stock.provider_symbol or existing_stock.provider_exchange:
+                                continue
                             for key, value in stock_data.items():
                                 if hasattr(existing_stock, key):
                                     setattr(existing_stock, key, value)

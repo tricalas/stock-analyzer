@@ -25,16 +25,19 @@ def data_status(db:Session=Depends(get_db)):
     markets=[]
     for market in ('US','KR'):
         expected,close=latest_session(market=market)
-        valid=and_(Stock.history_completed_date>=expected,
+        collectable=~Stock.recovery_issue.has(status='reviewed')
+        valid=and_(collectable,Stock.history_completed_date>=expected,
                    or_(Stock.market!='US',Stock.history_precision_version>=1))
         trend=and_(valid,Stock.signal_as_of_date==expected,Stock.signal_analyzed_at>=Stock.history_updated_at)
         ma=and_(valid,Stock.ma_signal_as_of_date==expected,Stock.ma_signal_analyzed_at>=Stock.history_updated_at)
         counts=db.query(func.count(Stock.id),func.sum(case((valid,1),else_=0)),
                         func.sum(case((trend,1),else_=0)),func.sum(case((ma,1),else_=0)),
-                        func.max(Stock.history_updated_at),func.max(Stock.quote_updated_at)).filter(
+                        func.max(Stock.history_updated_at),func.max(Stock.quote_updated_at),
+                        func.sum(case((collectable,1),else_=0))).filter(
                             Stock.market==market,Stock.is_active==True).one()
         markets.append({'market':market,'expected_session':expected,'total':counts[0],
             'current_history':counts[1] or 0,'current_trend':counts[2] or 0,'current_ma':counts[3] or 0,
+            'collection_total':counts[6] or 0,'reviewed_count':counts[0]-(counts[6] or 0),
             'latest_collection_at':counts[4],'latest_quote_at':counts[5], 'automatic_collection':market=='US'})
     return {'checked_at':datetime.now(timezone.utc),'markets':markets}
 
@@ -70,6 +73,8 @@ def run_backtest(request:BacktestRequest,db:Session=Depends(get_db),user:User=De
         raise HTTPException(404,'종목을 찾을 수 없습니다.')
     if stock.market!='US':
         raise HTTPException(422,'현재 백테스트는 미국 주식 수정주가를 지원합니다.')
+    if stock.collection_paused:
+        raise HTTPException(422,'거래 종료·코드 변경 검토로 자동 수집이 중단된 종목입니다. 현재 거래 종목을 선택해주세요.')
     expected=latest_session()[0]
     end=request.end_date or expected
     if end < expected-timedelta(days=3650):

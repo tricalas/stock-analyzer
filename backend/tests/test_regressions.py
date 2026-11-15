@@ -22,6 +22,7 @@ from app.models import Stock, StockPriceHistory, StockSignal, User, StockTag
 from app.auth import create_access_token, get_pin_hash
 from app.main import app
 from app.bootstrap import seed_default_tags
+from app.market_clock import latest_session
 from app.migrate import upgrade_database
 from app.crawlers.kis_history_crawler import KISHistoryCrawler
 from app.ma_signal_analyzer import MASignalAnalyzer
@@ -109,7 +110,7 @@ class Regressions(unittest.TestCase):
     def test_compatibility_history_route_preserves_precision_and_404(self):
         from app.crawlers.kis_history_crawler import kis_history_crawler
         self.stock.history_precision_version=0;self.db.commit()
-        provider=SimpleNamespace(get_us_stock_ohlcv=lambda **kw:[{'xymd':date.today().strftime('%Y%m%d'),
+        provider=SimpleNamespace(get_us_stock_ohlcv=lambda **kw:[{'xymd':latest_session()[0].strftime('%Y%m%d'),
             'open':'0.75','high':'1.25','low':'0.50','clos':'0.99','tvol':'100'}])
         with patch.object(kis_history_crawler,'kis_client',provider):
             response=self.client.post(f'/api/stocks/{self.stock.id}/crawl-history',headers=self.headers())
@@ -231,7 +232,7 @@ class Regressions(unittest.TestCase):
         self.stock.history_precision_version=0
         self.db.add(StockPriceHistory(stock_id=self.stock.id,date=date.today()-timedelta(days=300),close_price=100));self.db.commit()
         crawler=KISHistoryCrawler()
-        crawler.kis_client=SimpleNamespace(get_us_stock_ohlcv=lambda **kw:[{'xymd':date.today().strftime('%Y%m%d'),
+        crawler.kis_client=SimpleNamespace(get_us_stock_ohlcv=lambda **kw:[{'xymd':latest_session()[0].strftime('%Y%m%d'),
             'open':'10.5','high':'11.2','low':'10.1','clos':'10.8','tvol':'100'}])
         result=crawler.collect_history_for_stock(self.stock,db=self.db)
         self.assertFalse(result['success'])
@@ -239,7 +240,7 @@ class Regressions(unittest.TestCase):
 
     def test_fractional_us_prices_survive_storage_and_api(self):
         crawler=KISHistoryCrawler()
-        crawler.kis_client=SimpleNamespace(get_us_stock_ohlcv=lambda **kw:[{'xymd':date.today().strftime('%Y%m%d'),
+        crawler.kis_client=SimpleNamespace(get_us_stock_ohlcv=lambda **kw:[{'xymd':latest_session()[0].strftime('%Y%m%d'),
             'open':'0.75','high':'1.25','low':'0.50','clos':'0.99','tvol':'100'}])
         result=crawler.collect_history_for_stock(self.stock,db=self.db)
         self.assertTrue(result['success'])
@@ -252,8 +253,8 @@ class Regressions(unittest.TestCase):
     def test_single_stock_sync_repairs_existing_us_prices(self):
         from app.crawlers.kis_history_crawler import kis_history_crawler
         self.stock.history_precision_version=0
-        self.db.add(StockPriceHistory(stock_id=self.stock.id,date=date.today(),close_price=100));self.db.commit()
-        provider=SimpleNamespace(get_us_stock_ohlcv=lambda **kw:[{'xymd':date.today().strftime('%Y%m%d'),
+        self.db.add(StockPriceHistory(stock_id=self.stock.id,date=latest_session()[0],close_price=100));self.db.commit()
+        provider=SimpleNamespace(get_us_stock_ohlcv=lambda **kw:[{'xymd':latest_session()[0].strftime('%Y%m%d'),
             'open':'0.75','high':'1.25','low':'0.50','clos':'0.99','tvol':'100'}])
         with patch.object(kis_history_crawler,'kis_client',provider):
             response=self.client.post(f'/api/stocks/{self.stock.id}/sync-history?days=180',headers=self.headers())
