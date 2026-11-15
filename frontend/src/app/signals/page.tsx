@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useInfiniteQuery } from '@tanstack/react-query';
-import { Activity, ArrowDown, ArrowUp, BarChart3, RefreshCw, Search, Star } from 'lucide-react';
+import { Activity, ArrowDown, ArrowUp, ExternalLink, RefreshCw, Search, Star } from 'lucide-react';
 import { Toaster, toast } from 'sonner';
 import AppLayout from '@/components/AppLayout';
 import FreshnessDetails from '@/components/FreshnessDetails';
@@ -13,7 +13,7 @@ import { Badge } from '@/components/ui/badge';
 import { useTimezone } from '@/hooks/useTimezone';
 import { apiFetch, API_BASE_URL } from '@/lib/http';
 import { stockApi } from '@/lib/api';
-import { getNaverChartUrl } from '@/lib/naverStock';
+import { getNaverInfoUrl } from '@/lib/naverStock';
 import { FeedSignal, SignalCategory, SignalFeed, ma90Distance, signalFeedPath, signalLabel, strategies } from '@/lib/signal-feed';
 import { cn } from '@/lib/utils';
 
@@ -77,10 +77,10 @@ export default function SignalsPage() {
     try { await stockApi.addToFavorites(signal.stock_id); toast.success(`${signal.name} 관심종목 추가`); }
     catch { toast.error('관심종목 추가에 실패했습니다.'); }
   }
-  const chart = (signal: FeedSignal) => signal.market === 'KR' ? `https://m.stock.naver.com/domestic/stock/${encodeURIComponent(signal.symbol)}/total` : getNaverChartUrl({ symbol: signal.symbol, market: signal.market, exchange: signal.exchange || undefined });
+  const naver = (signal: FeedSignal) => signal.market === 'KR' ? `https://m.stock.naver.com/domestic/stock/${encodeURIComponent(signal.symbol)}/total` : getNaverInfoUrl({ symbol: signal.symbol, market: signal.market, exchange: signal.exchange || undefined });
   const actions = (signal: FeedSignal) => <div className="flex items-center justify-end gap-1">
     <Button variant="ghost" size="icon" asChild className="h-8 w-8"><Link href={`/signals/${signal.stock_id}`} aria-label={`${signal.name} 분석 상세`}><Activity className="h-4 w-4"/></Link></Button>
-    <Button variant="ghost" size="icon" asChild className="h-8 w-8"><a href={chart(signal)} target="_blank" rel="noopener noreferrer" aria-label={`${signal.name} 외부 차트`}><BarChart3 className="h-4 w-4"/></a></Button>
+    <Button variant="ghost" size="icon" asChild className="h-8 w-8"><a href={naver(signal)} target="_blank" rel="noopener noreferrer" aria-label={`${signal.name} 네이버 종목 페이지 (새 탭)`} title="네이버 종목 페이지 (새 탭)"><ExternalLink className="h-4 w-4"/></a></Button>
     <Button variant="ghost" size="icon" onClick={() => void favorite(signal)} className="h-8 w-8" aria-label={`${signal.name} 관심종목 추가`}><Star className="h-4 w-4"/></Button>
   </div>;
 
@@ -116,14 +116,14 @@ export default function SignalsPage() {
     {isRefetchError && <p role="alert" className="rounded-md border border-amber-500/30 p-3 text-sm text-amber-600">새로고침에 실패해 이전 조회 결과를 표시합니다. 다시 새로고침해주세요.</p>}
     <section className="rounded-xl border bg-card overflow-hidden" aria-label="시그널 목록" aria-busy={isLoading}>
       {isLoading ? <p className="py-16 text-center text-muted-foreground" role="status">시그널을 불러오는 중입니다…</p> : error && !summary ? <div className="py-16 text-center space-y-3" role="alert"><p>시그널을 불러오지 못했습니다.</p><Button variant="outline" onClick={() => void refetch()}>다시 시도</Button></div> : signals.length === 0 ? <div className="py-16 px-4 text-center space-y-2"><p className="font-medium">현재 조건에 맞는 최신 신호가 없습니다.</p><p className="text-sm text-muted-foreground">기간이나 필터를 바꿔보세요. 지연된 분석 신호는 제외됩니다.</p>{hasFilters && <Button variant="outline" onClick={reset}>필터 초기화</Button>}</div> : <>
-        <div className="hidden lg:block overflow-x-auto"><table className="w-full text-sm"><caption className="sr-only">필터 조건과 최신성 검증을 통과한 신호</caption><thead className="bg-muted/50 border-b"><tr>{['발생일 / 전략','종목 / 분석 기준','신호일 종가','분석 시점 가격','발생 후 등락','상세·차트·관심'].map(label => <th key={label} className="px-4 py-3 text-left font-medium text-muted-foreground">{label}</th>)}</tr></thead><tbody className="divide-y">{signals.map(signal => <tr key={signal.id} className="hover:bg-muted/30">
+        <div className="hidden lg:block overflow-x-auto"><table className="w-full text-sm"><caption className="sr-only">필터 조건과 최신성 검증을 통과한 신호</caption><thead className="bg-muted/50 border-b"><tr>{['발생일 / 전략','종목 / 분석 기준','신호일 종가','분석 시점 가격','발생 후 등락','상세·네이버·관심'].map(label => <th key={label} className="px-4 py-3 text-left font-medium text-muted-foreground">{label}</th>)}</tr></thead><tbody className="divide-y">{signals.map(signal => <tr key={signal.id} className="hover:bg-muted/30">
           <td className="px-4 py-3 space-y-1"><div>{formatShortDate(signal.signal_date)}</div><SignalType signal={signal}/></td>
-          <td className="px-4 py-3"><a className="font-semibold hover:underline" href={chart(signal)} target="_blank" rel="noopener noreferrer">{signal.name}</a><div className="text-xs text-muted-foreground mt-1">{signal.symbol} · {signal.exchange || signal.market}</div><FreshnessDetails value={signal.freshness} category={category}/></td>
+          <td className="px-4 py-3"><Link className="font-semibold hover:underline" href={`/signals/${signal.stock_id}`}>{signal.name}</Link><div className="text-xs text-muted-foreground mt-1">{signal.symbol} · {signal.exchange || signal.market}</div><FreshnessDetails value={signal.freshness} category={category}/></td>
           <td className="px-4 py-3 tabular-nums">{money(signal.signal_price, signal.market)}{ma90Distance(signal.details) != null && <div className="text-xs text-muted-foreground mt-1">당시 MA90 대비 <Change value={ma90Distance(signal.details)}/></div>}</td>
           <td className="px-4 py-3 tabular-nums">{money(signal.current_price, signal.market)}<div className="text-xs text-muted-foreground mt-1">{formatShortDateTime(signal.price_as_of)}</div></td>
           <td className="px-4 py-3"><Change value={signal.return_percent}/></td><td className="px-4 py-3">{actions(signal)}</td>
         </tr>)}</tbody></table></div>
-        <div className="lg:hidden divide-y">{signals.map(signal => <article key={signal.id} className="p-4 space-y-3"><div className="flex items-start justify-between gap-3"><div className="min-w-0"><a href={chart(signal)} target="_blank" rel="noopener noreferrer" className="font-semibold hover:underline">{signal.name}</a><p className="text-xs text-muted-foreground mt-1">{signal.symbol} · {signal.exchange || signal.market} · {formatShortDate(signal.signal_date)}</p></div><div className="text-right shrink-0"><Change value={signal.return_percent}/></div></div><SignalType signal={signal}/><div className="text-xs text-muted-foreground">신호일 {money(signal.signal_price, signal.market)} → 분석 시점 {money(signal.current_price, signal.market)}<span className="block mt-1">가격 기준 {formatShortDateTime(signal.price_as_of)}</span></div><FreshnessDetails value={signal.freshness} category={category}/>{actions(signal)}</article>)}</div>
+        <div className="lg:hidden divide-y">{signals.map(signal => <article key={signal.id} className="p-4 space-y-3"><div className="flex items-start justify-between gap-3"><div className="min-w-0"><Link href={`/signals/${signal.stock_id}`} className="font-semibold hover:underline">{signal.name}</Link><p className="text-xs text-muted-foreground mt-1">{signal.symbol} · {signal.exchange || signal.market} · {formatShortDate(signal.signal_date)}</p></div><div className="text-right shrink-0"><Change value={signal.return_percent}/></div></div><SignalType signal={signal}/><div className="text-xs text-muted-foreground">신호일 {money(signal.signal_price, signal.market)} → 분석 시점 {money(signal.current_price, signal.market)}<span className="block mt-1">가격 기준 {formatShortDateTime(signal.price_as_of)}</span></div><FreshnessDetails value={signal.freshness} category={category}/>{actions(signal)}</article>)}</div>
         <div ref={sentinel} className="border-t p-4 text-center space-y-2">
           <p className="text-xs text-muted-foreground" aria-live="polite">{signals.length.toLocaleString()} / {summary?.total.toLocaleString()}개 표시</p>
           {isFetchNextPageError ? <><p role="alert" className="text-sm text-destructive">다음 목록을 불러오지 못했습니다.</p><Button variant="outline" onClick={() => void fetchNextPage()}>다음 목록 다시 시도</Button></> : hasNextPage ? <Button variant="outline" disabled={isFetching} onClick={() => void fetchNextPage()}>{isFetchingNextPage ? '불러오는 중…' : '더 보기'}</Button> : <p className="text-xs text-muted-foreground">조건에 맞는 전체 신호를 확인했습니다.</p>}
